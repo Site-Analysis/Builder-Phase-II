@@ -24,7 +24,8 @@ services/              FastAPI backends (one per analysis type)
   sunpath/             port 8001 — solar / sun path (pvlib)
   flood/               port 8002 — flood risk (GEE + MERIT/ALOS)
   wind/                port 8003 — wind climatology
-  geo/                 port 8004 — base geo / vegetation / admin boundaries
+  rainfall/            port 8004 — rainfall climate analysis (CHIRPS via GEE)
+  geo/                 (planned — not yet implemented)
 packages/flags/        Shared feature flag enum + helper
 contracts/             OpenAPI YAML — one per service + CHANGELOG.md
 migrations/            DB migrations + rollback notes
@@ -62,6 +63,7 @@ npm run build
 Note: Next.js 16 has breaking changes. Read `apps/web/AGENTS.md` and `node_modules/next/dist/docs/` before writing component code.
 
 ### Services (per service)
+Each service has an `AGENTS.md` with its own architecture details, endpoint reference, and testing strategy — read it before working on that service.
 Each service gets its own `.venv/`. **Use `python3.12`** — 3.14 is missing wheels for earthengine-api, pvlib, imdlib, netCDF4:
 ```bash
 cd services/<service>
@@ -127,7 +129,13 @@ class FeatureFlag(StrEnum):
     TEMPERATURE_THERMAL_PROFILE = "feature.temperature.thermal-profile"
     FLOOD_RISK_ANALYSIS = "feature.flood.risk-analysis"
     SUNPATH_DIAGRAM = "feature.sunpath.diagram"
-    WIND_CLIMATOLOGY = "feature.wind.climatology"
+    WIND_ANALYSIS = "feature.wind.analysis"
+    RAINFALL_ARCHIVE = "feature.rainfall.archive"
+    RAINFALL_SUMMARY = "feature.rainfall.summary"
+    RAINFALL_CLIMATE_PROFILE = "feature.rainfall.climate-profile"
+    RAINFALL_ANOMALY = "feature.rainfall.anomaly"
+    RAINFALL_SEASONALITY = "feature.rainfall.seasonality"
+    RAINFALL_SITE_ANALYSIS = "feature.rainfall.site-analysis"
 ```
 
 Enable via env var:
@@ -135,7 +143,7 @@ Enable via env var:
 FLAGS=feature.temperature.thermal-profile,feature.sunpath.diagram
 ```
 
-Add new flag to enum BEFORE first commit that depends on it.
+Add new flag to enum BEFORE first commit that depends on it. When adding a new flag, also update the `FLAGS=` env var in `.github/workflows/ci.yml` (smoke job) so CI exercises the new endpoints.
 
 ---
 
@@ -143,7 +151,8 @@ Add new flag to enum BEFORE first commit that depends on it.
 
 | Service | Used by | Setup |
 |---|---|---|
-| Google Earth Engine | flood, geo (vegetation, NDVI) | Service account JSON at `gee-sa.json` — copy from `/Volumes/LocalDrive/Site Analysis/Site-Analysis-Tool/gee-sa.json` |
+| Google Earth Engine | flood, rainfall, sunpath | Service account JSON at `gee-sa.json` — copy from `/Volumes/LocalDrive/Site Analysis/Site-Analysis-Tool/gee-sa.json` |
+| CHIRPS Daily (via GEE) | rainfall | `UCSB-CHG/CHIRPS/DAILY` collection; needs `GEE_PROJECT_ID`, `GEE_SERVICE_ACCOUNT_EMAIL`, `GEE_SA_KEY_PATH`; returns HTTP 503 if credentials absent (no synthetic fallback in production) |
 | Open-Meteo | temperature, wind | Public, no key |
 | IMD gridded data | temperature | Local files at `services/temperature/data/` |
 | pvlib | sunpath | pip install only |
