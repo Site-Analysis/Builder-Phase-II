@@ -115,7 +115,7 @@ FEATURES = [
         "SAT-4", "Done", "POC — not merged to org",
         "Vishwas", 13, "Must Have",
         "Vishwas721/sat (sat04/)", "55cd75e", "services/wind/",
-        "contracts/wind.yaml", "feature.wind.climatology",
+        "contracts/wind.yaml", "feature.wind.analysis",
         "FVD-09", "POC in personal repo. Must merge to org before integration."
     ),
     (
@@ -321,7 +321,7 @@ INTEGRATION_ORDER = [
      "services/flood/app/",
      "None", "Tanmay", "Sprint 3", "Ready", "None"),
     (4, "Wind Analysis", "services/wind/", "contracts/wind.yaml",
-     "feature.wind.climatology",
+     "feature.wind.analysis",
      "Vishwas721/sat (sat04/)",
      "services/wind/app/",
      "None", "Vishwas", "Sprint 3", "Blocked", "POC in personal repo — must push to org first"),

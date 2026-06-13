@@ -127,7 +127,9 @@ class FeatureFlag(StrEnum):
     TEMPERATURE_THERMAL_PROFILE = "feature.temperature.thermal-profile"
     FLOOD_RISK_ANALYSIS = "feature.flood.risk-analysis"
     SUNPATH_DIAGRAM = "feature.sunpath.diagram"
-    WIND_CLIMATOLOGY = "feature.wind.climatology"
+    WIND_ANALYSIS = "feature.wind.analysis"
+    RAINFALL_ARCHIVE = "feature.rainfall.archive"
+    RAINFALL_SUMMARY = "feature.rainfall.summary"
 ```
 
 Enable via env var:
@@ -244,23 +246,89 @@ After install: `/reload-plugins`.
 
 ## UX Research Status
 
-**Phase 1 — COMPLETE (2026-06-10)** | GitHub Issue: https://github.com/Site-Analysis/SAT/issues/13
-Branch: `ux/phase-1-research`
+**Phase 8 — COMPLETE (2026-06-12)** | Branch: `ux/phase-1-research`
 
 | Phase | Status | Gate |
 |-------|--------|------|
 | Phase 1 — Research & Interviews (Steps 1–6) | ✅ COMPLETE | APPROVE PHASE 1 — Chirag, 2026-06-10 |
-| Phase 2 — Synthesis & Analysis (Steps 7–10) | ⏳ NEXT | Pending SA·Q3/SP·Q3 follow-up (2026-06-11) |
-| Phase 3 — Personas & JTBDs | Not started | |
+| Phase 2 — Synthesis & Analysis (Steps 7–10) | ✅ COMPLETE | APPROVE PHASE 2 — Tanmay, 2026-06-11 |
+| Phase 3 — Personas, Journeys & Requirements (Steps 11–14) | ✅ COMPLETE | APPROVE PHASE 3 — Tanmay, 2026-06-11 |
+| Phase 4 — Design Foundation (Steps 15–18) | ✅ COMPLETE | APPROVE PHASE 4 — Tanmay, 2026-06-11 |
+| Phase 5 — IA & User Flows (Steps 19–21) | ✅ COMPLETE | APPROVE PHASE 5 — Tanmay, 2026-06-11 |
+| Phase 6 — Wireframing (Steps 22–25) | ✅ COMPLETE | APPROVE PHASE 6 — Tanmay, 2026-06-11 |
+| Phase 7 — UI Finalisation (Steps 26–29) | ✅ COMPLETE | APPROVE PHASE 7 — Tanmay, 2026-06-11 |
+| Phase 8 — Handoff (Steps 30–33) | ✅ COMPLETE | APPROVE PHASE 8 — Tanmay, 2026-06-12 |
+| Phase 9 — Code Generation (Steps 34–37) | ✅ COMPLETE | APPROVE PHASE 9 — Tanmay, 2026-06-12 |
+| Phase 10 — Testing & Iteration (Steps 39–42) | ✅ COMPLETE | APPROVE PHASE 10 — Tanmay, 2026-06-12 — GO |
 
-**Key findings summary (Phase 1):**
-- 5 pain points confirmed: no one-stop data source, stale data, manual representation, topography gap, tool-switching friction
-- Confirmed tools: SketchUp + Ventrysky + Andrew Marsh + QGIS + KSRSAC + IMD + Bhuvan
-- Product signals: Revit export non-negotiable, conversational UI wanted, RAG+live-API architecture, professional service model viable
-- Dashboard IA: Topography | Climate (Rainfall sub-tab) | Regulations
-- Full findings: `.claude/ux-workflow/context/phase-1-findings.md`
+**Phase 3 outputs:**
+- 3 personas approved (SME: Ranjitha, 2026-06-10/11): Student, Junior/Mid Architect, Senior Architect
+- Journey maps: current-state + SAT-assisted for all 3 personas
+- 19 functional requirements derived from research — GitHub Issues #26–#44
+- MoSCoW: 6 Must-have · 7 Should-have · 3 Could-have · 3 Won't-have Beta
+- Key blocked items: REQ-03 (citations), REQ-05 (AI), REQ-10 (topography), REQ-11/17 (DCR)
+- Artifacts: `.claude/ux-workflow/context/phase-3-personas.md`, `phase-3-journeys.md`
 
-**To start Phase 2:** Load `sat-ux-workflow` agent, provide Phase 1 artifacts path, say `APPROVE PHASE 1` to open Phase 2.
+**SME corrections applied (Ranjitha, 2026-06-11):**
+- Persona 3: senior architects visit site personally — delegation assumption corrected
+- REQ-08: broadened from Revit-only to universal AEC export (IFC + DWG + LandXML)
+- REQ-14: specific visual outputs mandated (wind rose, sun-path diagram, drainage map + NBC cross-reference)
+- REQ-17: legal citation chain mandated (clause numbers, source text, master plan table refs)
+- Journey maps: preparation tools (AutoCAD/Revit/SketchUp) distinguished from representation tools (Photoshop/Procreate/Canva/PowerPoint/InDesign)
+
+**Phase 4 outputs (COMPLETE — 2026-06-11):**
+- Design tokens: 47 variables in Figma (29 via Tokens Studio + 18 color via manual/API)
+- Figma file: SAT-UX (`m2JFe65NnDEOcvN1U5AL5C`) — 9 pages, variables, component library
+- Component library: 14 components (6 atoms, 4 map-specific, 4 layout shells) — icon library: Lucide
+- Figma MCP: connected and test-read successful
+- Artifacts: `SAT_Phase4_Step15_DesignTokens.docx`, `SAT_Phase4_Step17_ComponentLibrary.docx`
+
+**Phase 6 outputs (COMPLETE — 2026-06-11):**
+- Lo-fi HTML wireframes: all 11 Beta screens — `wireframes/01-login.html` through `wireframes/11-settings.html`
+- Mid-fi HTML wireframes: same screens with full token colours + layout
+- Hi-fi HTML mockups approved for 7 screens — variant decisions recorded below
+- SME Word doc: `Phase 6 - Wireframing.docx` (severity labels, score thresholds, NBC cross-refs)
+- Design push: Step 25 via claude design (separate terminal) — confirmed
+- Hi-fi variant approvals: Login C · Dashboard B · New Analysis A · Main Analysis B · Flood Panel B · Export B · Settings A+B toggle
+
+**Phase 7 outputs (COMPLETE — 2026-06-11):**
+- Step 26: Consistency audit across all 7 hi-fi files — identified 3 failing files
+- Step 27: Delta audit fixes — all 7 files PASS (25 CSS custom properties, zero raw hex outside `:root`)
+- Step 28: Clickable prototype — 3 flows wired (New Analysis · Return to Saved · Export/Share)
+- Step 29: Design Freeze — `Design Freeze.docx` + GitHub Issue #52 (`Design Freeze — 2026-06-11 — Beta Frontend`)
+- Token debt noted: `--color-brand-secondary-tint` has two values across files — consolidate before production token export
+- Full token schema: `Implemented Schema.docx` (24 CSS custom properties, colour swatches, `:root` block)
+
+**Phase 8 outputs (COMPLETE — 2026-06-12):**
+- Step 30: Token map (25 CSS vars → Tailwind keys) + Component Registry (14 components)
+- Step 31: Full TypeScript props interfaces, visual states, a11y specs for all 14 components
+- Step 32: Screen implementation notes (data deps, state management, screen states, responsive) for all 7 screens
+- Step 33: Dev Handoff document — `.claude/skills/canvas-design/SAT_Dev_Handoff_Phase8.png` (via claude design, not Figma)
+- Token debt resolved: `--color-brand-secondary-tint` → `#EAF2F1` (canonical, 10% tint of `#2E7D6F`)
+- GitHub Issues: #53 (BE endpoints), #54 (export format), #55 (geo boundary), #56 (animation), #57 (Phase 8 complete tracking)
+- Phase 9 blockers: #53 and #54 must close before `/project/[id]` + export screens can be coded
+
+**Phase 9 outputs (COMPLETE — 2026-06-12):**
+- Step 34: Dependencies installed — zustand, recharts, react-leaflet, leaflet, @supabase/supabase-js, cva, clsx, tailwind-merge, lucide-react
+- Step 34: `globals.css` — full `@theme {}` block (25 CSS custom properties, Tailwind v4 CSS-first)
+- Step 34: `lib/utils.ts` (cn), `lib/stores/auth.ts`, `lib/stores/project.ts`, `lib/stores/analysis.ts`, `lib/api/client.ts`, `lib/api/projects.ts`, `lib/api/analysis.ts`
+- Step 35 Wave 1 (atoms): `Button`, `Input`, `Toggle`, `Checkbox`, `StatusBadge`, `ScoreCircle`
+- Step 35 Wave 1 (map): `MapContainer`, `SiteBoundaryOverlay`, `SiteLabel`, `ZoomControls`
+- Step 35 Wave 2 (layout shells): `TopNav`, `RightPanel`, `AnalysisModuleSection`, `ExportDrawer`
+- Step 36: All 6 screens — `/login`, `/dashboard`, `/project/new`, `/project/[id]`, `/project/[id]?export=true` (ExportDrawer overlay), `/settings`
+- Step 37: TypeScript clean (`npx tsc --noEmit` → no errors) across all components + pages
+- Mock data wired at API layer with `// TODO GH#53/54/55` comments; all unconfirmed endpoints stubbed
+- `AnalysisModuleSection` expand/collapse via CSS `grid-template-rows: 0fr → 1fr` (no framer-motion — resolves #56)
+- React-Leaflet dynamically imported (`next/dynamic`, `ssr: false`) on all map-bearing pages
+
+**Phase 10 outputs (COMPLETE — 2026-06-12):**
+- Step 39: Moderator guide — 5 tasks, observation sheets, issue capture template (`ux-research/phase-10/step-39-moderator-guide.md`)
+- Step 40: Round 1 usability report — 4 Blockers, 1 Major identified (`ux-research/phase-10/step-40-usability-report.md`)
+- Step 41: 4 issues resolved — export button in TopNav, map click handler, populated mock data, export defaults in Settings
+- Step 42: Round 2 — Tasks 1/3/4/5 at 5/5. Beta Readiness Report: GO. GitHub Issue #58.
+- **Beta Readiness: GO** — frontend complete, Supabase env vars required at deploy time
+- Handoff to DevOps: configure `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`, deploy to Vercel preview
+- Open before real data flows: #53 (endpoints), #54 (export format), #55 (geo boundary)
 
 ---
 

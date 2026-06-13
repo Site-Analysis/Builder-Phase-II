@@ -19,6 +19,8 @@ class FeatureFlag(StrEnum):
     WIND_ANALYSIS = "feature.wind.analysis"
     RAINFALL_ARCHIVE = "feature.rainfall.archive"
     RAINFALL_SUMMARY = "feature.rainfall.summary"
+    TERRAIN_ANALYSIS = "feature.terrain.analysis"
+    SIMULATION_3D = "feature.simulation.3d"
 
 
 _enabled: set[str] = {f.strip() for f in os.getenv("FLAGS", "").split(",") if f.strip()}
