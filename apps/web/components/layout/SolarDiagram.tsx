@@ -9,27 +9,27 @@ const SHADOW_DATA = [
 
 export function SolarDiagram() {
   const thStyle: React.CSSProperties = {
-    fontSize: 10, fontWeight: 600, color: "#64748B",
+    fontSize: 10, fontWeight: 600, color: "#7B8F83",
     textTransform: "uppercase", letterSpacing: "0.3px",
     padding: "5px 8px", textAlign: "left",
-    borderBottom: "1px solid #E2E8F0",
+    borderBottom: "1px solid #CFD6C4",
   };
   const tdStyle: React.CSSProperties = {
-    fontSize: 11, color: "#0F172A",
-    padding: "6px 8px", borderBottom: "1px solid #E2E8F0",
+    fontSize: 11, color: "#3A3F3B",
+    padding: "6px 8px", borderBottom: "1px solid #CFD6C4",
     fontFamily: "var(--font-geist-mono), monospace",
   };
   const tdLabelStyle: React.CSSProperties = {
     ...tdStyle,
-    fontFamily: "inherit", color: "#64748B",
+    fontFamily: "inherit", color: "#7B8F83",
   };
 
   return (
     <>
       {/* Solar arc SVG */}
-      <div style={{ background: "#F8F9FA", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+      <div style={{ background: "#F2EDE8", borderRadius: 8, padding: 12, marginBottom: 12 }}>
         <div style={{
-          fontSize: 10, fontWeight: 600, color: "#64748B",
+          fontSize: 10, fontWeight: 600, color: "#7B8F83",
           textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 8,
         }}>
           Solar arc — seasonal paths
@@ -50,25 +50,25 @@ export function SolarDiagram() {
           <line x1="0" y1="138" x2="300" y2="138" stroke="#D1D9E0" strokeWidth="1.5" />
 
           {/* Compass labels */}
-          <text x="8"   y="150" fontSize="8" fill="#94A3B8" fontFamily="inherit">E</text>
-          <text x="146" y="150" fontSize="8" fill="#94A3B8" fontFamily="inherit" textAnchor="middle">S</text>
-          <text x="288" y="150" fontSize="8" fill="#94A3B8" fontFamily="inherit">W</text>
+          <text x="8"   y="150" fontSize="8" fill="#B8C4BB" fontFamily="inherit">E</text>
+          <text x="146" y="150" fontSize="8" fill="#B8C4BB" fontFamily="inherit" textAnchor="middle">S</text>
+          <text x="288" y="150" fontSize="8" fill="#B8C4BB" fontFamily="inherit">W</text>
 
           {/* Zenith guide lines */}
-          <line x1="150" y1="138" x2="150" y2="14" stroke="#E2E8F0" strokeWidth="0.8" strokeDasharray="3 3" />
-          <line x1="150" y1="138" x2="20"  y2="138" stroke="#E2E8F0" strokeWidth="0.8" strokeDasharray="3 3" />
+          <line x1="150" y1="138" x2="150" y2="14" stroke="#CFD6C4" strokeWidth="0.8" strokeDasharray="3 3" />
+          <line x1="150" y1="138" x2="20"  y2="138" stroke="#CFD6C4" strokeWidth="0.8" strokeDasharray="3 3" />
 
           {/* Summer solstice arc (highest) */}
           <path d="M 20 138 Q 150 14 280 138" stroke="#F59E0B" strokeWidth="2.5" fill="none" strokeLinecap="round" />
           {/* Equinox arc (mid, dashed) */}
-          <path d="M 45 138 Q 150 48 255 138" stroke="#D97706" strokeWidth="2" fill="none" strokeLinecap="round" strokeDasharray="5 3" />
+          <path d="M 45 138 Q 150 48 255 138" stroke="#C4865A" strokeWidth="2" fill="none" strokeLinecap="round" strokeDasharray="5 3" />
           {/* Winter solstice arc (lowest) */}
           <path d="M 72 138 Q 150 82 228 138" stroke="#92400E" strokeWidth="1.5" fill="none" strokeLinecap="round" />
 
           {/* Altitude labels */}
-          <text x="155" y="18" fontSize="7" fill="#D97706"
+          <text x="155" y="18" fontSize="7" fill="#C4865A"
             fontFamily="var(--font-geist-mono), monospace">80°</text>
-          <text x="155" y="52" fontSize="7" fill="#D97706"
+          <text x="155" y="52" fontSize="7" fill="#C4865A"
             fontFamily="var(--font-geist-mono), monospace">55°</text>
           <text x="155" y="86" fontSize="7" fill="#92400E"
             fontFamily="var(--font-geist-mono), monospace">32°</text>
@@ -82,7 +82,7 @@ export function SolarDiagram() {
         <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
           {[
             { color: "#F59E0B", dash: false, height: 3,   label: "Summer (Jun 21)" },
-            { color: "#D97706", dash: true,  height: 2,   label: "Equinox"         },
+            { color: "#C4865A", dash: true,  height: 2,   label: "Equinox"         },
             { color: "#92400E", dash: false, height: 1.5, label: "Winter (Dec 21)" },
           ].map(({ color, dash, height, label }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -92,7 +92,7 @@ export function SolarDiagram() {
                 borderRadius: 1,
                 borderTop: dash ? `${height}px dashed ${color}` : "none",
               }} />
-              <span style={{ fontSize: 10, color: "#64748B" }}>{label}</span>
+              <span style={{ fontSize: 10, color: "#7B8F83" }}>{label}</span>
             </div>
           ))}
         </div>
@@ -101,7 +101,7 @@ export function SolarDiagram() {
       {/* Shadow table */}
       <div style={{
         fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-        letterSpacing: "0.5px", color: "#64748B", marginBottom: 8,
+        letterSpacing: "0.5px", color: "#7B8F83", marginBottom: 8,
       }}>
         Shadow length · ratio to building height
       </div>
@@ -117,12 +117,12 @@ export function SolarDiagram() {
         <tbody>
           {SHADOW_DATA.map((row, i) => (
             <tr key={row.season}>
-              <td style={{ ...tdLabelStyle, borderBottom: i === SHADOW_DATA.length - 1 ? "none" : "1px solid #E2E8F0" }}>
+              <td style={{ ...tdLabelStyle, borderBottom: i === SHADOW_DATA.length - 1 ? "none" : "1px solid #CFD6C4" }}>
                 {row.season}
               </td>
-              <td style={{ ...tdStyle, borderBottom: i === SHADOW_DATA.length - 1 ? "none" : "1px solid #E2E8F0" }}>{row.am}</td>
-              <td style={{ ...tdStyle, borderBottom: i === SHADOW_DATA.length - 1 ? "none" : "1px solid #E2E8F0" }}>{row.noon}</td>
-              <td style={{ ...tdStyle, borderBottom: i === SHADOW_DATA.length - 1 ? "none" : "1px solid #E2E8F0" }}>{row.pm}</td>
+              <td style={{ ...tdStyle, borderBottom: i === SHADOW_DATA.length - 1 ? "none" : "1px solid #CFD6C4" }}>{row.am}</td>
+              <td style={{ ...tdStyle, borderBottom: i === SHADOW_DATA.length - 1 ? "none" : "1px solid #CFD6C4" }}>{row.noon}</td>
+              <td style={{ ...tdStyle, borderBottom: i === SHADOW_DATA.length - 1 ? "none" : "1px solid #CFD6C4" }}>{row.pm}</td>
             </tr>
           ))}
         </tbody>

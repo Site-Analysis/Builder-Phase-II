@@ -34,7 +34,7 @@ function InlineToggle({ checked, onChange }: { checked: boolean; onChange: (v: b
       onClick={() => onChange(!checked)}
       style={{
         width: 36, height: 20, borderRadius: 10,
-        background: checked ? "#1A3A5C" : "#CBD5E1",
+        background: checked ? "#657166" : "#CFD6C4",
         border: "none", cursor: "pointer", position: "relative", flexShrink: 0,
         transition: "background 0.15s",
       }}
@@ -58,7 +58,7 @@ function FieldInput({
 }) {
   return (
     <div>
-      <label style={{ fontSize: 12, fontWeight: 500, color: "#0F172A", display: "block", marginBottom: 5 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: "#3A3F3B", display: "block", marginBottom: 5 }}>
         {label}
       </label>
       <input
@@ -68,13 +68,13 @@ function FieldInput({
         readOnly={readOnly}
         placeholder={placeholder}
         style={{
-          width: "100%", height: 40, border: "1.5px solid #E2E8F0", borderRadius: 8,
+          width: "100%", height: 40, border: "1.5px solid #CFD6C4", borderRadius: 8,
           padding: "0 11px", fontSize: 13, fontFamily: "inherit",
-          background: readOnly ? "#F8F9FA" : "white",
-          color: readOnly ? "#64748B" : "#0F172A", outline: "none",
+          background: readOnly ? "#F2EDE8" : "white",
+          color: readOnly ? "#7B8F83" : "#3A3F3B", outline: "none",
         }}
-        onFocus={(e) => { if (!readOnly) { e.target.style.borderColor = "#1A3A5C"; e.target.style.boxShadow = "0 0 0 3px rgba(26,58,92,0.07)"; } }}
-        onBlur={(e)  => { e.target.style.borderColor = "#E2E8F0"; e.target.style.boxShadow = "none"; }}
+        onFocus={(e) => { if (!readOnly) { e.target.style.borderColor = "#99CDD8"; e.target.style.boxShadow = "0 0 0 3px rgba(153,205,216,0.18)"; } }}
+        onBlur={(e)  => { e.target.style.borderColor = "#CFD6C4"; e.target.style.boxShadow = "none"; }}
       />
     </div>
   );
@@ -85,7 +85,7 @@ function LayoutToggle({ mode, onChange }: { mode: "sidebar" | "tabs"; onChange: 
   return (
     <div style={{
       display: "flex", alignItems: "center",
-      background: "#F8F9FA", border: "1px solid #E2E8F0",
+      background: "#F2EDE8", border: "1px solid #CFD6C4",
       borderRadius: 9999, padding: 3, gap: 2,
     }}>
       {(["sidebar", "tabs"] as const).map((m) => (
@@ -95,7 +95,7 @@ function LayoutToggle({ mode, onChange }: { mode: "sidebar" | "tabs"; onChange: 
           style={{
             height: 26, padding: "0 12px", borderRadius: 9999, border: "none",
             background: mode === m ? "white" : "none",
-            color: mode === m ? "#1A3A5C" : "#64748B",
+            color: mode === m ? "#657166" : "#7B8F83",
             fontSize: 12, fontWeight: mode === m ? 600 : 500,
             cursor: "pointer", fontFamily: "inherit",
             boxShadow: mode === m ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
@@ -198,7 +198,7 @@ export default function SettingsPage() {
 
   const toggleRow = (style?: React.CSSProperties) => ({
     display: "flex", alignItems: "center",
-    padding: "11px 0", borderBottom: "1px solid #E2E8F0",
+    padding: "11px 0", borderBottom: "1px solid #CFD6C4",
     ...style,
   } as React.CSSProperties);
 
@@ -207,13 +207,13 @@ export default function SettingsPage() {
   function ProfileHero() {
     return (
       <div style={{
-        background: "white", border: "1px solid #E2E8F0", borderRadius: 14,
+        background: "#FDFCFB", border: "1px solid #CFD6C4", borderRadius: 14,
         padding: "20px 24px", display: "flex", alignItems: "center", gap: 18,
         marginBottom: 20,
       }}>
         <div style={{ position: "relative", flexShrink: 0 }}>
           <div style={{
-            width: 60, height: 60, borderRadius: "50%", background: "#1A3A5C",
+            width: 60, height: 60, borderRadius: "50%", background: "#657166",
             color: "white", display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 19, fontWeight: 600,
           }}>
@@ -222,7 +222,7 @@ export default function SettingsPage() {
           <div style={{
             position: "absolute", bottom: 0, right: 0,
             width: 20, height: 20, borderRadius: "50%",
-            background: "#2E7D6F", border: "2px solid white",
+            background: "#657166", border: "2px solid white",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 9, color: "white", cursor: "pointer",
           }}>
@@ -230,20 +230,20 @@ export default function SettingsPage() {
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#0F172A" }}>{displayName}</div>
-          <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{user?.email}</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#3A3F3B" }}>{displayName}</div>
+          <div style={{ fontSize: 12, color: "#7B8F83", marginTop: 2 }}>{user?.email}</div>
           <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
             <span style={{
               padding: "2px 8px", borderRadius: 9999, fontSize: 10, fontWeight: 600,
-              background: "rgba(26,58,92,0.08)", color: "#1A3A5C",
-              border: "1px solid rgba(26,58,92,0.14)",
+              background: "rgba(101,113,102,0.08)", color: "#657166",
+              border: "1px solid rgba(101,113,102,0.18)",
             }}>
               {studioDisplay}
             </span>
             <span style={{
               padding: "2px 8px", borderRadius: 9999, fontSize: 10, fontWeight: 600,
-              background: "rgba(46,125,111,0.10)", color: "#2E7D6F",
-              border: "1px solid rgba(46,125,111,0.18)",
+              background: "rgba(90,143,106,0.10)", color: "#657166",
+              border: "1px solid rgba(90,143,106,0.18)",
             }}>
               Starter plan
             </span>
@@ -252,8 +252,8 @@ export default function SettingsPage() {
         <button
           style={{
             height: 30, padding: "0 12px",
-            background: "#F8F9FA", border: "1px solid #E2E8F0", borderRadius: 7,
-            fontSize: 11, fontWeight: 500, cursor: "pointer", color: "#64748B",
+            background: "#F2EDE8", border: "1px solid #CFD6C4", borderRadius: 7,
+            fontSize: 11, fontWeight: 500, cursor: "pointer", color: "#7B8F83",
             fontFamily: "inherit", flexShrink: 0,
           }}
         >
@@ -265,10 +265,10 @@ export default function SettingsPage() {
 
   function PersonalDetailsCard() {
     return (
-      <div style={{ background: "white", border: "1px solid #E2E8F0", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
-        <div style={{ padding: "14px 20px", borderBottom: "1px solid #E2E8F0" }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#0F172A" }}>Personal details</div>
-          <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>Your name and contact information.</div>
+      <div style={{ background: "#FDFCFB", border: "1px solid #CFD6C4", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #CFD6C4" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#3A3F3B" }}>Personal details</div>
+          <div style={{ fontSize: 12, color: "#7B8F83", marginTop: 2 }}>Your name and contact information.</div>
         </div>
         <div style={{ padding: "18px 20px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
@@ -284,14 +284,14 @@ export default function SettingsPage() {
           <FieldInput label="Role" value={role} onChange={setRole} placeholder="Architect" />
         </div>
         <div style={{
-          padding: "10px 20px", borderTop: "1px solid #E2E8F0",
-          display: "flex", justifyContent: "flex-end", gap: 8, background: "#F8F9FA",
+          padding: "10px 20px", borderTop: "1px solid #CFD6C4",
+          display: "flex", justifyContent: "flex-end", gap: 8, background: "#F2EDE8",
         }}>
           <button
             onClick={handleDiscard}
             style={{
-              height: 36, padding: "0 14px", background: "none", border: "1px solid #E2E8F0",
-              borderRadius: 8, fontSize: 12, cursor: "pointer", color: "#64748B", fontFamily: "inherit",
+              height: 36, padding: "0 14px", background: "none", border: "1px solid #CFD6C4",
+              borderRadius: 8, fontSize: 12, cursor: "pointer", color: "#7B8F83", fontFamily: "inherit",
             }}
           >
             Discard
@@ -300,7 +300,7 @@ export default function SettingsPage() {
             onClick={handleSave}
             disabled={saving}
             style={{
-              height: 36, padding: "0 16px", background: "#2E7D6F", color: "white",
+              height: 36, padding: "0 16px", background: "#657166", color: "white",
               border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600,
               cursor: saving ? "not-allowed" : "pointer", fontFamily: "inherit",
               opacity: saving ? 0.8 : 1,
@@ -315,17 +315,17 @@ export default function SettingsPage() {
 
   function NotificationsCard() {
     return (
-      <div style={{ background: "white", border: "1px solid #E2E8F0", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
-        <div style={{ padding: "14px 20px", borderBottom: "1px solid #E2E8F0" }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#0F172A" }}>Notifications</div>
-          <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>Choose when SAT alerts you.</div>
+      <div style={{ background: "#FDFCFB", border: "1px solid #CFD6C4", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #CFD6C4" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#3A3F3B" }}>Notifications</div>
+          <div style={{ fontSize: 12, color: "#7B8F83", marginTop: 2 }}>Choose when SAT alerts you.</div>
         </div>
         <div style={{ padding: "4px 20px" }}>
           {NOTIFICATIONS_META.map(({ key, label, desc }, i) => (
             <div key={key} style={toggleRow(i === NOTIFICATIONS_META.length - 1 ? { borderBottom: "none" } : {})}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: "#0F172A" }}>{label}</div>
-                <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>{desc}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: "#3A3F3B" }}>{label}</div>
+                <div style={{ fontSize: 11, color: "#7B8F83", marginTop: 2 }}>{desc}</div>
               </div>
               <InlineToggle
                 checked={notifications[key]}
@@ -340,20 +340,20 @@ export default function SettingsPage() {
 
   function DangerZoneCard() {
     return (
-      <div style={{ background: "white", border: "1px solid #FECACA", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
+      <div style={{ background: "#FDFCFB", border: "1px solid #FECACA", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
         <div style={{ padding: "14px 20px", borderBottom: "1px solid #FECACA", background: "#FEF2F2" }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#DC2626" }}>Danger zone</div>
         </div>
         <div style={{ padding: "18px 20px" }}>
-          <p style={{ fontSize: 13, color: "#64748B", lineHeight: 1.6, marginBottom: 14 }}>
+          <p style={{ fontSize: 13, color: "#7B8F83", lineHeight: 1.6, marginBottom: 14 }}>
             Permanently delete your account and all project data. This cannot be undone.
           </p>
           <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={handleSignOut}
               style={{
-                height: 34, padding: "0 14px", background: "none", border: "1.5px solid #E2E8F0",
-                borderRadius: 8, fontSize: 12, cursor: "pointer", color: "#64748B", fontFamily: "inherit",
+                height: 34, padding: "0 14px", background: "none", border: "1.5px solid #CFD6C4",
+                borderRadius: 8, fontSize: 12, cursor: "pointer", color: "#7B8F83", fontFamily: "inherit",
               }}
             >
               Sign out
@@ -387,12 +387,12 @@ export default function SettingsPage() {
     return (
       <div style={{
         fontSize: 12, fontWeight: 600,
-        color: danger ? "#DC2626" : "#0F172A",
+        color: danger ? "#DC2626" : "#3A3F3B",
         marginBottom: 10, marginTop: 28,
         display: "flex", alignItems: "center", gap: 8,
       }}>
         {label}
-        <div style={{ flex: 1, height: 1, background: danger ? "#FECACA" : "#E2E8F0" }} />
+        <div style={{ flex: 1, height: 1, background: danger ? "#FECACA" : "#CFD6C4" }} />
       </div>
     );
   }
@@ -400,7 +400,7 @@ export default function SettingsPage() {
   function RowsContainer({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
     return (
       <div style={{
-        background: "white", border: "1px solid #E2E8F0", borderRadius: 12,
+        background: "#FDFCFB", border: "1px solid #CFD6C4", borderRadius: 12,
         padding: "0 16px", ...style,
       }}>
         {children}
@@ -414,9 +414,9 @@ export default function SettingsPage() {
     return (
       <div style={{
         display: "flex", alignItems: "center", padding: "10px 0",
-        borderBottom: last ? "none" : "1px solid #E2E8F0",
+        borderBottom: last ? "none" : "1px solid #CFD6C4",
       }}>
-        <span style={{ fontSize: 13, color: "#64748B", width: 160, flexShrink: 0 }}>{label}</span>
+        <span style={{ fontSize: 13, color: "#7B8F83", width: 160, flexShrink: 0 }}>{label}</span>
         <div style={{ flex: 1 }}>{children}</div>
       </div>
     );
@@ -429,12 +429,12 @@ export default function SettingsPage() {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         style={{
-          width: "100%", height: 36, border: "1.5px solid #E2E8F0", borderRadius: 8,
+          width: "100%", height: 36, border: "1.5px solid #CFD6C4", borderRadius: 8,
           padding: "0 10px", fontSize: 13, fontFamily: "inherit",
-          color: "#0F172A", outline: "none", background: "white",
+          color: "#3A3F3B", outline: "none", background: "#FDFCFB",
         }}
-        onFocus={(e) => { e.target.style.borderColor = "#1A3A5C"; }}
-        onBlur={(e)  => { e.target.style.borderColor = "#E2E8F0"; }}
+        onFocus={(e) => { e.target.style.borderColor = "#99CDD8"; e.target.style.boxShadow = "0 0 0 3px rgba(153,205,216,0.18)"; }}
+        onBlur={(e)  => { e.target.style.borderColor = "#CFD6C4"; e.target.style.boxShadow = "none"; }}
       />
     );
   }
@@ -453,7 +453,7 @@ export default function SettingsPage() {
         {/* ── Tab bar (tabs mode only) ──────────────────────────── */}
         {layoutMode === "tabs" && (
           <div style={{
-            height: 44, background: "white", borderBottom: "1px solid #E2E8F0",
+            height: 44, background: "#FDFCFB", borderBottom: "1px solid #CFD6C4",
             display: "flex", alignItems: "flex-end", padding: "0 32px", flexShrink: 0,
           }}>
             {TABS.map((tab) => {
@@ -465,8 +465,8 @@ export default function SettingsPage() {
                   style={{
                     height: 44, padding: "0 14px", border: "none", background: "none",
                     fontSize: 13, fontWeight: active ? 600 : 500, cursor: "pointer",
-                    color: active ? "#1A3A5C" : "#64748B", fontFamily: "inherit",
-                    borderBottom: `2px solid ${active ? "#1A3A5C" : "transparent"}`,
+                    color: active ? "#657166" : "#7B8F83", fontFamily: "inherit",
+                    borderBottom: `2px solid ${active ? "#657166" : "transparent"}`,
                     marginBottom: -1, whiteSpace: "nowrap",
                     transition: "color 0.1s, border-color 0.1s",
                   }}
@@ -484,8 +484,8 @@ export default function SettingsPage() {
           {/* Sidebar (sidebar mode only) */}
           {layoutMode === "sidebar" && (
             <div style={{
-              width: 220, flexShrink: 0, background: "white",
-              borderRight: "1px solid #E2E8F0", padding: "20px 12px",
+              width: 220, flexShrink: 0, background: "#FDFCFB",
+              borderRight: "1px solid #CFD6C4", padding: "20px 12px",
               display: "flex", flexDirection: "column", gap: 2,
               overflowY: "auto",
             }}>
@@ -493,7 +493,7 @@ export default function SettingsPage() {
                 <div key={group}>
                   <div style={{
                     fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-                    letterSpacing: "0.5px", color: "#CBD5E1",
+                    letterSpacing: "0.5px", color: "#CFD6C4",
                     padding: "0 8px", marginBottom: 4, marginTop: group === "prefs" ? 14 : 0,
                   }}>
                     {group === "account" ? "Account" : "Preferences"}
@@ -508,12 +508,12 @@ export default function SettingsPage() {
                           display: "flex", alignItems: "center", gap: 9, padding: "8px 10px",
                           borderRadius: 8, width: "100%", border: "none", cursor: "pointer",
                           textAlign: "left", fontFamily: "inherit",
-                          background: active ? "#EFF6FF" : "none",
-                          color: active ? "#1A3A5C" : "#64748B",
+                          background: active ? "#DAEBE3" : "none",
+                          color: active ? "#657166" : "#7B8F83",
                           fontSize: 13, fontWeight: active ? 500 : 400,
                         }}
-                        onMouseEnter={(e) => { if (!active) { (e.currentTarget).style.background = "#F8F9FA"; (e.currentTarget).style.color = "#0F172A"; } }}
-                        onMouseLeave={(e) => { if (!active) { (e.currentTarget).style.background = "none"; (e.currentTarget).style.color = "#64748B"; } }}
+                        onMouseEnter={(e) => { if (!active) { (e.currentTarget).style.background = "#F2EDE8"; (e.currentTarget).style.color = "#3A3F3B"; } }}
+                        onMouseLeave={(e) => { if (!active) { (e.currentTarget).style.background = "none"; (e.currentTarget).style.color = "#7B8F83"; } }}
                       >
                         <span style={{ opacity: active ? 1 : 0.45, display: "flex" }}>
                           {item.icon}
@@ -529,7 +529,7 @@ export default function SettingsPage() {
               <div style={{ marginTop: "auto", paddingTop: 8 }}>
                 <div style={{
                   fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-                  letterSpacing: "0.5px", color: "#CBD5E1", padding: "0 8px", marginBottom: 4,
+                  letterSpacing: "0.5px", color: "#CFD6C4", padding: "0 8px", marginBottom: 4,
                 }}>
                   Danger zone
                 </div>
@@ -562,10 +562,10 @@ export default function SettingsPage() {
               {layoutMode === "sidebar" && (
                 <>
                   <div style={{ marginBottom: 24 }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: "#0F172A" }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#3A3F3B" }}>
                       {SIDEBAR_ITEMS.find((s) => s.key === activeSection)?.label ?? "Settings"}
                     </div>
-                    <div style={{ fontSize: 13, color: "#64748B", marginTop: 3 }}>
+                    <div style={{ fontSize: 13, color: "#7B8F83", marginTop: 3 }}>
                       Manage your personal details and preferences.
                     </div>
                   </div>
@@ -600,8 +600,8 @@ export default function SettingsPage() {
                           <TabsInlineInput value={lastName} onChange={setLastName} />
                         </InlineRow>
                         <InlineRow label="Email address">
-                          <span style={{ fontSize: 13, color: "#0F172A", flex: 1 }}>{user?.email}</span>
-                          <button style={{ fontSize: 11, color: "#2E7D6F", cursor: "pointer", fontWeight: 500, background: "none", border: "none", marginLeft: 8, fontFamily: "inherit" }}>
+                          <span style={{ fontSize: 13, color: "#3A3F3B", flex: 1 }}>{user?.email}</span>
+                          <button style={{ fontSize: 11, color: "#5A8F6A", cursor: "pointer", fontWeight: 500, background: "none", border: "none", marginLeft: 8, fontFamily: "inherit" }}>
                             Change →
                           </button>
                         </InlineRow>
@@ -617,8 +617,8 @@ export default function SettingsPage() {
                           onClick={handleDiscard}
                           style={{
                             height: 36, padding: "0 14px", background: "none",
-                            border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12,
-                            cursor: "pointer", color: "#64748B", fontFamily: "inherit",
+                            border: "1px solid #CFD6C4", borderRadius: 8, fontSize: 12,
+                            cursor: "pointer", color: "#7B8F83", fontFamily: "inherit",
                           }}
                         >
                           Discard
@@ -626,7 +626,7 @@ export default function SettingsPage() {
                         <button
                           onClick={handleSave}
                           style={{
-                            height: 36, padding: "0 16px", background: "#2E7D6F", color: "white",
+                            height: 36, padding: "0 16px", background: "#657166", color: "white",
                             border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600,
                             cursor: "pointer", fontFamily: "inherit",
                           }}
@@ -644,11 +644,11 @@ export default function SettingsPage() {
                         {NOTIFICATIONS_META.map(({ key, label, desc }, i) => (
                           <div key={key} style={{
                             display: "flex", alignItems: "center", padding: "11px 0",
-                            borderBottom: i === NOTIFICATIONS_META.length - 1 ? "none" : "1px solid #E2E8F0",
+                            borderBottom: i === NOTIFICATIONS_META.length - 1 ? "none" : "1px solid #CFD6C4",
                           }}>
                             <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 500, color: "#0F172A" }}>{label}</div>
-                              <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>{desc}</div>
+                              <div style={{ fontSize: 13, fontWeight: 500, color: "#3A3F3B" }}>{label}</div>
+                              <div style={{ fontSize: 11, color: "#7B8F83", marginTop: 2 }}>{desc}</div>
                             </div>
                             <InlineToggle
                               checked={notifications[key]}
@@ -666,8 +666,8 @@ export default function SettingsPage() {
                       <RowsContainer style={{ border: "1px solid #FECACA" }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0" }}>
                           <div>
-                            <div style={{ fontSize: 13, fontWeight: 500, color: "#0F172A" }}>Delete account</div>
-                            <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: "#3A3F3B" }}>Delete account</div>
+                            <div style={{ fontSize: 11, color: "#7B8F83", marginTop: 2 }}>
                               Permanently deletes your account and all project data. Cannot be undone.
                             </div>
                           </div>
@@ -687,7 +687,7 @@ export default function SettingsPage() {
                   )}
 
                   {(activeTab === "studio" || activeTab === "preferences") && (
-                    <div style={{ marginTop: 32, fontSize: 13, color: "#64748B", textAlign: "center" }}>
+                    <div style={{ marginTop: 32, fontSize: 13, color: "#7B8F83", textAlign: "center" }}>
                       Coming soon
                     </div>
                   )}

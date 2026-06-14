@@ -10,6 +10,14 @@ import type { ActiveModuleInfo } from "@/components/layout/RightPanel";
 import { AnalysisModuleSection } from "@/components/layout/AnalysisModuleSection";
 import { ModuleDetailCard } from "@/components/layout/ModuleDetailCard";
 import { SolarDiagram } from "@/components/layout/SolarDiagram";
+import { FloodRiskPanel } from "@/components/layout/FloodRiskPanel";
+import { FloodZoneOverlay } from "@/components/map/FloodZoneOverlay";
+import { WindPanel } from "@/components/layout/WindPanel";
+import { WindOverlay } from "@/components/map/WindOverlay";
+import { RainfallPanel } from "@/components/layout/RainfallPanel";
+import { RainfallOverlay } from "@/components/map/RainfallOverlay";
+import { TemperaturePanel } from "@/components/layout/TemperaturePanel";
+import { TemperatureOverlay } from "@/components/map/TemperatureOverlay";
 import { useAuthStore } from "@/lib/stores/auth";
 import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
@@ -36,6 +44,30 @@ const SiteBoundaryOverlay = dynamic(
 );
 const SiteLabel = dynamic(
   () => import("@/components/map/SiteLabel").then((m) => m.SiteLabel),
+  { ssr: false }
+);
+const FloodZoneRings = dynamic(
+  () => import("@/components/map/FloodZoneRings").then((m) => m.FloodZoneRings),
+  { ssr: false }
+);
+const WindRose = dynamic(
+  () => import("@/components/map/WindRose").then((m) => m.WindRose),
+  { ssr: false }
+);
+const RainfallRose = dynamic(
+  () => import("@/components/map/RainfallRose").then((m) => m.RainfallRose),
+  { ssr: false }
+);
+const ThermalField = dynamic(
+  () => import("@/components/map/ThermalField").then((m) => m.ThermalField),
+  { ssr: false }
+);
+const DrawTools = dynamic(
+  () => import("@/components/map/DrawTools").then((m) => m.DrawTools),
+  { ssr: false }
+);
+const MapSearch = dynamic(
+  () => import("@/components/map/MapSearch").then((m) => m.MapSearch),
   { ssr: false }
 );
 
@@ -88,7 +120,7 @@ export default function ProjectPage() {
   } = useAnalysisStore();
 
   const [project,      setProject]      = useState<Awaited<ReturnType<typeof getProject>> | null>(null);
-  const [center,       setCenter]       = useState<[number, number]>([20.5937, 78.9629]);
+  const [center,       setCenter]       = useState<[number, number]>([12.9716, 77.5946]);
   const [detailModule, setDetailModule] = useState<ModuleId | null>(null);
   const [expanded,     setExpanded]     = useState<Record<ModuleId, boolean>>({
     flood: true, sunpath: false, wind: false, temperature: false, rainfall: false,
@@ -105,8 +137,8 @@ export default function ProjectPage() {
       setProject(p);
       setCurrentProject(p);
 
-      // Extract lat/lng from the GeoJSON Point boundary, fall back to India centroid
-      let lat = 20.5937, lng = 78.9629;
+      // Extract lat/lng from the GeoJSON Point boundary, fall back to Bangalore
+      let lat = 12.9716, lng = 77.5946;
       if (p.boundary?.type === "Point" && Array.isArray(p.boundary.coordinates)) {
         lng = p.boundary.coordinates[0] as number;
         lat = p.boundary.coordinates[1] as number;
@@ -202,7 +234,7 @@ export default function ProjectPage() {
       />
 
       {/* Main layout — overview vs module detail */}
-      <div className="pt-14 flex flex-1 overflow-hidden">
+      <div className="pt-14 flex flex-1 min-h-0 overflow-hidden">
 
         {/* ── Module detail mode: icon rail + full map + floating card ── */}
         {detailModule !== null && (() => {
@@ -212,14 +244,14 @@ export default function ProjectPage() {
             <>
               {/* Icon rail (52px) */}
               <div style={{
-                width: 52, flexShrink: 0, background: "rgba(255,255,255,0.95)",
+                width: 52, flexShrink: 0, background: "rgba(253,252,251,0.95)",
                 borderRight: "1px solid #E2E8F0",
                 display: "flex", flexDirection: "column", alignItems: "center",
                 padding: "12px 0", gap: 4, zIndex: 10,
               }}>
                 {/* Score pill */}
                 <div style={{
-                  background: "#1A3A5C", color: "white", borderRadius: 9999,
+                  background: "#657166", color: "white", borderRadius: 9999,
                   padding: "4px 8px", fontSize: 11, fontWeight: 700, marginBottom: 8,
                 }}>
                   {siteScore?.overall_score ?? "—"}
@@ -237,10 +269,10 @@ export default function ProjectPage() {
                         width: 36, height: 36, borderRadius: 10,
                         display: "flex", flexDirection: "column", alignItems: "center",
                         justifyContent: "center", gap: 2, cursor: "pointer",
-                        border: "none", background: active ? "#EFF6FF" : "none",
+                        border: "none", background: active ? "#DAEBE3" : "none",
                         position: "relative",
                       }}
-                      onMouseEnter={(e) => { if (!active) (e.currentTarget).style.background = "#F8F9FA"; }}
+                      onMouseEnter={(e) => { if (!active) (e.currentTarget).style.background = "#F2EDE8"; }}
                       onMouseLeave={(e) => { if (!active) (e.currentTarget).style.background = "none"; }}
                     >
                       {active && (
@@ -250,7 +282,7 @@ export default function ProjectPage() {
                         }} />
                       )}
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, display: "inline-block" }} />
-                      <span style={{ color: active ? color : "#94A3B8", display: "flex" }}>
+                      <span style={{ color: active ? color : "#B8C4BB", display: "flex" }}>
                         {icon}
                       </span>
                     </button>
@@ -258,7 +290,7 @@ export default function ProjectPage() {
                 })}
 
                 {/* Separator */}
-                <div style={{ width: 24, height: 1, background: "#E2E8F0", margin: "4px 0" }} />
+                <div style={{ width: 24, height: 1, background: "#CFD6C4", margin: "4px 0" }} />
 
                 {/* Back to overview */}
                 <button
@@ -267,10 +299,10 @@ export default function ProjectPage() {
                   style={{
                     width: 36, height: 36, borderRadius: 10, border: "none",
                     background: "none", cursor: "pointer", display: "flex",
-                    alignItems: "center", justifyContent: "center", color: "#94A3B8",
+                    alignItems: "center", justifyContent: "center", color: "#B8C4BB",
                   }}
-                  onMouseEnter={(e) => { (e.currentTarget).style.background = "#F8F9FA"; (e.currentTarget).style.color = "#1A3A5C"; }}
-                  onMouseLeave={(e) => { (e.currentTarget).style.background = "none"; (e.currentTarget).style.color = "#94A3B8"; }}
+                  onMouseEnter={(e) => { (e.currentTarget).style.background = "#F2EDE8"; (e.currentTarget).style.color = "#657166"; }}
+                  onMouseLeave={(e) => { (e.currentTarget).style.background = "none"; (e.currentTarget).style.color = "#B8C4BB"; }}
                 >
                   <Settings size={15} aria-hidden />
                 </button>
@@ -278,7 +310,8 @@ export default function ProjectPage() {
 
               {/* Full-screen map with floating card */}
               <div className="relative flex-1">
-                <MapContainer mode="full-screen" center={center}>
+                <MapContainer mode="full-screen" center={center} zoom={16}>
+
                   {project?.boundary && (
                     <SiteBoundaryOverlay
                       shape="circle"
@@ -295,7 +328,35 @@ export default function ProjectPage() {
                       })}
                     />
                   )}
+                  {detailModule === "flood" && result && !result.loading && !result.error && (
+                    <FloodZoneRings center={center} result={result} />
+                  )}
+                  {detailModule === "wind" && result && !result.loading && !result.error && (
+                    <WindRose center={center} result={result} />
+                  )}
+                  {detailModule === "rainfall" && result && !result.loading && !result.error && (
+                    <RainfallRose center={center} result={result} />
+                  )}
+                  {detailModule === "temperature" && result && !result.loading && !result.error && (
+                    <ThermalField center={center} result={result} />
+                  )}
+                  <DrawTools />
+                  <MapSearch />
                 </MapContainer>
+
+                {/* HTML badge + legend overlay — not inside Leaflet */}
+                {detailModule === "flood" && result && !result.loading && !result.error && (
+                  <FloodZoneOverlay result={result} />
+                )}
+                {detailModule === "wind" && result && !result.loading && !result.error && (
+                  <WindOverlay result={result} />
+                )}
+                {detailModule === "rainfall" && result && !result.loading && !result.error && (
+                  <RainfallOverlay result={result} />
+                )}
+                {detailModule === "temperature" && result && !result.loading && !result.error && (
+                  <TemperatureOverlay result={result} />
+                )}
 
                 <ModuleDetailCard
                   moduleId={detailModule}
@@ -321,11 +382,11 @@ export default function ProjectPage() {
           <>
             {/* Map */}
             <div className="relative flex-1">
-              <MapContainer mode="split" center={center}>
+              <MapContainer mode="split" center={center} zoom={16}>
                 {project?.boundary && (
                   <SiteBoundaryOverlay
                     shape="circle"
-                    coordinates={{ center: [20.5937, 78.9629], radius: 200 }}
+                    coordinates={{ center, radius: 200 }}
                   />
                 )}
                 {project && (
@@ -338,7 +399,34 @@ export default function ProjectPage() {
                     })}
                   />
                 )}
+                {expanded.flood && modules.flood && !modules.flood.loading && !modules.flood.error && (
+                  <FloodZoneRings center={center} result={modules.flood} />
+                )}
+                {expanded.wind && modules.wind && !modules.wind.loading && !modules.wind.error && (
+                  <WindRose center={center} result={modules.wind} />
+                )}
+                {expanded.rainfall && modules.rainfall && !modules.rainfall.loading && !modules.rainfall.error && (
+                  <RainfallRose center={center} result={modules.rainfall} />
+                )}
+                {expanded.temperature && modules.temperature && !modules.temperature.loading && !modules.temperature.error && (
+                  <ThermalField center={center} result={modules.temperature} />
+                )}
+                <DrawTools />
+                <MapSearch />
               </MapContainer>
+              {/* HTML badge + legend overlay — not inside Leaflet */}
+              {expanded.flood && modules.flood && !modules.flood.loading && !modules.flood.error && (
+                <FloodZoneOverlay result={modules.flood} />
+              )}
+              {expanded.wind && modules.wind && !modules.wind.loading && !modules.wind.error && (
+                <WindOverlay result={modules.wind} />
+              )}
+              {expanded.rainfall && modules.rainfall && !modules.rainfall.loading && !modules.rainfall.error && (
+                <RainfallOverlay result={modules.rainfall} />
+              )}
+              {expanded.temperature && modules.temperature && !modules.temperature.loading && !modules.temperature.error && (
+                <TemperatureOverlay result={modules.temperature} />
+              )}
             </div>
 
             {/* Right panel */}
@@ -367,7 +455,14 @@ export default function ProjectPage() {
                     qualitative={result?.qualitative}
                     dataSource={result?.data_source}
                     summary={result?.summary}
-                    moduleSpecificContent={moduleId === "sunpath" ? <SolarDiagram /> : undefined}
+                    moduleSpecificContent={
+                      moduleId === "sunpath" ? <SolarDiagram /> :
+                      moduleId === "flood"   ? <FloodRiskPanel result={result} severity={result?.severity ?? "none"} /> :
+                      moduleId === "wind"    ? <WindPanel result={result} severity={result?.severity ?? "none"} /> :
+                      moduleId === "rainfall" ? <RainfallPanel result={result} severity={result?.severity ?? "none"} /> :
+                      moduleId === "temperature" ? <TemperaturePanel result={result} severity={result?.severity ?? "none"} /> :
+                      undefined
+                    }
                     expanded={expanded[moduleId]}
                     onToggle={() => toggleModule(moduleId)}
                     onDetailClick={() => setDetailModule(moduleId)}

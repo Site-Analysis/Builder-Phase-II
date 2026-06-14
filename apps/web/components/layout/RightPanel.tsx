@@ -49,16 +49,16 @@ function ScoreDonut({ score }: { score: number }) {
     <div
       style={{
         width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
-        background: `conic-gradient(#2E7D6F ${deg}deg, #E2E8F0 0deg)`,
+        background: `conic-gradient(#5A8F6A ${deg}deg, #CFD6C4 0deg)`,
         display: "flex", alignItems: "center", justifyContent: "center",
       }}
     >
       <div style={{
-        width: 48, height: 48, borderRadius: "50%", background: "#F8F9FA",
+        width: 48, height: 48, borderRadius: "50%", background: "#FDFCFB",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: "#0F172A", lineHeight: 1 }}>{score}</span>
-        <span style={{ fontSize: 8, color: "#64748B", fontWeight: 500, textTransform: "uppercase", marginTop: 1 }}>SITE</span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: "#3A3F3B", lineHeight: 1 }}>{score}</span>
+        <span style={{ fontSize: 8, color: "#7B8F83", fontWeight: 500, textTransform: "uppercase", marginTop: 1 }}>SITE</span>
       </div>
     </div>
   );
@@ -72,7 +72,7 @@ function ModuleScoreRing({ score, color, label }: { score: number; color: string
   return (
     <div style={{ width: 68, height: 68, position: "relative", flexShrink: 0 }}>
       <svg viewBox="0 0 68 68" width={68} height={68} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx="34" cy="34" r={r} fill="none" stroke="#E2E8F0" strokeWidth="5" />
+        <circle cx="34" cy="34" r={r} fill="none" stroke="#CFD6C4" strokeWidth="5" />
         <circle
           cx="34" cy="34" r={r} fill="none"
           stroke={color} strokeWidth="5" strokeLinecap="round"
@@ -83,8 +83,8 @@ function ModuleScoreRing({ score, color, label }: { score: number; color: string
         position: "absolute", inset: 0,
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: "#0F172A", lineHeight: 1 }}>{score}</span>
-        <span style={{ fontSize: 7, fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.3px", marginTop: 1 }}>
+        <span style={{ fontSize: 16, fontWeight: 700, color: "#3A3F3B", lineHeight: 1 }}>{score}</span>
+        <span style={{ fontSize: 7, fontWeight: 600, color: "#7B8F83", textTransform: "uppercase", letterSpacing: "0.3px", marginTop: 1 }}>
           {label}
         </span>
       </div>
@@ -105,15 +105,15 @@ export function RightPanel({
   return (
     <aside
       className={cn(
-        "flex flex-col h-full bg-neutral-surface border-l border-neutral-border overflow-hidden",
-        "w-[360px] shrink-0",
+        "relative bg-neutral-surface border-l border-neutral-border overflow-hidden",
+        "w-[360px] shrink-0 h-[calc(100vh-3.5rem)]",
         className
       )}
       role="complementary"
       aria-label="Site analysis results"
     >
       {state === "loading" && (
-        <div className="p-4 space-y-3">
+        <div className="absolute inset-0 p-4 space-y-3 overflow-y-auto">
           <div className="flex items-center gap-3 p-4 rounded-[10px] border border-neutral-border bg-neutral-bg">
             <Skeleton className="h-16 w-16 rounded-full shrink-0" />
             <div className="flex-1 space-y-2">
@@ -130,8 +130,8 @@ export function RightPanel({
 
       {state === "populated" && (
         <div
-          className="flex-1 overflow-y-auto"
-          style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}
+          className="absolute inset-0 overflow-y-auto space-y-3"
+          style={{ padding: 16 }}
         >
           {/* ── Score card — module-tinted when a module is expanded ── */}
           {activeModule ? (() => {
@@ -145,10 +145,10 @@ export function RightPanel({
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <ModuleScoreRing score={activeModule.score} color={activeModule.color} label={activeModule.label} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#0F172A" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#3A3F3B" }}>
                       {activeModule.verdict}
                     </div>
-                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: "#7B8F83", marginTop: 2 }}>
                       {moduleProgress
                         ? `${moduleProgress.complete} of ${moduleProgress.total} modules · Site score ${overallScore}`
                         : `Site score ${overallScore}`}
@@ -164,7 +164,7 @@ export function RightPanel({
                   <div style={{
                     marginTop: 10, paddingTop: 10,
                     borderTop: `1px solid rgba(${r},${g},${b},0.15)`,
-                    fontSize: 11, color: "#64748B", lineHeight: 1.55,
+                    fontSize: 11, color: "#7B8F83", lineHeight: 1.55,
                   }}>
                     {activeModule.desc}
                   </div>
@@ -172,14 +172,14 @@ export function RightPanel({
               </div>
             );
           })() : (
-            <div style={{ background: "#F8F9FA", border: "1px solid #E2E8F0", borderRadius: 10, padding: 16 }}>
+            <div style={{ background: "#F2EDE8", border: "1px solid #CFD6C4", borderRadius: 10, padding: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <ScoreDonut score={overallScore} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0F172A" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#3A3F3B" }}>
                     {verdictText ?? "Analysing site…"}
                   </div>
-                  <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                  <div style={{ fontSize: 11, color: "#7B8F83", marginTop: 2 }}>
                     {moduleProgress
                       ? `${moduleProgress.complete} / ${moduleProgress.total} modules complete`
                       : "Loading…"}
@@ -193,8 +193,8 @@ export function RightPanel({
               </div>
               {descText && (
                 <div style={{
-                  marginTop: 10, paddingTop: 10, borderTop: "1px solid #E2E8F0",
-                  fontSize: 11, color: "#64748B", lineHeight: 1.55,
+                  marginTop: 10, paddingTop: 10, borderTop: "1px solid #CFD6C4",
+                  fontSize: 11, color: "#7B8F83", lineHeight: 1.55,
                 }}>
                   {descText}
                 </div>
@@ -205,7 +205,7 @@ export function RightPanel({
           {/* ── Module sections ─────────────────────────────────────── */}
           {children}
 
-          <p style={{ fontSize: 10, color: "#9CA3AF", fontStyle: "italic", padding: "2px 0" }}>
+          <p style={{ fontSize: 10, color: "#B8C4BB", fontStyle: "italic", padding: "2px 0" }}>
             Click any module header to expand or collapse
           </p>
         </div>

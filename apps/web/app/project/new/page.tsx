@@ -23,6 +23,14 @@ const MapClickHandler = dynamic(
   () => import("@/components/map/MapClickHandler").then((m) => m.MapClickHandler),
   { ssr: false }
 );
+const DrawTools = dynamic(
+  () => import("@/components/map/DrawTools").then((m) => m.DrawTools),
+  { ssr: false }
+);
+const MapSearch = dynamic(
+  () => import("@/components/map/MapSearch").then((m) => m.MapSearch),
+  { ssr: false }
+);
 
 // TODO GH#55: boundary is a 200 m circle — replace with /api/geo/site-boundary when confirmed
 
@@ -46,17 +54,17 @@ function ModuleSelector({
   return (
     <div style={{
       position: "absolute", top: 16, right: 16, width: 300, zIndex: 500,
-      background: "rgba(255,255,255,0.97)", backdropFilter: "blur(6px)",
-      border: "1px solid #E2E8F0", borderRadius: 12,
+      background: "rgba(253,252,251,0.97)", backdropFilter: "blur(6px)",
+      border: "1px solid #CFD6C4", borderRadius: 12,
       boxShadow: "0 8px 30px rgba(0,0,0,0.12)", overflow: "hidden",
     }}>
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "12px 14px", borderBottom: "1px solid #E2E8F0",
+        padding: "12px 14px", borderBottom: "1px solid #CFD6C4",
       }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>Analyses to run</div>
-          <div style={{ fontSize: 11, color: "#64748B", marginTop: 1 }}>{selected.size} of 5 selected</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#3A3F3B" }}>Analyses to run</div>
+          <div style={{ fontSize: 11, color: "#7B8F83", marginTop: 1 }}>{selected.size} of 5 selected</div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button onClick={onAll}  style={pillBtn}>All</button>
@@ -82,17 +90,17 @@ function ModuleSelector({
               <span style={{
                 width: 30, height: 30, borderRadius: 8, flexShrink: 0,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                background: on ? m.color : "#F1F5F9", color: on ? "#fff" : "#94A3B8",
+                background: on ? m.color : "#F0EDE9", color: on ? "#fff" : "#B8C4BB",
               }}>
                 {m.icon}
               </span>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#0F172A" }}>{m.name}</span>
-                <span style={{ display: "block", fontSize: 10.5, color: "#64748B" }}>{m.desc}</span>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#3A3F3B" }}>{m.name}</span>
+                <span style={{ display: "block", fontSize: 10.5, color: "#7B8F83" }}>{m.desc}</span>
               </span>
               <span style={{
                 width: 18, height: 18, borderRadius: 5, flexShrink: 0,
-                border: on ? "none" : "1.5px solid #CBD5E1",
+                border: on ? "none" : "1.5px solid #CFD6C4",
                 background: on ? m.color : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#fff", fontSize: 11, fontWeight: 700,
@@ -108,8 +116,8 @@ function ModuleSelector({
 }
 
 const pillBtn: React.CSSProperties = {
-  height: 24, padding: "0 9px", borderRadius: 6, border: "1px solid #E2E8F0",
-  background: "#fff", color: "#64748B", fontSize: 11, fontWeight: 600,
+  height: 24, padding: "0 9px", borderRadius: 6, border: "1px solid #CFD6C4",
+  background: "#fff", color: "#7B8F83", fontSize: 11, fontWeight: 600,
   cursor: "pointer", fontFamily: "inherit",
 };
 
@@ -149,9 +157,9 @@ function SearchBar({
   nameInputRef,
 }: SearchBarProps) {
   const inputBase: React.CSSProperties = {
-    height: 34, border: "1.5px solid #E2E8F0", borderRadius: 8,
+    height: 34, border: "1.5px solid #CFD6C4", borderRadius: 8,
     padding: "0 11px", fontSize: 13, fontFamily: "inherit",
-    color: "#0F172A", outline: "none", background: "#F8F9FA",
+    color: "#3A3F3B", outline: "none", background: "#F2EDE8",
   };
 
   if (!pinDropped) {
@@ -163,19 +171,19 @@ function SearchBar({
           onChange={(e) => onAddressChange(e.target.value)}
           placeholder="Search address, place, or paste lat, lon…"
           style={{ ...inputBase, flex: 1 }}
-          onFocus={(e) => { e.target.style.borderColor = "#1A3A5C"; e.target.style.background = "#fff"; }}
-          onBlur={(e)  => { e.target.style.borderColor = "#E2E8F0"; e.target.style.background = "#F8F9FA"; }}
+          onFocus={(e) => { e.target.style.borderColor = "#99CDD8"; e.target.style.background = "#FDFCFB"; }}
+          onBlur={(e)  => { e.target.style.borderColor = "#CFD6C4"; e.target.style.background = "#F2EDE8"; }}
         />
         <button
           type="button"
           onClick={onCurrentLocation}
           style={{
             height: 34, padding: "0 12px", borderRadius: 8,
-            border: "1.5px solid #1A3A5C", background: "none",
-            color: "#1A3A5C", fontSize: 12, fontWeight: 600,
+            border: "1.5px solid #657166", background: "none",
+            color: "#657166", fontSize: 12, fontWeight: 600,
             cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit",
           }}
-          onMouseEnter={(e) => { (e.currentTarget).style.background = "#EFF6FF"; }}
+          onMouseEnter={(e) => { (e.currentTarget).style.background = "#DAEBE3"; }}
           onMouseLeave={(e) => { (e.currentTarget).style.background = "none"; }}
         >
           Use current location
@@ -190,11 +198,11 @@ function SearchBar({
       {/* Confirmed address */}
       <div style={{
         display: "flex", alignItems: "center", gap: 6, height: 34,
-        padding: "0 10px", borderRadius: 8, border: "1.5px solid #16A34A",
-        background: "#F0FDF4", minWidth: 0, maxWidth: 200, flexShrink: 0,
+        padding: "0 10px", borderRadius: 8, border: "1.5px solid #5A8F6A",
+        background: "#E4F0E8", minWidth: 0, maxWidth: 200, flexShrink: 0,
       }}>
-        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#16A34A", flexShrink: 0 }} />
-        <span style={{ fontSize: 12, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#5A8F6A", flexShrink: 0 }} />
+        <span style={{ fontSize: 12, color: "#3A3F3B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {address}
         </span>
       </div>
@@ -205,18 +213,18 @@ function SearchBar({
         onClick={onReset}
         style={{
           height: 34, padding: "0 10px", borderRadius: 8,
-          border: "1.5px solid #E2E8F0", background: "none",
-          color: "#64748B", fontSize: 12, fontWeight: 500,
+          border: "1.5px solid #CFD6C4", background: "none",
+          color: "#7B8F83", fontSize: 12, fontWeight: 500,
           cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", flexShrink: 0,
         }}
-        onMouseEnter={(e) => { (e.currentTarget).style.borderColor = "#1A3A5C"; (e.currentTarget).style.color = "#1A3A5C"; }}
-        onMouseLeave={(e) => { (e.currentTarget).style.borderColor = "#E2E8F0"; (e.currentTarget).style.color = "#64748B"; }}
+        onMouseEnter={(e) => { (e.currentTarget).style.borderColor = "#657166"; (e.currentTarget).style.color = "#657166"; }}
+        onMouseLeave={(e) => { (e.currentTarget).style.borderColor = "#CFD6C4"; (e.currentTarget).style.color = "#7B8F83"; }}
       >
         Change
       </button>
 
       {/* Divider */}
-      <div style={{ width: 1, height: 20, background: "#E2E8F0", flexShrink: 0 }} />
+      <div style={{ width: 1, height: 20, background: "#CFD6C4", flexShrink: 0 }} />
 
       {/* Project name */}
       <input
@@ -228,11 +236,11 @@ function SearchBar({
         style={{
           ...inputBase,
           flex: 1,
-          borderColor: error ? "#DC2626" : "#E2E8F0",
+          borderColor: error ? "#DC2626" : "#CFD6C4",
           minWidth: 120,
         }}
-        onFocus={(e) => { e.target.style.borderColor = "#1A3A5C"; e.target.style.background = "#fff"; e.target.style.boxShadow = "0 0 0 3px rgba(26,58,92,0.08)"; }}
-        onBlur={(e)  => { e.target.style.borderColor = error ? "#DC2626" : "#E2E8F0"; e.target.style.background = "#F8F9FA"; e.target.style.boxShadow = "none"; }}
+        onFocus={(e) => { e.target.style.borderColor = "#99CDD8"; e.target.style.background = "#FDFCFB"; e.target.style.boxShadow = "0 0 0 3px rgba(153,205,216,0.18)"; }}
+        onBlur={(e)  => { e.target.style.borderColor = error ? "#DC2626" : "#CFD6C4"; e.target.style.background = "#F2EDE8"; e.target.style.boxShadow = "none"; }}
       />
 
       {/* Start */}
@@ -242,14 +250,14 @@ function SearchBar({
         disabled={creating}
         style={{
           height: 34, padding: "0 14px", borderRadius: 8,
-          background: creating ? "#256B5F" : "#2E7D6F",
+          background: creating ? "#4D5850" : "#657166",
           color: "white", border: "none", fontSize: 13, fontWeight: 600,
           cursor: creating ? "not-allowed" : "pointer",
           whiteSpace: "nowrap", fontFamily: "inherit", flexShrink: 0,
           opacity: creating ? 0.8 : 1,
         }}
-        onMouseEnter={(e) => { if (!creating) (e.currentTarget).style.background = "#256B5F"; }}
-        onMouseLeave={(e) => { if (!creating) (e.currentTarget).style.background = "#2E7D6F"; }}
+        onMouseEnter={(e) => { if (!creating) (e.currentTarget).style.background = "#4D5850"; }}
+        onMouseLeave={(e) => { if (!creating) (e.currentTarget).style.background = "#657166"; }}
       >
         {creating ? "Creating…" : "Start Analysis →"}
       </button>
@@ -266,13 +274,11 @@ export default function NewAnalysisPage() {
 
   const [address,     setAddress]     = useState("");
   const [projectName, setProjectName] = useState("");
-  const [center,      setCenter]      = useState<[number, number]>([20.5937, 78.9629]);
+  const [center,      setCenter]      = useState<[number, number]>([12.9716, 77.5946]);
   const [pinDropped,  setPinDropped]  = useState(false);
   const [creating,    setCreating]    = useState(false);
   const [error,       setError]       = useState("");
-  const [selected,    setSelected]    = useState<Set<ModuleId>>(
-    new Set(["sunpath", "flood", "temperature", "wind", "rainfall"])
-  );
+  const [selected,    setSelected]    = useState<Set<ModuleId>>(new Set());
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   function toggleModule(id: ModuleId) {
@@ -380,6 +386,8 @@ export default function NewAnalysisPage() {
               coordinates={{ center, radius: 200 }}
             />
           )}
+          <DrawTools />
+          <MapSearch />
         </MapContainer>
 
         {/* Module selector — appears once a pin is placed */}
@@ -407,7 +415,7 @@ export default function NewAnalysisPage() {
         {/* Hint strip */}
         <div style={{
           position: "absolute", bottom: 36, left: "50%", transform: "translateX(-50%)",
-          background: "rgba(15,23,42,0.75)", color: "rgba(255,255,255,0.85)",
+          background: "rgba(58,63,59,0.82)", color: "rgba(255,255,255,0.85)",
           borderRadius: 20, padding: "6px 16px", fontSize: 11,
           whiteSpace: "nowrap", zIndex: 500, pointerEvents: "none",
         }}>

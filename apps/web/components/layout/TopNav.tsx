@@ -65,7 +65,7 @@ export function TopNav({
             >
               Projects
             </Link>
-            <span className="px-3 py-1.5 rounded-lg text-[13px] font-medium text-brand-primary bg-[#EFF6FF] cursor-default">
+            <span className="px-3 py-1.5 rounded-lg text-[13px] font-medium text-brand-primary bg-brand-secondary-tint cursor-default">
               Settings
             </span>
           </div>
@@ -74,7 +74,7 @@ export function TopNav({
         {/* Dashboard nav links */}
         {context === "dashboard" && (
           <div className="flex items-center gap-1">
-            <span className="px-3 py-1.5 rounded-lg text-[13px] font-medium text-brand-primary bg-[#EFF6FF] cursor-default">
+            <span className="px-3 py-1.5 rounded-lg text-[13px] font-medium text-brand-primary bg-brand-secondary-tint cursor-default">
               Projects
             </span>
             <button
@@ -99,7 +99,7 @@ export function TopNav({
                   className={cn(
                     "px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors",
                     isActive
-                      ? "text-brand-primary bg-[#EFF6FF] pointer-events-none"
+                      ? "text-brand-primary bg-brand-secondary-tint pointer-events-none"
                       : "text-text-secondary hover:text-text-primary hover:bg-neutral-bg"
                   )}
                   aria-current={isActive ? "page" : undefined}
@@ -125,7 +125,7 @@ export function TopNav({
         {context === "dashboard" && onNewAnalysisClick && (
           <button
             onClick={onNewAnalysisClick}
-            className="flex items-center gap-1.5 h-[34px] px-[14px] bg-brand-secondary text-white text-[13px] font-semibold rounded-lg hover:opacity-90 transition-opacity"
+            className="flex items-center gap-1.5 h-[34px] px-[14px] bg-brand-primary text-white text-[13px] font-semibold rounded-lg hover:opacity-80 transition-opacity"
           >
             <Plus size={14} aria-hidden />
             New Analysis
@@ -138,8 +138,8 @@ export function TopNav({
             onClick={onExportClick}
             aria-label="Export report"
             className="flex h-8 w-8 items-center justify-center rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-secondary"
-            style={{ borderColor: "#2E7D6F", color: "#2E7D6F" }}
-            onMouseEnter={(e) => { (e.currentTarget).style.background = "#EAF2F1"; }}
+            style={{ borderColor: "#99CDD8", color: "#99CDD8" }}
+            onMouseEnter={(e) => { (e.currentTarget).style.background = "#DAEBE3"; }}
             onMouseLeave={(e) => { (e.currentTarget).style.background = "transparent"; }}
           >
             <Upload size={15} aria-hidden />

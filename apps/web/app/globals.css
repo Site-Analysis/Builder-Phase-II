@@ -9,29 +9,29 @@
      md=16px → gap-4/p-4/m-4  ·  lg=24px → gap-6/p-6/m-6
 ────────────────────────────────────────────────────────────────────────────── */
 @theme {
-  /* Brand */
-  --color-brand-primary:          #1A3A5C;
-  --color-brand-secondary:        #2E7D6F;
-  --color-brand-secondary-tint:   #EAF2F1;
+  /* Brand — warm architectural palette */
+  --color-brand-primary:          #657166;
+  --color-brand-secondary:        #99CDD8;
+  --color-brand-secondary-tint:   #DAEBE3;
 
   /* Neutral */
-  --color-neutral-bg:             #F8F9FA;
-  --color-neutral-surface:        #FFFFFF;
-  --color-neutral-border:         #E2E8F0;
-  --color-text-primary:           #0F1729;
-  --color-text-secondary:         #64748B;
-  --color-text-disabled:          #CBD5E1;
+  --color-neutral-bg:             #F2EDE8;
+  --color-neutral-surface:        #FDFCFB;
+  --color-neutral-border:         #CFD6C4;
+  --color-text-primary:           #3A3F3B;
+  --color-text-secondary:         #7B8F83;
+  --color-text-disabled:          #B8C4BB;
 
   /* Semantic */
-  --color-semantic-success:       #16A34A;
-  --color-semantic-success-bg:    #DCFCE7;
-  --color-semantic-warning:       #D97706;
-  --color-semantic-warning-bg:    #FEF3C7;
-  --color-semantic-error:         #DC2626;
-  --color-semantic-error-bg:      #FEE2E2;
-  --color-semantic-info:          #2563EB;
+  --color-semantic-success:       #5A8F6A;
+  --color-semantic-success-bg:    #E4F0E8;
+  --color-semantic-warning:       #C4865A;
+  --color-semantic-warning-bg:    #F8EDE0;
+  --color-semantic-error:         #C46A6A;
+  --color-semantic-error-bg:      #F5E4E4;
+  --color-semantic-info:          #5B93C9;
 
-  /* Analysis overlays */
+  /* Analysis overlays — kept saturated for data legibility */
   --color-analysis-flood:         #2563EB;
   --color-analysis-sunpath:       #F59E0B;
   --color-analysis-wind:          #06B6D4;
@@ -45,10 +45,48 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Animations */
+@keyframes scrollBounce {
+  0%, 100% { transform: translateX(-50%) translateY(0);   opacity: 0.65; }
+  50%       { transform: translateX(-50%) translateY(6px); opacity: 1;    }
+}
+
 /* Base */
 body {
   background-color: var(--color-neutral-bg);
   color: var(--color-text-primary);
   font-family: var(--font-sans, Arial, sans-serif);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ── Map basemap tint ──────────────────────────────────────────────
+   CARTO Positron is a clean light-grey basemap. Warm it toward the SAT
+   cream/sage palette. Applied to the tile pane only — analysis overlays
+   live in .leaflet-overlay-pane and stay un-tinted/crisp. */
+.leaflet-container {
+  background: var(--color-neutral-bg);
+}
+.leaflet-tile-pane {
+  filter: sepia(0.10) saturate(0.95) hue-rotate(-6deg) brightness(0.95) contrast(1.10);
+}
+/* Match Leaflet chrome (zoom, attribution) to the UI */
+.leaflet-control-attribution {
+  background: rgba(253, 252, 251, 0.82) !important;
+  color: var(--color-text-secondary) !important;
+  font-size: 9px;
+}
+.leaflet-control-attribution a {
+  color: var(--color-semantic-success) !important;
+}
+.leaflet-bar a {
+  background: var(--color-neutral-surface) !important;
+  color: var(--color-text-primary) !important;
+  border-color: var(--color-neutral-border) !important;
+}
+.leaflet-bar a:hover {
+  background: var(--color-neutral-bg) !important;
+}
+.map-search-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.85;
 }

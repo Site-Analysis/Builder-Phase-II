@@ -29,7 +29,7 @@ export interface ChartSeries {
 // per series key.
 export interface ModuleChart {
   title: string;
-  kind: "bar" | "line" | "area" | "groupedBar" | "multiLine";
+  kind: "bar" | "line" | "area" | "groupedBar" | "multiLine" | "dailyBar";
   unit?: string;
   series: ChartSeries[];
   points: Array<{ label: string } & Record<string, number | string>>;

@@ -1,10 +1,10 @@
 import type { QualitativeStat, QualitativeTone } from "@/lib/stores/analysis";
 
 const TONE: Record<QualitativeTone, { bg: string; fg: string; dot: string }> = {
-  good:    { bg: "#F0FDF4", fg: "#15803D", dot: "#16A34A" },
-  warn:    { bg: "#FFFBEB", fg: "#B45309", dot: "#D97706" },
-  bad:     { bg: "#FEF2F2", fg: "#B91C1C", dot: "#DC2626" },
-  neutral: { bg: "#F1F5F9", fg: "#475569", dot: "#94A3B8" },
+  good:    { bg: "#E4F0E8", fg: "#5A8F6A", dot: "#5A8F6A" },
+  warn:    { bg: "#F8EDE0", fg: "#C4865A", dot: "#C4865A" },
+  bad:     { bg: "#F5E4E4", fg: "#C46A6A", dot: "#C46A6A" },
+  neutral: { bg: "#F2EDE8", fg: "#7B8F83", dot: "#B8C4BB" },
 };
 
 export function QualitativeChips({ stats }: { stats: QualitativeStat[] }) {
@@ -24,7 +24,7 @@ export function QualitativeChips({ stats }: { stats: QualitativeStat[] }) {
             }}
           >
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: t.dot, flexShrink: 0 }} />
-            <span style={{ color: "#64748B", fontWeight: 400 }}>{s.label}:</span>
+            <span style={{ color: "#7B8F83", fontWeight: 400 }}>{s.label}:</span>
             <span style={{ fontWeight: 600 }}>{s.value}</span>
           </span>
         );

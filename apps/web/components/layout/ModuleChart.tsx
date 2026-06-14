@@ -6,18 +6,21 @@ import {
 } from "recharts";
 import type { ModuleChart as ModuleChartSpec } from "@/lib/stores/analysis";
 
-const AXIS_TICK = { fontSize: 9, fill: "#64748B" };
+const AXIS_TICK = { fontSize: 9, fill: "#7B8F83" };
 const TOOLTIP_STYLE = {
   fontSize: 11,
-  border: "1px solid #E2E8F0",
+  border: "1px solid #CFD6C4",
   borderRadius: 6,
-  background: "#fff",
+  background: "#FDFCFB",
   padding: "6px 8px",
 } as const;
 
 export function ModuleChart({ chart, height = 132 }: { chart: ModuleChartSpec; height?: number }) {
   const { title, kind, unit, series, points } = chart;
   const multi = series.length > 1;
+  // Daily series is dense (≈365 points) — give it more height + sparse rotated ticks
+  const effHeight = kind === "dailyBar" ? Math.max(height, 168) : height;
+  const dailyInterval = Math.max(1, Math.ceil(points.length / 13));
 
   return (
     <div>
@@ -27,18 +30,30 @@ export function ModuleChart({ chart, height = 132 }: { chart: ModuleChartSpec; h
       }}>
         <span style={{
           fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-          letterSpacing: "0.5px", color: "#64748B",
+          letterSpacing: "0.5px", color: "#7B8F83",
         }}>
           {title}
         </span>
-        {unit && <span style={{ fontSize: 9, color: "#94A3B8" }}>{unit}</span>}
+        {unit && <span style={{ fontSize: 9, color: "#B8C4BB" }}>{unit}</span>}
       </div>
 
-      <div style={{ height }}>
+      <div style={{ height: effHeight }}>
         <ResponsiveContainer width="100%" height="100%">
-          {kind === "line" || kind === "multiLine" ? (
+          {kind === "dailyBar" ? (
+            <BarChart data={points} margin={{ top: 4, right: 6, bottom: 8, left: -22 }} barCategoryGap={1}>
+              <CartesianGrid stroke="#CFD6C4" vertical={false} />
+              <XAxis
+                dataKey="label" tick={{ ...AXIS_TICK, fontSize: 8 }}
+                axisLine={false} tickLine={false}
+                interval={dailyInterval} angle={-45} textAnchor="end" height={44}
+              />
+              <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={34} />
+              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(148,163,184,0.08)" }} />
+              <Bar dataKey="value" fill={series[0]?.color} isAnimationActive={false} />
+            </BarChart>
+          ) : kind === "line" || kind === "multiLine" ? (
             <LineChart data={points} margin={{ top: 4, right: 6, bottom: 0, left: -22 }}>
-              <CartesianGrid stroke="#F1F5F9" vertical={false} />
+              <CartesianGrid stroke="#CFD6C4" vertical={false} />
               <XAxis dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={34} />
               <Tooltip contentStyle={TOOLTIP_STYLE} />
@@ -52,7 +67,7 @@ export function ModuleChart({ chart, height = 132 }: { chart: ModuleChartSpec; h
             </LineChart>
           ) : kind === "area" ? (
             <AreaChart data={points} margin={{ top: 4, right: 6, bottom: 0, left: -22 }}>
-              <CartesianGrid stroke="#F1F5F9" vertical={false} />
+              <CartesianGrid stroke="#CFD6C4" vertical={false} />
               <XAxis dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={34} />
               <Tooltip contentStyle={TOOLTIP_STYLE} />
@@ -65,7 +80,7 @@ export function ModuleChart({ chart, height = 132 }: { chart: ModuleChartSpec; h
             </AreaChart>
           ) : (
             <BarChart data={points} margin={{ top: 4, right: 6, bottom: 0, left: -22 }}>
-              <CartesianGrid stroke="#F1F5F9" vertical={false} />
+              <CartesianGrid stroke="#CFD6C4" vertical={false} />
               <XAxis dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} interval={0} />
               <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={34} />
               <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(148,163,184,0.08)" }} />

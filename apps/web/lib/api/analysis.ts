@@ -375,6 +375,63 @@ export async function getTemperatureAnalysis(coords: AnalysisCoords): Promise<Mo
   };
 }
 
+// ─── Temperature spatial grid — POST /weather/thermal-grid → GeoJSON ──────────
+// Real annual-mean temperature per grid cell over a polygon around the site.
+// Source is climate reanalysis (ERA5/IMD, ~25 km native): meaningful gradients
+// appear over city/regional extents; a tight site polygon may read near-uniform.
+
+interface ThermalGridResponse {
+  features: {
+    geometry: { coordinates: number[][][] };
+    properties: { annual_avg_temp: number };
+  }[];
+  min_temp: number;
+  max_temp: number;
+  year: number;
+}
+
+export interface ThermalGridCell {
+  ring: [number, number][]; // [lat, lng] ring for Leaflet
+  temp: number;
+}
+export interface ThermalGridData {
+  cells: ThermalGridCell[];
+  minTemp: number;
+  maxTemp: number;
+  year: number;
+}
+
+export async function getThermalGrid(
+  coords: AnalysisCoords,
+  halfDeg = 0.02,
+  gridSize = 8,
+): Promise<ThermalGridData | null> {
+  const { lat, lng } = coords;
+  const geometry = {
+    type: "Polygon",
+    coordinates: [[
+      [lng - halfDeg, lat - halfDeg],
+      [lng + halfDeg, lat - halfDeg],
+      [lng + halfDeg, lat + halfDeg],
+      [lng - halfDeg, lat + halfDeg],
+      [lng - halfDeg, lat - halfDeg],
+    ]],
+  };
+  try {
+    const raw = await svcFetch<ThermalGridResponse>(SVC.temperature, "/weather/thermal-grid", {
+      method: "POST",
+      body: JSON.stringify({ geometry, grid_size: gridSize }),
+    });
+    const cells: ThermalGridCell[] = (raw.features ?? []).map((f) => ({
+      ring: (f.geometry.coordinates[0] ?? []).map(([x, y]) => [y, x] as [number, number]),
+      temp: num(f.properties?.annual_avg_temp),
+    }));
+    return { cells, minTemp: num(raw.min_temp), maxTemp: num(raw.max_temp), year: num(raw.year) };
+  } catch {
+    return null; // grid optional — overlay falls back to a site marker
+  }
+}
+
 // ─── Rainfall — POST /rainfall/summary → RainfallSummaryResponse ──────────────
 
 interface RainfallSummaryResponse {
@@ -391,8 +448,9 @@ interface RainfallArchiveResponse {
   source: string;
 }
 
-// Aggregate daily archive precipitation into 12 month-of-year buckets (mm).
-async function monthlyRainfall(coords: AnalysisCoords, start: string, end: string) {
+// Fetch the daily archive once; return both 12 month-of-year buckets (mm) and
+// the full daily precipitation series for the daily-bar chart.
+async function rainfallArchive(coords: AnalysisCoords, start: string, end: string) {
   try {
     const arc = await svcFetch<RainfallArchiveResponse>(
       SVC.rainfall,
@@ -401,13 +459,16 @@ async function monthlyRainfall(coords: AnalysisCoords, start: string, end: strin
     const buckets = new Array(12).fill(0);
     const times = arc.daily?.time ?? [];
     const vals = arc.daily?.precipitation_sum ?? [];
+    const daily: { label: string; value: number }[] = [];
     for (let i = 0; i < times.length; i++) {
       const m = Number(times[i].slice(5, 7)) - 1;
       if (m >= 0 && m < 12) buckets[m] += num(vals[i]);
+      daily.push({ label: times[i], value: Math.round(num(vals[i]) * 10) / 10 });
     }
-    return buckets.map((v, i) => ({ label: MONTHS[i], value: Math.round(v) }));
+    const monthly = buckets.map((v, i) => ({ label: MONTHS[i], value: Math.round(v) }));
+    return { monthly, daily };
   } catch {
-    return null; // archive optional — fall back to no monthly chart
+    return null; // archive optional — fall back to summary-only charts
   }
 }
 
@@ -419,14 +480,19 @@ export async function getRainfallAnalysis(coords: AnalysisCoords): Promise<Modul
   });
   const annual = num(raw.total_rainfall_mm);
   const score = clampScore((annual / 1500) * 100);
-  const monthly = await monthlyRainfall(coords, start, end);
+  const archive = await rainfallArchive(coords, start, end);
 
   const charts: ModuleResult["charts"] = [];
-  if (monthly) {
+  if (archive) {
     charts.push({
       title: "Monthly rainfall", kind: "bar", unit: "mm",
       series: [{ key: "value", label: "Rainfall", color: COLOR.rainfall }],
-      points: monthly,
+      points: archive.monthly,
+    });
+    charts.push({
+      title: "Daily precipitation", kind: "dailyBar", unit: "mm",
+      series: [{ key: "value", label: "Precipitation", color: COLOR.rainfall }],
+      points: archive.daily,
     });
   }
   charts.push({
