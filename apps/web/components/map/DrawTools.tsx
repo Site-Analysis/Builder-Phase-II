@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useMap, Rectangle, Circle, Polygon, Polyline, CircleMarker } from "react-leaflet";
 import L from "leaflet";
-import { Square, Circle as CircleIcon, PenTool, Trash2, MousePointer2 } from "lucide-react";
+import { Square, PenTool, Trash2, MousePointer2 } from "lucide-react";
+import { useDrawStore } from "@/lib/stores/draw";
 
 type LatLng = [number, number];
 type Mode = "rect" | "circle" | "poly" | null;
@@ -21,13 +22,30 @@ const PATH   = { color: STROKE, weight: 2, fillColor: FILL, fillOpacity: 0.18 } 
 const DRAFT  = { color: STROKE, weight: 2, dashArray: "6 5", fillColor: FILL, fillOpacity: 0.10 } as const;
 
 const TOOLS: { id: Exclude<Mode, null>; Icon: typeof Square; label: string }[] = [
-  { id: "rect",   Icon: Square,     label: "Rectangle — drag to draw" },
-  { id: "poly",   Icon: PenTool,    label: "Polygon — click points, click first point or double-click to close" },
-  { id: "circle", Icon: CircleIcon, label: "Circle — drag to draw" },
+  { id: "rect", Icon: Square,  label: "Rectangle — drag to draw" },
+  { id: "poly", Icon: PenTool, label: "Polygon — click points, click first point or double-click to close" },
 ];
 
-export function DrawTools() {
+interface DrawToolsProps {
+  onShapeCommitted?: (lat: number, lng: number) => void;
+}
+
+function centroid(s: DraftShape): [number, number] {
+  if (s.kind === "rect") {
+    return [(s.bounds[0][0] + s.bounds[1][0]) / 2, (s.bounds[0][1] + s.bounds[1][1]) / 2];
+  }
+  if (s.kind === "poly") {
+    const n = s.positions.length;
+    const lat = s.positions.reduce((sum, p) => sum + p[0], 0) / n;
+    const lng = s.positions.reduce((sum, p) => sum + p[1], 0) / n;
+    return [lat, lng];
+  }
+  return [s.center[0], s.center[1]];
+}
+
+export function DrawTools({ onShapeCommitted }: DrawToolsProps = {}) {
   const map = useMap();
+  const { setRectBounds } = useDrawStore();
   const [mode, setMode]     = useState<Mode>(null);
   const [shapes, setShapes] = useState<Shape[]>([]);
   const idRef = useRef(1);
@@ -43,7 +61,10 @@ export function DrawTools() {
 
   const commit = useCallback((s: DraftShape) => {
     setShapes((prev) => [...prev, { ...s, id: idRef.current++ }]);
-  }, []);
+    if (s.kind === "rect") setRectBounds(s.bounds);
+    const [lat, lng] = centroid(s);
+    onShapeCommitted?.(lat, lng);
+  }, [setRectBounds, onShapeCommitted]);
 
   // Stop the toolbar from triggering map drag/zoom/draw beneath it
   useEffect(() => {
@@ -150,7 +171,14 @@ export function DrawTools() {
     setShapes([]);
     setPolyPts([]);
     setCursor(null);
+    setDraftRect(null);
+    setDraftCircle(null);
+    dragStart.current = null;
+    setRectBounds(null);
   }
+
+  const hasDrawing =
+    shapes.length > 0 || polyPts.length > 0 || draftRect !== null || draftCircle !== null;
 
   const btnBase: React.CSSProperties = {
     width: 34, height: 34, borderRadius: 8, border: "none", cursor: "pointer",
@@ -163,11 +191,15 @@ export function DrawTools() {
     <div
       ref={barRef}
       style={{
-        position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
-        zIndex: 1000, background: "rgba(253,252,251,0.97)",
-        border: "1px solid #CFD6C4", borderRadius: 12, padding: 5,
-        display: "flex", flexDirection: "column", gap: 3,
-        boxShadow: "0 4px 18px rgba(0,0,0,0.12)",
+        position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)",
+        zIndex: 1000,
+        background: "rgba(253,252,251,0.55)",
+        backdropFilter: "blur(16px) saturate(160%)",
+        WebkitBackdropFilter: "blur(16px) saturate(160%)",
+        border: "1px solid rgba(255,255,255,0.6)",
+        borderRadius: 12, padding: 5,
+        display: "flex", flexDirection: "row", gap: 3,
+        boxShadow: "0 8px 30px rgba(58,63,59,0.18), inset 0 1px 0 rgba(255,255,255,0.45)",
       }}
       role="toolbar"
       aria-label="Map drawing tools"
@@ -183,7 +215,7 @@ export function DrawTools() {
         <MousePointer2 size={16} aria-hidden />
       </button>
 
-      <div style={{ height: 1, background: "#CFD6C4", margin: "1px 4px" }} />
+      <div style={{ width: 1, height: 20, background: "#CFD6C4", margin: "4px 1px", alignSelf: "center" }} />
 
       {TOOLS.map(({ id, Icon, label }) => {
         const on = mode === id;
@@ -201,15 +233,15 @@ export function DrawTools() {
         );
       })}
 
-      <div style={{ height: 1, background: "#CFD6C4", margin: "1px 4px" }} />
+      <div style={{ width: 1, height: 20, background: "#CFD6C4", margin: "4px 1px", alignSelf: "center" }} />
 
       {/* Clear */}
       <button
         title="Clear all drawings"
         onClick={clearAll}
-        disabled={shapes.length === 0}
-        style={{ ...btnBase, color: shapes.length ? "#C46A6A" : "#B8C4BB", cursor: shapes.length ? "pointer" : "default" }}
-        onMouseEnter={(e) => { if (shapes.length) e.currentTarget.style.background = "#F5E4E4"; }}
+        disabled={!hasDrawing}
+        style={{ ...btnBase, color: hasDrawing ? "#C46A6A" : "#B8C4BB", cursor: hasDrawing ? "pointer" : "default" }}
+        onMouseEnter={(e) => { if (hasDrawing) e.currentTarget.style.background = "#F5E4E4"; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
       >
         <Trash2 size={16} aria-hidden />

@@ -72,6 +72,9 @@ export interface AnalysisCoords {
   lat: number;
   lng: number;
   projectId?: string;
+  bufferM?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -142,7 +145,7 @@ function severityFromRiskCategory(cat: FloodReport["risk_category"]): Severity {
 export async function getFloodAnalysis(coords: AnalysisCoords): Promise<ModuleResult> {
   const raw = await svcFetch<FloodReport>(SVC.flood, "/flood/analyze", {
     method: "POST",
-    body: JSON.stringify({ latitude: coords.lat, longitude: coords.lng, radius_meters: 1000 }),
+    body: JSON.stringify({ latitude: coords.lat, longitude: coords.lng, radius_meters: coords.bufferM ?? 1000 }),
   });
   // Frontend score is a goodness score (higher = better / lower risk).
   const score = clampScore(100 - num(raw.overall_score));
@@ -248,7 +251,7 @@ interface WindAnalysis {
 export async function getWindAnalysis(coords: AnalysisCoords): Promise<ModuleResult> {
   const raw = await svcFetch<WindAnalysis>(SVC.wind, "/wind/analyze", {
     method: "POST",
-    body: JSON.stringify({ latitude: coords.lat, longitude: coords.lng, radius_meters: 1000 }),
+    body: JSON.stringify({ latitude: coords.lat, longitude: coords.lng, radius_meters: coords.bufferM ?? 1000 }),
   });
   const speed = num(raw.average_wind_speed);
   const comfort = raw.comfort_analysis ?? {} as WindAnalysis["comfort_analysis"];
@@ -320,9 +323,12 @@ interface ClimateReport {
 }
 
 export async function getTemperatureAnalysis(coords: AnalysisCoords): Promise<ModuleResult> {
+  const yearParam = coords.endDate
+    ? `&year=${new Date(coords.endDate).getFullYear()}`
+    : "";
   const raw = await svcFetch<ClimateReport>(
     SVC.temperature,
-    `/weather/thermal-profile?lat=${coords.lat}&lon=${coords.lng}`
+    `/weather/thermal-profile?lat=${coords.lat}&lon=${coords.lng}${yearParam}`
   );
   const sum = raw.summary ?? {} as ClimateReport["summary"];
   const rec = raw.recommendations ?? {} as ClimateReport["recommendations"];
@@ -330,11 +336,15 @@ export async function getTemperatureAnalysis(coords: AnalysisCoords): Promise<Mo
   const months = raw.monthly_data ?? [];
   // Goodness score — moderate peaks read as more comfortable / buildable.
   const score = clampScore(100 - ((peak - 20) / 25) * 100);
+  const fallbackSummary = `${rec.thermal_comfort_status ?? "Thermal profile assessed"} — peak ${peak.toFixed(1)} °C.`;
+  const rawSummary = rec.material_suggestion ?? fallbackSummary;
+  const summary = (rawSummary.length > 120 || /Client Error|Bad Request|http/i.test(rawSummary))
+    ? fallbackSummary
+    : rawSummary;
   return {
     score,
     severity: severityFromScore(score),
-    summary: rec.material_suggestion
-      ?? `${rec.thermal_comfort_status ?? "Thermal profile assessed"} — peak ${peak.toFixed(1)} °C.`,
+    summary,
     data_source: "IMD gridded normals + Open-Meteo ERA5",
     indicators: [
       { label: "Peak temperature", value: peak.toFixed(1),                          unit: "°C", barFraction: clamp01((peak - 10) / 45),  citation: "IMD Climatological Normals 1991–2020" },
@@ -364,12 +374,12 @@ export async function getTemperatureAnalysis(coords: AnalysisCoords): Promise<Mo
       {
         group: "Strategy",
         rows: [
-          { label: "Material approach",  value: rec.material_suggestion ?? "—" },
-          { label: "Insulation",         value: rec.insulation_strategy ?? "—" },
+          { label: "Material approach", value: summary },
+          { label: "Insulation",        value: rec.insulation_strategy ?? "—" },
         ],
       },
     ],
-    recommendations: [rec.material_suggestion, rec.insulation_strategy].filter(Boolean) as string[],
+    recommendations: [summary, rec.insulation_strategy].filter(Boolean) as string[],
     loading: false,
     error: null,
   };
@@ -405,18 +415,37 @@ export async function getThermalGrid(
   coords: AnalysisCoords,
   halfDeg = 0.02,
   gridSize = 8,
+  explicitBounds?: [[number, number], [number, number]], // [[lat,lng],[lat,lng]] diagonal corners
 ): Promise<ThermalGridData | null> {
   const { lat, lng } = coords;
-  const geometry = {
-    type: "Polygon",
-    coordinates: [[
-      [lng - halfDeg, lat - halfDeg],
-      [lng + halfDeg, lat - halfDeg],
-      [lng + halfDeg, lat + halfDeg],
-      [lng - halfDeg, lat + halfDeg],
-      [lng - halfDeg, lat - halfDeg],
-    ]],
-  };
+  let geometry: object;
+  if (explicitBounds) {
+    const minLat = Math.min(explicitBounds[0][0], explicitBounds[1][0]);
+    const maxLat = Math.max(explicitBounds[0][0], explicitBounds[1][0]);
+    const minLng = Math.min(explicitBounds[0][1], explicitBounds[1][1]);
+    const maxLng = Math.max(explicitBounds[0][1], explicitBounds[1][1]);
+    geometry = {
+      type: "Polygon",
+      coordinates: [[
+        [minLng, minLat],
+        [maxLng, minLat],
+        [maxLng, maxLat],
+        [minLng, maxLat],
+        [minLng, minLat],
+      ]],
+    };
+  } else {
+    geometry = {
+      type: "Polygon",
+      coordinates: [[
+        [lng - halfDeg, lat - halfDeg],
+        [lng + halfDeg, lat - halfDeg],
+        [lng + halfDeg, lat + halfDeg],
+        [lng - halfDeg, lat + halfDeg],
+        [lng - halfDeg, lat - halfDeg],
+      ]],
+    };
+  }
   try {
     const raw = await svcFetch<ThermalGridResponse>(SVC.temperature, "/weather/thermal-grid", {
       method: "POST",
@@ -473,7 +502,9 @@ async function rainfallArchive(coords: AnalysisCoords, start: string, end: strin
 }
 
 export async function getRainfallAnalysis(coords: AnalysisCoords): Promise<ModuleResult> {
-  const { start, end } = dateRange();
+  const dr = dateRange();
+  const start = coords.startDate ?? dr.start;
+  const end   = coords.endDate   ?? dr.end;
   const raw = await svcFetch<RainfallSummaryResponse>(SVC.rainfall, "/rainfall/summary", {
     method: "POST",
     body: JSON.stringify({ latitude: coords.lat, longitude: coords.lng, start_date: start, end_date: end }),
@@ -542,6 +573,15 @@ interface SunpathResponse {
   hourly_data: { hour: number; azimuth: number; elevation: number }[];
 }
 
+interface OrientationResponse {
+  optimal_facade_orientation: string;
+  optimal_facade_azimuth_deg: number;
+  summer_noon_altitude_deg: number;
+  winter_noon_altitude_deg: number;
+  overhang_projection_factor: number;
+  notes: string;
+}
+
 function maxElevation(slice: SunpathResponse["hourly_data"]): number {
   return slice.reduce((mx, p) => Math.max(mx, num(p.elevation)), 0);
 }
@@ -551,10 +591,12 @@ function daylightHours(slice: SunpathResponse["hourly_data"]): number {
 }
 
 export async function getSunpathAnalysis(coords: AnalysisCoords): Promise<ModuleResult> {
-  const raw = await svcFetch<SunpathResponse>(
-    SVC.sunpath,
-    `/sunpath/annual?lat=${coords.lat}&lon=${coords.lng}`
-  );
+  const [annualSettled, orientSettled] = await Promise.allSettled([
+    svcFetch<SunpathResponse>(SVC.sunpath, `/sunpath/annual?lat=${coords.lat}&lon=${coords.lng}`),
+    svcFetch<OrientationResponse>(SVC.sunpath, `/sunpath/orientation?lat=${coords.lat}&lon=${coords.lng}`),
+  ]);
+  const raw = annualSettled.status === "fulfilled" ? annualSettled.value : { hourly_data: [], timezone: null };
+  const orient = orientSettled.status === "fulfilled" ? orientSettled.value : null;
   const data = raw.hourly_data ?? [];
   const summer = data.slice(0, 24);
   const winter = data.slice(48, 72);
@@ -577,11 +619,43 @@ export async function getSunpathAnalysis(coords: AnalysisCoords): Promise<Module
     }))
     .filter((p) => p.summer > 0 || p.equinox > 0 || p.winter > 0);
 
+  // Build orientation-conditional arrays imperatively — avoids conditional spreads
+  // inside typed object literals which can OOM the TypeScript worker in Next.js
+  // webpack mode when doing inference on large files.
+  const qualitative = [
+    { label: "Summer noon", value: `${summerAlt.toFixed(0)}°`, tone: "good" as QualitativeTone },
+    { label: "Winter noon", value: `${winterAlt.toFixed(0)}°`, tone: (winterAlt > 40 ? "good" : "warn") as QualitativeTone },
+  ];
+  const detailMetrics = [{
+    group: "Solar geometry",
+    rows: [
+      { label: "Summer daylight", value: String(summerDaylight), unit: "h" },
+      { label: "Winter daylight", value: String(winterDaylight), unit: "h" },
+      { label: "Timezone (IANA)", value: String(raw.timezone ?? "—") },
+    ],
+  }];
+  if (orient) {
+    const facingLabel = orient.optimal_facade_orientation.charAt(0).toUpperCase() +
+      orient.optimal_facade_orientation.slice(1);
+    qualitative.push(
+      { label: "Optimal facade",  value: `${facingLabel}-facing (${orient.optimal_facade_azimuth_deg.toFixed(0)}°)`, tone: "good" as QualitativeTone },
+      { label: "Overhang factor", value: orient.overhang_projection_factor.toFixed(2), tone: "neutral" as QualitativeTone },
+    );
+    detailMetrics.push({
+      group: "Orientation",
+      rows: [
+        { label: "Optimal facade azimuth", value: orient.optimal_facade_azimuth_deg.toFixed(0), unit: "°" },
+        { label: "Overhang projection",    value: orient.overhang_projection_factor.toFixed(2) },
+        { label: "Note",                   value: orient.notes },
+      ],
+    });
+  }
+
   return {
     score,
     severity: severityFromScore(score),
     summary: `Summer noon altitude ${summerAlt.toFixed(1)}°, winter ${winterAlt.toFixed(1)}° — ${winterDaylight} h winter daylight.`,
-    data_source: `pvlib (NREL SPA)${raw.timezone ? ` · ${raw.timezone}` : ""}`,
+    data_source: "pvlib (NREL SPA)",
     indicators: [
       { label: "Max solar altitude (Jun)",  value: summerAlt.toFixed(1),        unit: "°", barFraction: clamp01(summerAlt / 90),        citation: "pvlib SPA" },
       { label: "Noon altitude (Dec)",        value: winterAlt.toFixed(1),        unit: "°", barFraction: clamp01(winterAlt / 90),        citation: "pvlib SPA" },
@@ -600,20 +674,15 @@ export async function getSunpathAnalysis(coords: AnalysisCoords): Promise<Module
         points: elevPoints,
       },
     ],
-    qualitative: [
-      { label: "Summer noon", value: `${summerAlt.toFixed(0)}°`, tone: "good" },
-      { label: "Winter noon", value: `${winterAlt.toFixed(0)}°`, tone: winterAlt > 40 ? "good" : "warn" },
-    ],
-    detailMetrics: [
-      {
-        group: "Solar geometry",
-        rows: [
-          { label: "Summer daylight", value: String(summerDaylight), unit: "h" },
-          { label: "Winter daylight", value: String(winterDaylight), unit: "h" },
-          { label: "Timezone",        value: String(raw.timezone ?? "—") },
-        ],
-      },
-    ],
+    qualitative,
+    detailMetrics,
+    solar: {
+      summer:  summer.map((p)  => ({ hour: num(p.hour), az: num(p.azimuth), el: num(p.elevation) })),
+      equinox: equinox.map((p) => ({ hour: num(p.hour), az: num(p.azimuth), el: num(p.elevation) })),
+      winter:  winter.map((p)  => ({ hour: num(p.hour), az: num(p.azimuth), el: num(p.elevation) })),
+      lat: coords.lat,
+      lng: coords.lng,
+    },
     loading: false,
     error: null,
   };

@@ -2,13 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase/client";
 import { useAuthStore } from "@/lib/stores/auth";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-);
 
 const MODULES = [
   { label: "Sun Path",    dot: "#F59E0B", bg: "rgba(245,158,11,0.10)",  text: "#8A6820", border: "rgba(245,158,11,0.22)" },

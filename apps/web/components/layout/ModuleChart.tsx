@@ -15,7 +15,7 @@ const TOOLTIP_STYLE = {
   padding: "6px 8px",
 } as const;
 
-export function ModuleChart({ chart, height = 132 }: { chart: ModuleChartSpec; height?: number }) {
+export function ModuleChart({ chart, height = 132, animate = true }: { chart: ModuleChartSpec; height?: number; animate?: boolean }) {
   const { title, kind, unit, series, points } = chart;
   const multi = series.length > 1;
   // Daily series is dense (≈365 points) — give it more height + sparse rotated ticks
@@ -49,7 +49,7 @@ export function ModuleChart({ chart, height = 132 }: { chart: ModuleChartSpec; h
               />
               <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={34} />
               <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(148,163,184,0.08)" }} />
-              <Bar dataKey="value" fill={series[0]?.color} isAnimationActive={false} />
+              <Bar dataKey="value" fill={series[0]?.color} isAnimationActive={animate} />
             </BarChart>
           ) : kind === "line" || kind === "multiLine" ? (
             <LineChart data={points} margin={{ top: 4, right: 6, bottom: 0, left: -22 }}>
@@ -62,6 +62,7 @@ export function ModuleChart({ chart, height = 132 }: { chart: ModuleChartSpec; h
                 <Line
                   key={s.key} type="monotone" dataKey={s.key} name={s.label}
                   stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 3 }}
+                  isAnimationActive={animate}
                 />
               ))}
             </LineChart>
@@ -75,6 +76,7 @@ export function ModuleChart({ chart, height = 132 }: { chart: ModuleChartSpec; h
                 <Area
                   key={s.key} type="monotone" dataKey={s.key} name={s.label}
                   stroke={s.color} fill={s.color} fillOpacity={0.15} strokeWidth={2}
+                  isAnimationActive={animate}
                 />
               ))}
             </AreaChart>
@@ -86,7 +88,7 @@ export function ModuleChart({ chart, height = 132 }: { chart: ModuleChartSpec; h
               <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(148,163,184,0.08)" }} />
               {multi && <Legend wrapperStyle={{ fontSize: 10 }} iconSize={8} />}
               {series.map((s) => (
-                <Bar key={s.key} dataKey={s.key} name={s.label} fill={s.color} radius={[3, 3, 0, 0]} />
+                <Bar key={s.key} dataKey={s.key} name={s.label} fill={s.color} radius={[3, 3, 0, 0]} isAnimationActive={animate} />
               ))}
             </BarChart>
           )}

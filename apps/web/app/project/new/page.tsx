@@ -8,6 +8,8 @@ import { TopNav } from "@/components/layout/TopNav";
 import { useAuthStore } from "@/lib/stores/auth";
 import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
+import { useConfigStore } from "@/lib/stores/config";
+import { AnalysisConfigCard } from "@/components/map/AnalysisConfigCard";
 import { createProject } from "@/lib/api/projects";
 import type { ModuleId } from "@/lib/stores/analysis";
 
@@ -53,14 +55,17 @@ function ModuleSelector({
 }) {
   return (
     <div style={{
-      position: "absolute", top: 16, right: 16, width: 300, zIndex: 500,
-      background: "rgba(253,252,251,0.97)", backdropFilter: "blur(6px)",
-      border: "1px solid #CFD6C4", borderRadius: 12,
-      boxShadow: "0 8px 30px rgba(0,0,0,0.12)", overflow: "hidden",
+      position: "absolute", top: 70, right: 16, width: 300, zIndex: 500,
+      background: "rgba(253,252,251,0.55)",
+      backdropFilter: "blur(16px) saturate(160%)",
+      WebkitBackdropFilter: "blur(16px) saturate(160%)",
+      border: "1px solid rgba(255,255,255,0.6)", borderRadius: 14,
+      boxShadow: "0 8px 30px rgba(58,63,59,0.18), inset 0 1px 0 rgba(255,255,255,0.45)",
+      overflow: "hidden",
     }}>
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "12px 14px", borderBottom: "1px solid #CFD6C4",
+        padding: "12px 14px", borderBottom: "1px solid rgba(207,214,196,0.5)",
       }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#3A3F3B" }}>Analyses to run</div>
@@ -116,8 +121,8 @@ function ModuleSelector({
 }
 
 const pillBtn: React.CSSProperties = {
-  height: 24, padding: "0 9px", borderRadius: 6, border: "1px solid #CFD6C4",
-  background: "#fff", color: "#7B8F83", fontSize: 11, fontWeight: 600,
+  height: 24, padding: "0 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.6)",
+  background: "rgba(253,252,251,0.5)", color: "#657166", fontSize: 11, fontWeight: 600,
   cursor: "pointer", fontFamily: "inherit",
 };
 
@@ -271,11 +276,13 @@ export default function NewAnalysisPage() {
   const { user }               = useAuthStore();
   const { setPendingProject }  = useProjectStore();
   const { resetAnalysis }      = useAnalysisStore();
+  const { bufferM }            = useConfigStore();
 
   const [address,     setAddress]     = useState("");
   const [projectName, setProjectName] = useState("");
   const [center,      setCenter]      = useState<[number, number]>([12.9716, 77.5946]);
   const [pinDropped,  setPinDropped]  = useState(false);
+  const [pinFromDraw, setPinFromDraw] = useState(false);
   const [creating,    setCreating]    = useState(false);
   const [error,       setError]       = useState("");
   const [selected,    setSelected]    = useState<Set<ModuleId>>(new Set());
@@ -299,6 +306,18 @@ export default function NewAnalysisPage() {
     const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
     setCenter([lat, lng]);
     setPinDropped(true);
+    setPinFromDraw(false);
+    setAddress(coords);
+    setProjectName(suggestName(coords));
+    setError("");
+    setTimeout(() => nameInputRef.current?.focus(), 80);
+  }
+
+  function handleShapeCommitted(lat: number, lng: number) {
+    const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    setCenter([lat, lng]);
+    setPinDropped(true);
+    setPinFromDraw(true);
     setAddress(coords);
     setProjectName(suggestName(coords));
     setError("");
@@ -315,6 +334,7 @@ export default function NewAnalysisPage() {
 
   function handleReset() {
     setPinDropped(false);
+    setPinFromDraw(false);
     setAddress("");
     setProjectName("");
     setError("");
@@ -380,17 +400,18 @@ export default function NewAnalysisPage() {
       <div className="pt-14 flex-1 relative" style={{ cursor: "crosshair" }}>
         <MapContainer mode="full-screen">
           <MapClickHandler onMapClick={handleMapClick} />
-          {pinDropped && (
+          {pinDropped && !pinFromDraw && (
             <SiteBoundaryOverlay
               shape="circle"
-              coordinates={{ center, radius: 200 }}
+              coordinates={{ center, radius: bufferM }}
             />
           )}
-          <DrawTools />
+          <DrawTools onShapeCommitted={handleShapeCommitted} />
           <MapSearch />
         </MapContainer>
 
-        {/* Module selector — appears once a pin is placed */}
+        {/* Config card + Module selector — appear once a pin is placed */}
+        {pinDropped && <AnalysisConfigCard />}
         {pinDropped && (
           <ModuleSelector
             selected={selected}
@@ -412,17 +433,7 @@ export default function NewAnalysisPage() {
           </div>
         )}
 
-        {/* Hint strip */}
-        <div style={{
-          position: "absolute", bottom: 36, left: "50%", transform: "translateX(-50%)",
-          background: "rgba(58,63,59,0.82)", color: "rgba(255,255,255,0.85)",
-          borderRadius: 20, padding: "6px 16px", fontSize: 11,
-          whiteSpace: "nowrap", zIndex: 500, pointerEvents: "none",
-        }}>
-          {pinDropped
-            ? "Pin placed · Fill in the project name in the bar above and click Start Analysis"
-            : "↑ Click the map to drop a pin, or use current location in the bar above"}
-        </div>
+
       </div>
     </div>
   );

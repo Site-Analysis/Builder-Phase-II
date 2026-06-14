@@ -14,6 +14,10 @@
   --color-brand-secondary:        #99CDD8;
   --color-brand-secondary-tint:   #DAEBE3;
 
+  /* Accent — warm palette extensions (export report bands/highlights) */
+  --color-accent-cream:           #FDE8D3;
+  --color-accent-salmon:          #F3C3B2;
+
   /* Neutral */
   --color-neutral-bg:             #F2EDE8;
   --color-neutral-surface:        #FDFCFB;

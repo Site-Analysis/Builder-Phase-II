@@ -11,7 +11,7 @@ const LATLNG = /^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
 
 interface Suggestion { name: string; lat: number; lon: number }
 
-export function MapSearch() {
+export function MapSearch({ topOffset = 72 }: { topOffset?: number }) {
   const map = useMap();
   const [query, setQuery]       = useState("");
   const [loading, setLoading]   = useState(false);
@@ -120,7 +120,7 @@ export function MapSearch() {
       ref={boxRef}
       onSubmit={submit}
       style={{
-        position: "absolute", top: 70, left: "50%", transform: "translateX(-50%)",
+        position: "absolute", top: topOffset, left: "50%", transform: "translateX(-50%)",
         zIndex: 1000, width: "min(440px, calc(100% - 120px))",
         display: "flex", flexDirection: "column", gap: 6, pointerEvents: "auto",
       }}

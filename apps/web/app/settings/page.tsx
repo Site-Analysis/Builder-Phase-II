@@ -2,17 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
 import {
   User, Building2, Bell, Lock, SlidersHorizontal, FileOutput, AlertTriangle,
 } from "lucide-react";
 import { TopNav } from "@/components/layout/TopNav";
 import { useAuthStore } from "@/lib/stores/auth";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-);
+import { supabase } from "@/lib/supabase/client";
 
 type SidebarSection = "profile" | "studio" | "notifications" | "security" | "defaults" | "export";
 

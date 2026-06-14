@@ -8,87 +8,90 @@ interface RainfallRoseProps {
   result: ModuleResult;
 }
 
-function clamp(v: number, lo: number, hi: number) {
-  return Math.min(hi, Math.max(lo, v));
+// 7-step blue ramp matching reference choropleth (light = dry, dark = wet)
+const ZONE_COLORS = [
+  "#DBEAFE", // outermost — lightest
+  "#BFDBFE",
+  "#93C5FD",
+  "#60A5FA",
+  "#3B82F6",
+  "#2563EB",
+  "#1D4ED8", // innermost — darkest
+] as const;
+
+// Outer → inner radii in metres
+const ZONE_RADII = [300, 250, 200, 155, 115, 75, 38];
+
+// Irregular blob polygon — deterministic distortion per zone (seed) so zones differ in shape
+// Location hash — mixes lat/lng into a stable float so blobs differ per site
+function locHash(center: [number, number]): number {
+  return Math.sin(center[0] * 127.3 + center[1] * 311.7) * 43758.5453 % 1;
 }
 
-// Monthly total → blue intensity ramp (light = dry month, deep = wettest)
-export function rainColor(t: number): string {
-  if (t < 0.15) return "#EFF6FF";
-  if (t < 0.30) return "#BFDBFE";
-  if (t < 0.45) return "#93C5FD";
-  if (t < 0.60) return "#60A5FA";
-  if (t < 0.75) return "#3B82F6";
-  if (t < 0.90) return "#1D4ED8";
-  return "#1E3A8A";
-}
-
-function monthlyPoints(result: ModuleResult): number[] {
-  const pts = result.charts?.find((c) => c.title === "Monthly rainfall")?.points;
-  if (!pts || pts.length === 0) return [];
-  // points are ordered Jan..Dec
-  return pts.map((p) => Number(p.value) || 0);
-}
-
-function dest(center: [number, number], bearingDeg: number, distM: number): [number, number] {
-  const br = (bearingDeg * Math.PI) / 180;
-  const dLat = (distM * Math.cos(br)) / 111320;
-  const dLng = (distM * Math.sin(br)) / (111320 * Math.cos((center[0] * Math.PI) / 180));
-  return [center[0] + dLat, center[1] + dLng];
-}
-
-function wedge(
-  center: [number, number], bearing: number, halfWidth: number, ri: number, ro: number,
-): [number, number][] {
+function blob(center: [number, number], baseR: number, seed: number): [number, number][] {
+  const steps = 40;
+  const cosLat = Math.cos((center[0] * Math.PI) / 180);
+  const loc = locHash(center);
   const pts: [number, number][] = [];
-  const steps = 5;
-  for (let k = 0; k <= steps; k++) pts.push(dest(center, bearing - halfWidth + (2 * halfWidth * k) / steps, ro));
-  for (let k = steps; k >= 0; k--) pts.push(dest(center, bearing - halfWidth + (2 * halfWidth * k) / steps, ri));
+  for (let i = 0; i < steps; i++) {
+    const a = (i / steps) * 2 * Math.PI;
+    const variation =
+      0.18 * Math.sin(seed * 1.9 + loc * 6.3 + a * 3.1) +
+      0.10 * Math.cos(seed * 2.7 + loc * 4.1 + a * 5.3) +
+      0.06 * Math.sin(seed * 0.8 + loc * 9.7 + a * 7.7);
+    const r = baseR * (1 + variation);
+    const dLat = (r * Math.cos(a)) / 111320;
+    const dLng = (r * Math.sin(a)) / (111320 * cosLat);
+    pts.push([center[0] + dLat, center[1] + dLng]);
+  }
   return pts;
 }
 
+function annualTotal(result: ModuleResult): number {
+  const ind = result.indicators?.find((i) => i.label === "Annual total");
+  return ind ? parseFloat(ind.value) || 0 : 0;
+}
+
+// Shift the whole palette toward darker blues for wetter sites
+function paletteOffset(annualMm: number): number {
+  if (annualMm > 1800) return 2;
+  if (annualMm > 1200) return 1;
+  return 0;
+}
+
 export function RainfallRose({ center, result }: RainfallRoseProps) {
-  const monthly = monthlyPoints(result);
-  if (monthly.length !== 12) {
-    // No monthly archive — just mark the site
+  const annual = annualTotal(result);
+  const offset = paletteOffset(annual);
+  const colors = ZONE_COLORS.slice(offset);            // fewer light zones for wetter sites
+  const radii  = ZONE_RADII.slice(ZONE_RADII.length - colors.length);
+
+  if (!annual) {
     return (
-      <Circle center={center} radius={6}
-        pathOptions={{ color: "#5B21B6", weight: 1.5, fillColor: "#7C3AED", fillOpacity: 1 }} />
+      <Circle center={center} radius={8}
+        pathOptions={{ color: "#1D4ED8", weight: 1.5, fillColor: "#3B82F6", fillOpacity: 0.9 }} />
     );
   }
 
-  const maxV = Math.max(...monthly, 1);
-  const R_MIN = 45;
-  const R_SPAN = 235;
-  const HALF_WIDTH = 12.5; // 25° petal, 5° gap
-
-  const maxRo = R_MIN + R_SPAN;
-
   return (
     <>
-      {/* Compass dial framing the rose */}
-      <Circle center={center} radius={maxRo}
-        pathOptions={{ color: "#7C3AED", weight: 1, opacity: 0.45, fill: false, dashArray: "4 4" }} />
-      <Circle center={center} radius={maxRo * 0.5}
-        pathOptions={{ color: "#7C3AED", weight: 0.8, opacity: 0.28, fill: false, dashArray: "3 5" }} />
+      {/* Draw outer → inner so inner overlays outer */}
+      {radii.map((r, i) => (
+        <Polygon
+          key={i}
+          positions={blob(center, r, i + 1)}
+          pathOptions={{
+            fillColor: colors[i],
+            fillOpacity: 0.72,
+            color: "#FFFFFF",
+            weight: 0.8,
+            opacity: 0.6,
+          }}
+        />
+      ))}
 
-      {/* Monthly petals — Jan at top (bearing 0), clockwise */}
-      {monthly.map((v, i) => {
-        const t = clamp(v / maxV, 0, 1);
-        const ro = R_MIN + t * R_SPAN;
-        const bearing = i * 30;
-        return (
-          <Polygon
-            key={i}
-            positions={wedge(center, bearing, HALF_WIDTH, 0, ro)}
-            pathOptions={{ fillColor: rainColor(t), fillOpacity: 0.82, color: "#FFFFFF", weight: 0.6, opacity: 0.7 }}
-          />
-        );
-      })}
-
-      {/* Site marker */}
-      <Circle center={center} radius={6}
-        pathOptions={{ color: "#5B21B6", weight: 1.5, fillColor: "#7C3AED", fillOpacity: 1 }} />
+      {/* Site pin */}
+      <Circle center={center} radius={7}
+        pathOptions={{ color: "#1D4ED8", weight: 2, fillColor: "#FDFCFB", fillOpacity: 1 }} />
     </>
   );
 }

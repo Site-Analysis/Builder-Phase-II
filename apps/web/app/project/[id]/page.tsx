@@ -9,7 +9,7 @@ import { RightPanel } from "@/components/layout/RightPanel";
 import type { ActiveModuleInfo } from "@/components/layout/RightPanel";
 import { AnalysisModuleSection } from "@/components/layout/AnalysisModuleSection";
 import { ModuleDetailCard } from "@/components/layout/ModuleDetailCard";
-import { SolarDiagram } from "@/components/layout/SolarDiagram";
+import { SunPanel } from "@/components/layout/SunPanel";
 import { FloodRiskPanel } from "@/components/layout/FloodRiskPanel";
 import { FloodZoneOverlay } from "@/components/map/FloodZoneOverlay";
 import { WindPanel } from "@/components/layout/WindPanel";
@@ -18,9 +18,11 @@ import { RainfallPanel } from "@/components/layout/RainfallPanel";
 import { RainfallOverlay } from "@/components/map/RainfallOverlay";
 import { TemperaturePanel } from "@/components/layout/TemperaturePanel";
 import { TemperatureOverlay } from "@/components/map/TemperatureOverlay";
+import { SunOverlay } from "@/components/map/SunOverlay";
 import { useAuthStore } from "@/lib/stores/auth";
 import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
+import { useConfigStore } from "@/lib/stores/config";
 import { getProject } from "@/lib/api/projects";
 import {
   computeSiteScore,
@@ -70,6 +72,10 @@ const MapSearch = dynamic(
   () => import("@/components/map/MapSearch").then((m) => m.MapSearch),
   { ssr: false }
 );
+const SunPathArc = dynamic(
+  () => import("@/components/map/SunPathArc").then((m) => m.SunPathArc),
+  { ssr: false }
+);
 
 // TODO GH#53: all 5 analysis endpoints unconfirmed — responses are mapped via defensive guesses
 
@@ -109,6 +115,7 @@ export default function ProjectPage() {
 
   const { user }             = useAuthStore();
   const { setCurrentProject } = useProjectStore();
+  const { bufferM, startDate, endDate } = useConfigStore();
   const {
     modules,
     siteScore,
@@ -144,7 +151,7 @@ export default function ProjectPage() {
         lat = p.boundary.coordinates[1] as number;
       }
       setCenter([lat, lng]);
-      const coords: AnalysisCoords = { lat, lng, projectId: id };
+      const coords: AnalysisCoords = { lat, lng, projectId: id, bufferM, startDate, endDate };
 
       // Only run the modules the user selected at creation (default: all 5).
       const run = new Set<ModuleId>(p.modules_run ?? MODULE_META.map((m) => m.id));
@@ -315,7 +322,7 @@ export default function ProjectPage() {
                   {project?.boundary && (
                     <SiteBoundaryOverlay
                       shape="circle"
-                      coordinates={{ center, radius: 200 }}
+                      coordinates={{ center, radius: bufferM }}
                     />
                   )}
                   {project && (
@@ -340,6 +347,9 @@ export default function ProjectPage() {
                   {detailModule === "temperature" && result && !result.loading && !result.error && (
                     <ThermalField center={center} result={result} />
                   )}
+                  {detailModule === "sunpath" && result && !result.loading && !result.error && result.solar && (
+                    <SunPathArc center={center} result={result} />
+                  )}
                   <DrawTools />
                   <MapSearch />
                 </MapContainer>
@@ -356,6 +366,9 @@ export default function ProjectPage() {
                 )}
                 {detailModule === "temperature" && result && !result.loading && !result.error && (
                   <TemperatureOverlay result={result} />
+                )}
+                {detailModule === "sunpath" && result && !result.loading && !result.error && result.solar && (
+                  <SunOverlay result={result} />
                 )}
 
                 <ModuleDetailCard
@@ -386,7 +399,7 @@ export default function ProjectPage() {
                 {project?.boundary && (
                   <SiteBoundaryOverlay
                     shape="circle"
-                    coordinates={{ center, radius: 200 }}
+                    coordinates={{ center, radius: bufferM }}
                   />
                 )}
                 {project && (
@@ -411,8 +424,11 @@ export default function ProjectPage() {
                 {expanded.temperature && modules.temperature && !modules.temperature.loading && !modules.temperature.error && (
                   <ThermalField center={center} result={modules.temperature} />
                 )}
+                {expanded.sunpath && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
+                  <SunPathArc center={center} result={modules.sunpath} />
+                )}
                 <DrawTools />
-                <MapSearch />
+                <MapSearch topOffset={16} />
               </MapContainer>
               {/* HTML badge + legend overlay — not inside Leaflet */}
               {expanded.flood && modules.flood && !modules.flood.loading && !modules.flood.error && (
@@ -426,6 +442,9 @@ export default function ProjectPage() {
               )}
               {expanded.temperature && modules.temperature && !modules.temperature.loading && !modules.temperature.error && (
                 <TemperatureOverlay result={modules.temperature} />
+              )}
+              {expanded.sunpath && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
+                <SunOverlay result={modules.sunpath} />
               )}
             </div>
 
@@ -456,7 +475,7 @@ export default function ProjectPage() {
                     dataSource={result?.data_source}
                     summary={result?.summary}
                     moduleSpecificContent={
-                      moduleId === "sunpath" ? <SolarDiagram /> :
+                      moduleId === "sunpath" ? <SunPanel result={result} /> :
                       moduleId === "flood"   ? <FloodRiskPanel result={result} severity={result?.severity ?? "none"} /> :
                       moduleId === "wind"    ? <WindPanel result={result} severity={result?.severity ?? "none"} /> :
                       moduleId === "rainfall" ? <RainfallPanel result={result} severity={result?.severity ?? "none"} /> :

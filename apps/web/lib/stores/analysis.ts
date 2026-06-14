@@ -48,6 +48,16 @@ export interface MetricGroup {
   rows: Array<{ label: string; value: string; unit?: string }>;
 }
 
+// Raw solar geometry for the sun-path diagram + shadow casting.
+export interface SolarPoint { hour: number; az: number; el: number }
+export interface SolarData {
+  summer: SolarPoint[];
+  equinox: SolarPoint[];
+  winter: SolarPoint[];
+  lat: number;
+  lng: number;
+}
+
 export interface ModuleResult {
   score: number;
   severity: Severity;
@@ -59,6 +69,7 @@ export interface ModuleResult {
   detailMetrics?: MetricGroup[];
   recommendations?: string[];
   data_source?: string;
+  solar?: SolarData;
   loading: boolean;
   error: string | null;
 }
