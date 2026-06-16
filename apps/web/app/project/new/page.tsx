@@ -3,12 +3,13 @@
 import dynamic from "next/dynamic";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Sun, Waves, Thermometer, Wind, CloudRain } from "lucide-react";
+import { Sun, Waves, Thermometer, Wind, CloudRain, Scale } from "lucide-react";
 import { TopNav } from "@/components/layout/TopNav";
 import { useAuthStore } from "@/lib/stores/auth";
 import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
 import { useConfigStore } from "@/lib/stores/config";
+import { useDrawStore } from "@/lib/stores/draw";
 import { AnalysisConfigCard } from "@/components/map/AnalysisConfigCard";
 import { createProject } from "@/lib/api/projects";
 import type { ModuleId } from "@/lib/stores/analysis";
@@ -37,11 +38,12 @@ const MapSearch = dynamic(
 // TODO GH#55: boundary is a 200 m circle — replace with /api/geo/site-boundary when confirmed
 
 const ANALYSIS_MODULES: { id: ModuleId; name: string; color: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "sunpath",     name: "Sun Path",    color: "#F59E0B", icon: <Sun size={15} />,         desc: "Solar access, shadows, daylight" },
-  { id: "flood",       name: "Flood",       color: "#2563EB", icon: <Waves size={15} />,       desc: "Risk, terrain, hydrology" },
-  { id: "temperature", name: "Temperature", color: "#EF4444", icon: <Thermometer size={15} />, desc: "Thermal profile, comfort" },
-  { id: "wind",        name: "Wind",        color: "#06B6D4", icon: <Wind size={15} />,         desc: "Speed, ventilation, gusts" },
-  { id: "rainfall",    name: "Rainfall",    color: "#7C3AED", icon: <CloudRain size={15} />,    desc: "Annual totals, wet days" },
+  { id: "sunpath",     name: "Sun Path",          color: "#F59E0B", icon: <Sun size={15} />,         desc: "Solar access, shadows, daylight" },
+  { id: "flood",       name: "Flood",             color: "#2563EB", icon: <Waves size={15} />,       desc: "Risk, terrain, hydrology" },
+  { id: "temperature", name: "Temperature",       color: "#EF4444", icon: <Thermometer size={15} />, desc: "Thermal profile, comfort" },
+  { id: "wind",        name: "Wind",              color: "#06B6D4", icon: <Wind size={15} />,         desc: "Speed, ventilation, gusts" },
+  { id: "rainfall",    name: "Rainfall",          color: "#7C3AED", icon: <CloudRain size={15} />,    desc: "Annual totals, wet days" },
+  { id: "zoning",      name: "Zoning",            color: "#B45309", icon: <Scale size={15} />,        desc: "Zone, LULC, FAR, NA order, DGCA" },
 ];
 
 // ─── Floating module selector ─────────────────────────────────────────────────
@@ -277,6 +279,8 @@ export default function NewAnalysisPage() {
   const { setPendingProject }  = useProjectStore();
   const { resetAnalysis }      = useAnalysisStore();
   const { bufferM }            = useConfigStore();
+  const drawnBoundary          = useDrawStore((s) => s.boundary);
+  const setDrawnBoundary        = useDrawStore((s) => s.setBoundary);
 
   const [address,     setAddress]     = useState("");
   const [projectName, setProjectName] = useState("");
@@ -338,6 +342,7 @@ export default function NewAnalysisPage() {
     setAddress("");
     setProjectName("");
     setError("");
+    setDrawnBoundary(null);
   }
 
   async function handleStart() {
@@ -347,7 +352,16 @@ export default function NewAnalysisPage() {
     setCreating(true);
     resetAnalysis();
     try {
-      const boundary: GeoJSON.Geometry = { type: "Point", coordinates: [center[1], center[0]] };
+      // Use the drawn rectangle/polygon as the site boundary when present;
+      // otherwise fall back to the dropped marker point.
+      let boundary: GeoJSON.Geometry;
+      if (drawnBoundary && drawnBoundary.positions.length >= 3) {
+        const ring = drawnBoundary.positions.map(([lat, lng]) => [lng, lat]);
+        ring.push(ring[0]); // close the ring
+        boundary = { type: "Polygon", coordinates: [ring] };
+      } else {
+        boundary = { type: "Point", coordinates: [center[1], center[0]] };
+      }
       // Preserve the canonical module order.
       const modules_run = ANALYSIS_MODULES.map((m) => m.id).filter((id) => selected.has(id));
       const project = await createProject({

@@ -103,10 +103,99 @@ services:
       timeout: 5s
       retries: 3
 
-# Uncomment when geo service is ready:
-#  geo:
-#    build:
-#      context: ./services/geo
-#    ports:
-#      - "8004:8004"
-#    ...
+  geo:
+    build:
+      context: ./services/geo
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./services/geo:/app
+    environment:
+      - FLAGS=${FLAGS:-}
+      - CORS_ORIGINS=http://localhost:3000
+      - OVERPASS_URL=${OVERPASS_URL:-https://overpass-api.de/api/interpreter}
+    env_file:
+      - .env
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  planning:
+    build:
+      context: ./services/planning
+    ports:
+      - "8006:8006"
+    volumes:
+      - ./services/planning:/app
+    environment:
+      - FLAGS=${FLAGS:-}
+      - CORS_ORIGINS=http://localhost:3000
+    env_file:
+      - .env
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  infrastructure:
+    build:
+      context: ./services/infrastructure
+    ports:
+      - "8007:8007"
+    volumes:
+      - ./services/infrastructure:/app
+    environment:
+      - FLAGS=${FLAGS:-}
+      - CORS_ORIGINS=http://localhost:3000
+      - OVERPASS_URL=${OVERPASS_URL:-https://overpass-api.de/api/interpreter}
+    env_file:
+      - .env
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  future-infra:
+    build:
+      context: ./services/future-infra
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./services/future-infra:/app
+    environment:
+      - FLAGS=${FLAGS:-}
+      - CORS_ORIGINS=http://localhost:3000
+    env_file:
+      - .env
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8008 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  land-records:
+    build:
+      context: ./services/land-records
+    ports:
+      - "8009:8009"
+    volumes:
+      - ./services/land-records:/app
+    environment:
+      - FLAGS=${FLAGS:-}
+      - CORS_ORIGINS=http://localhost:3000
+    env_file:
+      - .env
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8009 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8009/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

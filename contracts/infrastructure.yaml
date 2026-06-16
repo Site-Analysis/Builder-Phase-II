@@ -1,0 +1,110 @@
+openapi: "3.1.0"
+info:
+  title: Infrastructure Service
+  version: "1.2.0"
+  description: OSM-backed road, transit, utility, and telecom connectivity analysis.
+
+servers:
+  - url: http://localhost:8007
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+                  service: {type: string}
+
+  /infrastructure/analyze:
+    post:
+      operationId: analyzeConnectivity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InfraRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InfraResult"
+        "403":
+          description: Feature flag disabled
+        "502":
+          description: OSM upstream unavailable
+
+components:
+  schemas:
+    InfraRequest:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude: {type: number}
+        longitude: {type: number}
+        radius_m: {type: number, default: 2000}
+
+    RoadAccess:
+      type: object
+      properties:
+        nearest_road_m: {type: number}
+        road_type: {type: string, description: "OSM highway tag (primary, secondary, residential, etc.)"}
+        road_name: {type: string}
+        road_ref: {type: string, nullable: true, description: "Road reference number (NH-44, SH-17, MDR-12)"}
+        road_surface: {type: string, nullable: true, description: "paved / unpaved / asphalt / dirt"}
+        road_lanes: {type: integer, nullable: true}
+        road_width_m: {type: number, nullable: true, description: "Carriageway width from OSM width tag"}
+        road_maxspeed_kmh: {type: integer, nullable: true}
+        frontage_present: {type: boolean}
+
+    TransitStop:
+      type: object
+      properties:
+        type: {type: string, enum: [metro, railway, bus]}
+        name: {type: string}
+        distance_m: {type: number}
+        line: {type: string}
+
+    UtilityPresence:
+      type: object
+      properties:
+        water_supply_nearby: {type: boolean}
+        power_substation_nearby: {type: boolean}
+        power_line_nearby: {type: boolean, description: "HT power line within 1km"}
+        power_line_voltage_kv: {type: number, nullable: true}
+        power_line_distance_m: {type: number, nullable: true}
+        storm_drainage_nearby: {type: boolean}
+        sewage_works_nearby: {type: boolean}
+        telecom_tower_nearby: {type: boolean}
+        telecom_tower_distance_m: {type: number, nullable: true}
+
+    InfraSubScores:
+      type: object
+      description: "Component scores. Road+transit+power sum to overall (0-100). Water+telecom always 0 — OSM coverage <20% in India."
+      properties:
+        road: {type: number, description: "0-50 (proximity 0-40, type bonus 0-5, surface quality ±5)"}
+        transit: {type: number, description: "0-30 (linear decay; metro weighted higher than bus/rail; aerodromes excluded)"}
+        power: {type: number, description: "0-20 (substation +10, power line distance-decayed +10)"}
+        water: {type: number, description: "Always 0 — OSM water supply coverage <20% in India, not scored. Presence still detected and reported in utilities."}
+        telecom: {type: number, description: "Always 0 — OSM telecom tower coverage <20% in India, not scored. Presence still detected and reported in utilities."}
+
+    InfraResult:
+      type: object
+      required: [score, severity, data_source]
+      properties:
+        road_access: {$ref: "#/components/schemas/RoadAccess"}
+        transit:
+          type: array
+          items: {$ref: "#/components/schemas/TransitStop"}
+        utilities: {$ref: "#/components/schemas/UtilityPresence"}
+        sub_scores: {$ref: "#/components/schemas/InfraSubScores"}
+        score: {type: number, minimum: 0, maximum: 100}
+        severity: {type: string, enum: [low, moderate, high, none]}
+        data_source: {type: string}

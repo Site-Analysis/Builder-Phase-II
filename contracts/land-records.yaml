@@ -1,0 +1,89 @@
+openapi: "3.1.0"
+info:
+  title: Land Records Service
+  version: "1.0.0"
+  description: Karnataka land records lookup — Bhoomi RTC, eCourts case search, KAVERI/CERSAI deep links.
+
+servers:
+  - url: http://localhost:8009
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}, service: {type: string}}}
+
+  /land-records/lookup:
+    post:
+      operationId: lookupLandRecords
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LandRecordsRequest"}
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LandRecordsResult"}
+        "403": {description: Feature flag disabled}
+        "422": {description: Validation error}
+
+components:
+  schemas:
+    LandRecordsRequest:
+      type: object
+      required: [district, taluk, hobli, village, survey_number]
+      properties:
+        district: {type: string, example: "Bengaluru Urban"}
+        taluk: {type: string, example: "Bengaluru North"}
+        hobli: {type: string, example: "Jala"}
+        village: {type: string, example: "Yelahanka"}
+        survey_number: {type: string, example: "123/4"}
+        state: {type: string, default: "Karnataka"}
+
+    BhoomiRecord:
+      type: object
+      properties:
+        owner_name: {type: string}
+        survey_number: {type: string}
+        area_acres: {type: number, nullable: true}
+        land_type: {type: string}
+        encumbrance_present: {type: boolean}
+        mutation_number: {type: string, nullable: true}
+        raw_data_available: {type: boolean}
+
+    DeepLink:
+      type: object
+      required: [label, url, description]
+      properties:
+        label: {type: string}
+        url: {type: string}
+        description: {type: string}
+
+    CourtCase:
+      type: object
+      properties:
+        case_number: {type: string}
+        court: {type: string}
+        status: {type: string}
+        parties: {type: string}
+        filing_date: {type: string}
+
+    LandRecordsResult:
+      type: object
+      required: [bhoomi, deep_links, score, severity, data_source]
+      properties:
+        bhoomi: {$ref: "#/components/schemas/BhoomiRecord"}
+        court_cases: {type: array, items: {$ref: "#/components/schemas/CourtCase"}}
+        deep_links:
+          type: array
+          items: {$ref: "#/components/schemas/DeepLink"}
+        score: {type: number, minimum: 0, maximum: 100}
+        severity: {type: string, enum: [low, moderate, high, none]}
+        data_source: {type: string}
+        notes: {type: string}

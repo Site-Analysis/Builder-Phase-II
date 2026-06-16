@@ -17,23 +17,48 @@ import {
   getSunpathAnalysis,
   getWindAnalysis,
   getTemperatureAnalysis,
+  getZoneAnalysis,
+  getPlanningAnalysis,
+  getZoningAnalysis,
+  getInfraAnalysis,
+  getSoilAnalysis,
+  getWaterConstraintsAnalysis,
+  getGrowthAnalysis,
+  getAmenitiesAnalysis,
   type AnalysisCoords,
 } from "@/lib/api/analysis";
 
 const MODULE_META: { id: ModuleId; name: string; color: string }[] = [
-  { id: "sunpath",     name: "Sun Path",    color: "#F59E0B" },
-  { id: "flood",       name: "Flood",       color: "#2563EB" },
-  { id: "temperature", name: "Temperature", color: "#EF4444" },
-  { id: "wind",        name: "Wind",        color: "#06B6D4" },
-  { id: "rainfall",    name: "Rainfall",    color: "#7C3AED" },
+  { id: "sunpath",          name: "Sun Path",          color: "#F59E0B" },
+  { id: "flood",            name: "Flood",             color: "#2563EB" },
+  { id: "temperature",      name: "Temperature",       color: "#EF4444" },
+  { id: "wind",             name: "Wind",              color: "#06B6D4" },
+  { id: "rainfall",         name: "Rainfall",          color: "#7C3AED" },
+  { id: "zoning",           name: "Zoning Compliance", color: "#B45309" },
+  { id: "zone",             name: "Zone & Land Use",   color: "#10B981" },
+  { id: "planning",         name: "Site Capacity",     color: "#F97316" },
+  { id: "infrastructure",   name: "Connectivity",      color: "#0EA5E9" },
+  { id: "soil",             name: "Soil Profile",      color: "#92400E" },
+  { id: "waterConstraints", name: "Water Constraints", color: "#1D4ED8" },
+  { id: "growth",           name: "Growth Context",    color: "#16A34A" },
+  { id: "land",             name: "Title & Documents", color: "#6B21A8" },
+  { id: "amenities",        name: "Amenities",         color: "#059669" },
 ];
 
-const FETCHERS: Record<ModuleId, (c: AnalysisCoords) => Promise<unknown>> = {
+const FETCHERS: Partial<Record<ModuleId, (c: AnalysisCoords) => Promise<unknown>>> = {
   flood:       getFloodAnalysis,
   rainfall:    getRainfallAnalysis,
   sunpath:     getSunpathAnalysis,
   wind:        getWindAnalysis,
   temperature: getTemperatureAnalysis,
+  zone:              (c) => getZoneAnalysis(c.lat, c.lng),
+  planning:          (c) => getPlanningAnalysis(c.lat, c.lng),
+  zoning:            (c) => getZoningAnalysis(c.lat, c.lng),
+  infrastructure:    (c) => getInfraAnalysis(c.lat, c.lng),
+  soil:              (c) => getSoilAnalysis(c.lat, c.lng),
+  waterConstraints:  (c) => getWaterConstraintsAnalysis(c.lat, c.lng),
+  growth:            (c) => getGrowthAnalysis(c.lat, c.lng),
+  amenities:         (c) => getAmenitiesAnalysis(c.lat, c.lng),
 };
 
 const DEFAULT_SETTINGS: ExportSettings = {
@@ -94,7 +119,9 @@ export default function ExportPage() {
         const cur = existing[moduleId];
         if (cur && !cur.loading && !cur.error) continue; // already hydrated
         setModuleLoading(moduleId);
-        FETCHERS[moduleId](coords)
+        const fetcher = FETCHERS[moduleId];
+        if (!fetcher) continue;
+        fetcher(coords)
           .then((result) => setModuleResult(moduleId, result as never))
           .catch((err) => setModuleError(moduleId, err instanceof Error ? err.message : "Failed"));
       }

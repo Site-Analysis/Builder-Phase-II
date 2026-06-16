@@ -1,0 +1,268 @@
+openapi: "3.1.0"
+info:
+  title: Geo Service
+  version: "1.6.0"
+  description: OSM + Bhuvan ISRO LULC zoning, land-use, soil, water-constraint, and amenity analysis for Indian sites.
+
+servers:
+  - url: http://localhost:8005
+    description: Local dev
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status: { type: string, example: "ok" }
+                  service: { type: string, example: "geo" }
+
+  /geo/zone:
+    get:
+      operationId: getZone
+      summary: Zone and land-use classification at a coordinate
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: { type: number, format: float }
+        - name: lon
+          in: query
+          required: true
+          schema: { type: number, format: float }
+        - name: radius_m
+          in: query
+          required: false
+          schema: { type: number, format: float, default: 500 }
+      responses:
+        "200":
+          description: Zone classification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+        "502":
+          description: OSM upstream unavailable
+
+  /geo/amenities:
+    get:
+      operationId: getAmenities
+      summary: Categorised amenities within radius (OSM, 5km default)
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number } }
+        - { name: lon, in: query, required: true, schema: { type: number } }
+        - { name: radius_m, in: query, required: false, schema: { type: number, default: 5000 } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AmenitiesResult" }
+        "403": { description: Feature flag disabled }
+        "502": { description: OSM upstream unavailable }
+
+  /geo/soil:
+    get:
+      operationId: getSoilProfile
+      summary: Soil texture, bearing capacity proxy, pH from SoilGrids v2.0 (ISRIC, 250m resolution)
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number } }
+        - { name: lon, in: query, required: true, schema: { type: number } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SoilResult" }
+        "403": { description: Feature flag disabled }
+        "502": { description: SoilGrids upstream unavailable }
+
+  /geo/water-constraints:
+    get:
+      operationId: getWaterConstraints
+      summary: Water body proximity, regulatory buffer zones, rajakaluve detection
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number } }
+        - { name: lon, in: query, required: true, schema: { type: number } }
+        - { name: radius_m, in: query, required: false, schema: { type: number, default: 500 } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WaterConstraintResult" }
+        "403": { description: Feature flag disabled }
+        "502": { description: OSM upstream unavailable }
+
+components:
+  schemas:
+    NearbyFeature:
+      type: object
+      required: [type, value, distance_m]
+      properties:
+        type: { type: string }
+        value: { type: string }
+        name: { type: string }
+        distance_m: { type: number }
+        lat: { type: number, nullable: true, description: "Feature centre latitude (for map markers)" }
+        lon: { type: number, nullable: true, description: "Feature centre longitude (for map markers)" }
+
+    KgisContext:
+      type: object
+      description: "Authoritative administrative context from Karnataka State GIS (KGIS). admin_zone is the BBMP administrative zone, NOT the RMP land-use zone."
+      properties:
+        type: { type: string, nullable: true, description: "Urban | Rural" }
+        district: { type: string, nullable: true }
+        town: { type: string, nullable: true }
+        admin_zone: { type: string, nullable: true, description: "BBMP administrative zone (e.g. EAST) — not land-use" }
+        ward: { type: string, nullable: true }
+        taluk: { type: string, nullable: true }
+        hobli: { type: string, nullable: true }
+        village: { type: string, nullable: true }
+        survey_number: { type: string, nullable: true, description: "Rural survey number — feeds Bhoomi RTC lookup" }
+
+    ZoneResult:
+      type: object
+      required: [zone_class, primary_landuse, score, severity, data_source, source_confidence]
+      properties:
+        zone_class:
+          type: string
+          enum: [Residential, Commercial, Industrial, Agricultural, Green Belt, Water Body, Institutional, Mixed Use, Restricted, Unknown]
+        zone_code: { type: string, description: "BDA/BBMP zone code if determinable" }
+        permitted_uses:
+          type: array
+          items: { type: string }
+        base_far: { type: number }
+        permissible_ground_coverage: { type: number }
+        primary_landuse: { type: string }
+        nearby_features:
+          type: array
+          items:
+            $ref: "#/components/schemas/NearbyFeature"
+        lulc_class:
+          type: string
+          nullable: true
+          description: "ISRO NRSC LULC land cover class at this coordinate"
+        lulc_code:
+          type: integer
+          nullable: true
+          description: "Raw ISRO NRSC LULC class code"
+        lulc_vintage:
+          type: string
+          nullable: true
+          description: "Dataset vintage used, e.g. '2022-23' or '2019-20'. Null if Bhuvan WMS unavailable."
+        na_order_required:
+          type: boolean
+          description: "True if LULC class is agricultural/grassland — Non-Agricultural conversion order needed"
+        forest_clearance_required:
+          type: boolean
+          description: "True if LULC class is forest — MoEFCC clearance required"
+        source_confidence:
+          type: string
+          enum: [authoritative, community]
+          description: "authoritative = Bhuvan ISRO LULC succeeded; community = OSM only"
+        kgis:
+          allOf:
+            - $ref: "#/components/schemas/KgisContext"
+          nullable: true
+          description: "Authoritative KGIS admin context. Null unless feature.geo.kgis-context flag enabled or KGIS unreachable."
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        severity:
+          type: string
+          enum: [low, moderate, high, none]
+        data_source: { type: string }
+
+    SoilResult:
+      type: object
+      required: [texture_class, clay_pct, sand_pct, bulk_density_gcm3, ph, bearing_capacity_class, score, severity, data_source]
+      properties:
+        clay_pct: { type: number }
+        sand_pct: { type: number }
+        silt_pct: { type: number }
+        bulk_density_gcm3: { type: number }
+        ph: { type: number }
+        texture_class: { type: string, description: "USDA soil texture class" }
+        bearing_capacity_class:
+          type: string
+          enum: ["Good (>150 kN/m²)", "Moderate (100–150 kN/m²)", "Poor (<100 kN/m²)"]
+        foundation_notes: { type: string }
+        score: { type: number, minimum: 0, maximum: 100 }
+        severity: { type: string, enum: [low, moderate, high, none] }
+        data_source: { type: string }
+
+    WaterBody:
+      type: object
+      properties:
+        type: { type: string }
+        name: { type: string }
+        distance_m: { type: number }
+        buffer_zone_m: { type: number }
+        buffer_source: { type: string }
+        site_within_buffer: { type: boolean }
+
+    WaterConstraintResult:
+      type: object
+      required: [water_bodies, construction_restricted, score, severity, data_source]
+      properties:
+        water_bodies:
+          type: array
+          items: { $ref: "#/components/schemas/WaterBody" }
+        nearest_distance_m: { type: number, nullable: true }
+        construction_restricted: { type: boolean }
+        restriction_reason: { type: string, nullable: true }
+        score: { type: number, minimum: 0, maximum: 100 }
+        severity: { type: string, enum: [low, moderate, high, none] }
+        data_source: { type: string }
+
+    AmenityItem:
+      type: object
+      required: [name, type, distance_m]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        distance_m: { type: number }
+        lat: { type: number, nullable: true, description: "Amenity latitude (for map markers)" }
+        lon: { type: number, nullable: true, description: "Amenity longitude (for map markers)" }
+
+    AmenityCategory:
+      type: object
+      required: [count, nearest_m, top_5]
+      properties:
+        count: { type: integer }
+        nearest_m: { type: number }
+        top_5:
+          type: array
+          items: { $ref: "#/components/schemas/AmenityItem" }
+        points:
+          type: array
+          description: "All located amenities in this category (≤40, sorted by distance) for dense map markers. top_5 retained for detail cards."
+          items: { $ref: "#/components/schemas/AmenityItem" }
+
+    AmenitiesResult:
+      type: object
+      required: [radius_m, healthcare, education, retail, finance, recreation, religious, transport, total_count, score, severity, data_source]
+      properties:
+        radius_m: { type: number }
+        healthcare: { $ref: "#/components/schemas/AmenityCategory" }
+        education:  { $ref: "#/components/schemas/AmenityCategory" }
+        retail:     { $ref: "#/components/schemas/AmenityCategory" }
+        finance:    { $ref: "#/components/schemas/AmenityCategory" }
+        recreation: { $ref: "#/components/schemas/AmenityCategory" }
+        religious:  { $ref: "#/components/schemas/AmenityCategory" }
+        transport:  { $ref: "#/components/schemas/AmenityCategory" }
+        total_count: { type: integer }
+        score: { type: number, minimum: 0, maximum: 100 }
+        severity: { type: string, enum: [low, moderate, high, none] }
+        data_source: { type: string }

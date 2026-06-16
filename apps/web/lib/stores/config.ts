@@ -19,7 +19,7 @@ function defaultDates(): { startDate: string; endDate: string } {
 }
 
 const DEFAULTS: AnalysisConfig = {
-  bufferM: 1000,
+  bufferM: 100,   // slider minimum (0.1 km) — smallest analysis radius by default
   ...defaultDates(),
 };
 

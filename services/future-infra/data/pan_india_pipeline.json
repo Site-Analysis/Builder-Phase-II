@@ -1,0 +1,8 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type":"Feature","properties":{"type":"expressway","name":"Mumbai-Pune Expressway Expansion","status":"Under Construction","expected_completion":"2026","source":"MSRDC 2024","source_date":"2024-Q2"},"geometry":{"type":"LineString","coordinates":[[72.8700,19.0700],[73.8600,18.5200]]}},
+    {"type":"Feature","properties":{"type":"expressway","name":"Delhi-Mumbai Industrial Corridor (DMIC)","status":"Under Construction","expected_completion":"2030","source":"DMICDC 2024","source_date":"2024-Q3"},"geometry":{"type":"LineString","coordinates":[[77.1000,28.5500],[72.8700,19.0700]]}},
+    {"type":"Feature","properties":{"type":"railway","name":"Mumbai-Ahmedabad High Speed Rail (Bullet Train)","status":"Under Construction","expected_completion":"2028","source":"NHSRCL 2024","source_date":"2024-Q4"},"geometry":{"type":"LineString","coordinates":[[72.8654,19.0760],[72.6369,21.2358]]}}
+  ]
+}

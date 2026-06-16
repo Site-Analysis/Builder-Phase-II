@@ -18,8 +18,8 @@ if _WIND_PATH in sys.path:
     sys.path.remove(_WIND_PATH)
 sys.path.insert(0, _WIND_PATH)
 
-sys.modules.pop("app", None)
-sys.modules.pop("app.main", None)
+for _k in [k for k in sys.modules if k == "app" or k.startswith("app.")]:
+    del sys.modules[_k]
 
 APP_AVAILABLE = False
 CLIENT = None  # type: ignore[assignment]
@@ -60,6 +60,7 @@ def test_analyze_flag_off(monkeypatch):
 
 
 @skip_no_app
+@pytest.mark.integration
 def test_analyze_flag_on(monkeypatch):
     monkeypatch.setenv("FLAGS", "feature.wind.analysis")
     resp = CLIENT.post(
@@ -81,6 +82,7 @@ def test_analyze_flag_on(monkeypatch):
 
 
 @skip_no_app
+@pytest.mark.integration
 def test_analyze_response_shape(monkeypatch):
     monkeypatch.setenv("FLAGS", "feature.wind.analysis")
     resp = CLIENT.post(

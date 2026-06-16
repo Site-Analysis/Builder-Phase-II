@@ -1,0 +1,65 @@
+openapi: "3.1.0"
+info:
+  title: Future Infrastructure Service
+  version: "1.0.0"
+  description: Curated pipeline of approved/under-construction public infrastructure projects near a site.
+
+servers:
+  - url: http://localhost:8008
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string}, service: {type: string}}}
+
+  /future-infra/pipeline:
+    get:
+      operationId: getGrowthPipeline
+      parameters:
+        - {name: lat, in: query, required: true, schema: {type: number}}
+        - {name: lon, in: query, required: true, schema: {type: number}}
+        - {name: radius_km, in: query, required: false, schema: {type: number, default: 10}}
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PipelineResult"}
+        "403":
+          description: Feature flag disabled
+
+components:
+  schemas:
+    PipelineItem:
+      type: object
+      required: [type, name, status, distance_km, source]
+      properties:
+        type:
+          type: string
+          enum: [metro, expressway, ring_road, it_park, sez, township, bus_terminal, railway, airport, industrial_area]
+        name: {type: string}
+        description: {type: string}
+        status:
+          type: string
+          enum: [Operational, Under Construction, Approved, Planned, Proposed]
+        expected_completion: {type: string, nullable: true}
+        distance_km: {type: number}
+        source: {type: string}
+        source_date: {type: string}
+
+    PipelineResult:
+      type: object
+      required: [pipeline_items, score, severity, data_source, data_as_of]
+      properties:
+        within_radius_km: {type: number}
+        pipeline_items:
+          type: array
+          items: {$ref: "#/components/schemas/PipelineItem"}
+        score: {type: number, minimum: 0, maximum: 100}
+        severity: {type: string, enum: [low, moderate, high, none]}
+        data_source: {type: string}
+        data_as_of: {type: string}

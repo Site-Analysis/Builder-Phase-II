@@ -1,0 +1,106 @@
+openapi: "3.1.0"
+info:
+  title: Planning Service
+  version: "1.1.0"
+  description: NBC 2016 FAR/setback/height rules, ICAO airport OLS, buildable area computation.
+
+servers:
+  - url: http://localhost:8006
+    description: Local dev
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  service: { type: string }
+
+  /planning/analyze:
+    post:
+      operationId: analyzeSiteCapacity
+      summary: Compute FAR, setbacks, height limit, buildable area, airport restrictions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanningRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
+components:
+  schemas:
+    PlanningRequest:
+      type: object
+      required: [latitude, longitude, plot_area_sqm]
+      properties:
+        latitude: { type: number, format: float }
+        longitude: { type: number, format: float }
+        plot_area_sqm: { type: number, format: float, minimum: 1 }
+        zone_class:
+          type: string
+          enum: [Residential, Commercial, Industrial, Mixed Use, Institutional]
+          default: Residential
+        road_width_m:
+          type: number
+          format: float
+          nullable: true
+          description: "Abutting road width in metres. If null, auto-detected from OSM; defaults to 9m if OSM data absent."
+
+    AirportRestriction:
+      type: object
+      required: [nearest_airport, distance_km, max_height_m, dgca_noc_required]
+      properties:
+        nearest_airport: { type: string }
+        iata_code: { type: string }
+        distance_km: { type: number }
+        max_height_m: { type: number, nullable: true, description: "null = no restriction" }
+        restriction_surface: { type: string }
+        dgca_noc_required: { type: boolean }
+        lat: { type: number, nullable: true, description: "Airport latitude (for site→airport map waypoint)" }
+        lon: { type: number, nullable: true, description: "Airport longitude (for site→airport map waypoint)" }
+
+    PlanningResult:
+      type: object
+      required: [far_applicable, ground_coverage_max, buildable_area_sqm, score, severity, data_source]
+      properties:
+        far_applicable: { type: number }
+        far_source: { type: string }
+        ground_coverage_max: { type: number }
+        setback_front_m: { type: number }
+        setback_rear_m: { type: number }
+        setback_side_m: { type: number }
+        max_height_m: { type: number }
+        height_limiting_factor: { type: string }
+        buildable_area_sqm: { type: number, description: "plot_area_sqm × far_applicable" }
+        road_width_used_m: { type: number, description: "Road width used for FAR lookup" }
+        road_width_source:
+          type: string
+          enum: [user_input, osm_detected, default_9m]
+          description: "How road_width_used_m was determined"
+        tod_applicable:
+          type: boolean
+          description: "True if BDA TOD Notification 2020 applies (metro within 500m)"
+        metro_station_name: { type: string, nullable: true }
+        metro_distance_m: { type: number, nullable: true }
+        metro_lat: { type: number, nullable: true, description: "Metro station latitude (for map marker + TOD ring)" }
+        metro_lon: { type: number, nullable: true, description: "Metro station longitude (for map marker + TOD ring)" }
+        airport_restriction: { $ref: "#/components/schemas/AirportRestriction" }
+        score: { type: number, minimum: 0, maximum: 100 }
+        severity: { type: string, enum: [low, moderate, high, none] }
+        data_source: { type: string }

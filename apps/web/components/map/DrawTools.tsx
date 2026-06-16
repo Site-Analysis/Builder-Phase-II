@@ -43,12 +43,20 @@ function centroid(s: DraftShape): [number, number] {
   return [s.center[0], s.center[1]];
 }
 
+function rectRing(b: [LatLng, LatLng]): LatLng[] {
+  const [a, c] = b;
+  return [[a[0], a[1]], [a[0], c[1]], [c[0], c[1]], [c[0], a[1]]];
+}
+
 export function DrawTools({ onShapeCommitted }: DrawToolsProps = {}) {
   const map = useMap();
-  const { setRectBounds } = useDrawStore();
+  const { setRectBounds, setMode: setDrawMode, setBoundary } = useDrawStore();
   const [mode, setMode]     = useState<Mode>(null);
   const [shapes, setShapes] = useState<Shape[]>([]);
   const idRef = useRef(1);
+
+  // Expose the active tool to MapClickHandler (suppresses marker placement).
+  useEffect(() => { setDrawMode(mode); }, [mode, setDrawMode]);
 
   const [draftRect, setDraftRect]     = useState<[LatLng, LatLng] | null>(null);
   const [draftCircle, setDraftCircle] = useState<{ center: LatLng; radius: number } | null>(null);
@@ -56,15 +64,24 @@ export function DrawTools({ onShapeCommitted }: DrawToolsProps = {}) {
 
   const [polyPts, setPolyPts] = useState<LatLng[]>([]);
   const [cursor, setCursor]   = useState<LatLng | null>(null);
+  // Latest poly points for event handlers — lets commit() run from the handler
+  // (not inside a setState updater, which would setState during render).
+  const polyPtsRef = useRef<LatLng[]>([]);
+  useEffect(() => { polyPtsRef.current = polyPts; }, [polyPts]);
 
   const barRef = useRef<HTMLDivElement | null>(null);
 
   const commit = useCallback((s: DraftShape) => {
     setShapes((prev) => [...prev, { ...s, id: idRef.current++ }]);
-    if (s.kind === "rect") setRectBounds(s.bounds);
+    if (s.kind === "rect") {
+      setRectBounds(s.bounds);
+      setBoundary({ kind: "rect", positions: rectRing(s.bounds) });
+    } else if (s.kind === "poly") {
+      setBoundary({ kind: "poly", positions: s.positions });
+    }
     const [lat, lng] = centroid(s);
     onShapeCommitted?.(lat, lng);
-  }, [setRectBounds, onShapeCommitted]);
+  }, [setRectBounds, setBoundary, onShapeCommitted]);
 
   // Stop the toolbar from triggering map drag/zoom/draw beneath it
   useEffect(() => {
@@ -127,27 +144,29 @@ export function DrawTools({ onShapeCommitted }: DrawToolsProps = {}) {
     map.doubleClickZoom.disable();
 
     const click = (e: L.LeafletMouseEvent) => {
-      const p: LatLng = [e.latlng.lat, e.latlng.lng];
-      setPolyPts((prev) => {
-        if (prev.length >= 3) {
-          const first = map.latLngToContainerPoint(prev[0]);
-          const here  = map.latLngToContainerPoint(e.latlng);
-          if (first.distanceTo(here) < 14) {
-            commit({ kind: "poly", positions: prev });
-            setCursor(null);
-            return [];
-          }
+      const prev = polyPtsRef.current;
+      if (prev.length >= 3) {
+        const first = map.latLngToContainerPoint(prev[0]);
+        const here  = map.latLngToContainerPoint(e.latlng);
+        if (first.distanceTo(here) < 14) {
+          commit({ kind: "poly", positions: prev });
+          polyPtsRef.current = [];
+          setPolyPts([]);
+          setCursor(null);
+          return;
         }
-        return [...prev, p];
-      });
+      }
+      const next: LatLng[] = [...prev, [e.latlng.lat, e.latlng.lng]];
+      polyPtsRef.current = next;
+      setPolyPts(next);
     };
     const move = (e: L.LeafletMouseEvent) => setCursor([e.latlng.lat, e.latlng.lng]);
     const dbl = () => {
-      setPolyPts((prev) => {
-        if (prev.length >= 3) commit({ kind: "poly", positions: prev });
-        setCursor(null);
-        return [];
-      });
+      const prev = polyPtsRef.current;
+      if (prev.length >= 3) commit({ kind: "poly", positions: prev });
+      polyPtsRef.current = [];
+      setPolyPts([]);
+      setCursor(null);
     };
 
     map.on("click", click);
@@ -175,6 +194,7 @@ export function DrawTools({ onShapeCommitted }: DrawToolsProps = {}) {
     setDraftCircle(null);
     dragStart.current = null;
     setRectBounds(null);
+    setBoundary(null);
   }
 
   const hasDrawing =

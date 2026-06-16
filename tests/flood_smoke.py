@@ -60,6 +60,7 @@ def test_analyze_flag_off(monkeypatch):
 
 
 @skip_no_app
+@pytest.mark.integration
 def test_analyze_flag_on(monkeypatch):
     monkeypatch.setenv("FLAGS", "feature.flood.risk-analysis")
     resp = CLIENT.post(

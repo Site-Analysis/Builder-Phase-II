@@ -118,6 +118,10 @@ function csvCell(v: string | number | undefined): string {
 
 const MODULE_LABEL: Record<ModuleId, string> = {
   sunpath: "Sun Path", flood: "Flood", temperature: "Temperature", wind: "Wind", rainfall: "Rainfall",
+  zone: "Zone & Land Use", planning: "Site Capacity", zoning: "Zoning Compliance",
+  infrastructure: "Connectivity",
+  soil: "Soil Profile", waterConstraints: "Water Constraints", growth: "Growth Context", land: "Title & Documents",
+  amenities: "Amenities",
 };
 
 export function exportCsv(project: Project | null, modules: Modules, baseName: string) {

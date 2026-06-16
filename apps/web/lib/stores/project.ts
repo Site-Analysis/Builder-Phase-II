@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import type { ModuleId } from "./analysis";
 
 export interface Project {
   id: string;
@@ -10,7 +11,7 @@ export interface Project {
   thumbnail_url?: string;
   created_at: string;
   overall_score?: number;
-  modules_run?: Array<"flood" | "sunpath" | "wind" | "temperature" | "rainfall">;
+  modules_run?: ModuleId[];
   star_rating?: number;
   boundary?: GeoJSON.Geometry;
   area_sqm?: number;

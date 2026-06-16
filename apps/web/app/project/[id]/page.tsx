@@ -1,9 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Sun, Waves, Thermometer, Wind, CloudRain, Settings } from "lucide-react";
+import { Sun, Waves, Thermometer, Wind, CloudRain, Settings, MapPin, Building2, Wifi, Layers, Droplets, TrendingUp, FileText, Scale } from "lucide-react";
 import { TopNav } from "@/components/layout/TopNav";
 import { RightPanel } from "@/components/layout/RightPanel";
 import type { ActiveModuleInfo } from "@/components/layout/RightPanel";
@@ -17,6 +17,7 @@ import { WindOverlay } from "@/components/map/WindOverlay";
 import { RainfallPanel } from "@/components/layout/RainfallPanel";
 import { RainfallOverlay } from "@/components/map/RainfallOverlay";
 import { TemperaturePanel } from "@/components/layout/TemperaturePanel";
+import { LandRecordsPanel } from "@/components/layout/LandRecordsPanel";
 import { TemperatureOverlay } from "@/components/map/TemperatureOverlay";
 import { SunOverlay } from "@/components/map/SunOverlay";
 import { useAuthStore } from "@/lib/stores/auth";
@@ -31,9 +32,24 @@ import {
   getSunpathAnalysis,
   getWindAnalysis,
   getTemperatureAnalysis,
+  getZoneAnalysis,
+  getPlanningAnalysis,
+  getZoningAnalysis,
+  getInfraAnalysis,
+  getSoilAnalysis,
+  getWaterConstraintsAnalysis,
+  getGrowthAnalysis,
+  getAmenitiesAnalysis,
   type AnalysisCoords,
 } from "@/lib/api/analysis";
-import type { ModuleId } from "@/lib/stores/analysis";
+import type { ModuleId, ModuleResult } from "@/lib/stores/analysis";
+import { dayRange, fmtHour } from "@/lib/solar";
+
+// 3D scene — client-only (MapLibre GL + Three.js)
+const Scene3D = dynamic(
+  () => import("@/components/three/Scene3D").then((m) => m.Scene3D),
+  { ssr: false, loading: () => <div style={{ position: "absolute", inset: 0, background: "#F4F4F2" }} /> }
+);
 
 // React-Leaflet has no SSR support — dynamic import required
 const MapContainer = dynamic(
@@ -76,6 +92,30 @@ const SunPathArc = dynamic(
   () => import("@/components/map/SunPathArc").then((m) => m.SunPathArc),
   { ssr: false }
 );
+const ZoningComplianceHUD = dynamic(
+  () => import("@/components/zoning/ZoningComplianceHUD").then((m) => m.ZoningComplianceHUD),
+  { ssr: false }
+);
+const ZoningCapacityHUD = dynamic(
+  () => import("@/components/zoning/ZoningCapacityHUD").then((m) => m.ZoningCapacityHUD),
+  { ssr: false }
+);
+const ZoningContextOverlay = dynamic(
+  () => import("@/components/map/ZoningContextOverlay").then((m) => m.ZoningContextOverlay),
+  { ssr: false }
+);
+const ZoningMapLegend = dynamic(
+  () => import("@/components/map/ZoningMapLegend").then((m) => m.ZoningMapLegend),
+  { ssr: false }
+);
+const MapToggle = dynamic(
+  () => import("@/components/map/MapToggle").then((m) => m.MapToggle),
+  { ssr: false }
+);
+const ClimateContextHUD = dynamic(
+  () => import("@/components/zoning/ClimateContextHUD").then((m) => m.ClimateContextHUD),
+  { ssr: false }
+);
 
 // TODO GH#53: all 5 analysis endpoints unconfirmed — responses are mapped via defensive guesses
 
@@ -85,6 +125,8 @@ const SEVERITY_VERDICT: Record<string, string> = {
 
 const MODULE_ABBREV: Record<ModuleId, string> = {
   sunpath: "SUN", flood: "FLOOD", temperature: "TEMP", wind: "WIND", rainfall: "RAIN",
+  zone: "ZONE", planning: "FAR", zoning: "ZONING", infrastructure: "INFRA", soil: "SOIL",
+  waterConstraints: "WATER", growth: "GROWTH", land: "TITLE", amenities: "AMENITY",
 };
 
 const MODULE_META: {
@@ -93,11 +135,20 @@ const MODULE_META: {
   color: string;
   icon: React.ReactNode;
 }[] = [
-  { id: "sunpath",     name: "Sun Path",    color: "#F59E0B", icon: <Sun size={14} />         },
-  { id: "flood",       name: "Flood",       color: "#2563EB", icon: <Waves size={14} />       },
-  { id: "temperature", name: "Temperature", color: "#EF4444", icon: <Thermometer size={14} /> },
-  { id: "wind",        name: "Wind",        color: "#06B6D4", icon: <Wind size={14} />        },
-  { id: "rainfall",    name: "Rainfall",    color: "#7C3AED", icon: <CloudRain size={14} />   },
+  { id: "sunpath",          name: "Sun Path",          color: "#F59E0B", icon: <Sun size={14} />          },
+  { id: "flood",            name: "Flood",             color: "#2563EB", icon: <Waves size={14} />        },
+  { id: "temperature",      name: "Temperature",       color: "#EF4444", icon: <Thermometer size={14} />  },
+  { id: "wind",             name: "Wind",              color: "#06B6D4", icon: <Wind size={14} />         },
+  { id: "rainfall",         name: "Rainfall",          color: "#7C3AED", icon: <CloudRain size={14} />    },
+  { id: "zoning",           name: "Zoning",            color: "#B45309", icon: <Scale size={14} />        },
+  { id: "zone",             name: "Zone & Land Use",   color: "#10B981", icon: <MapPin size={14} />       },
+  { id: "planning",         name: "Site Capacity",     color: "#F97316", icon: <Building2 size={14} />    },
+  { id: "infrastructure",   name: "Connectivity",      color: "#0EA5E9", icon: <Wifi size={14} />         },
+  { id: "soil",             name: "Soil Profile",      color: "#92400E", icon: <Layers size={14} />       },
+  { id: "waterConstraints", name: "Water Constraints", color: "#1D4ED8", icon: <Droplets size={14} />     },
+  { id: "growth",           name: "Growth Context",    color: "#16A34A", icon: <TrendingUp size={14} />   },
+  { id: "land",             name: "Title & Documents", color: "#6B21A8", icon: <FileText size={14} />     },
+  { id: "amenities",        name: "Amenities",         color: "#059669", icon: <MapPin size={14} />        },
 ];
 
 function getInitials(user: { email?: string; user_metadata?: { full_name?: string } }) {
@@ -128,9 +179,22 @@ export default function ProjectPage() {
 
   const [project,      setProject]      = useState<Awaited<ReturnType<typeof getProject>> | null>(null);
   const [center,       setCenter]       = useState<[number, number]>([12.9716, 77.5946]);
+  const [boundaryPolygon, setBoundaryPolygon] = useState<[number, number][] | null>(null);
   const [detailModule, setDetailModule] = useState<ModuleId | null>(null);
+  const [view3D,       setView3D]       = useState(false);
+  const [showAmenities, setShowAmenities] = useState(false);
+  const [showClimate,  setShowClimate]  = useState(false);
+  const [analysisCoords, setAnalysisCoords] = useState<AnalysisCoords | null>(null);
+  const climateRequestedRef = useRef(false);
+  const [viewMode,     setViewMode]     = useState<"massing" | "diagram">("massing");
+  const [hour,         setHour]         = useState(12);
+
+  const solar    = modules.sunpath?.solar ?? null;
+  const sunRange = solar ? dayRange(solar.equinox) : { start: 6, end: 18 };
   const [expanded,     setExpanded]     = useState<Record<ModuleId, boolean>>({
     flood: true, sunpath: false, wind: false, temperature: false, rainfall: false,
+    zone: false, planning: false, zoning: false, infrastructure: false, soil: false,
+    waterConstraints: false, growth: false, land: false, amenities: false,
   });
 
   useEffect(() => {
@@ -144,23 +208,47 @@ export default function ProjectPage() {
       setProject(p);
       setCurrentProject(p);
 
-      // Extract lat/lng from the GeoJSON Point boundary, fall back to Bangalore
+      // Extract analysis centre from the GeoJSON boundary, fall back to Bangalore.
+      // Point → that point; Polygon (drawn rect/freehand) → centroid + keep the
+      // ring so the map shows the actual drawn area instead of a marker/circle.
       let lat = 12.9716, lng = 77.5946;
       if (p.boundary?.type === "Point" && Array.isArray(p.boundary.coordinates)) {
         lng = p.boundary.coordinates[0] as number;
         lat = p.boundary.coordinates[1] as number;
+        setBoundaryPolygon(null);
+      } else if (p.boundary?.type === "Polygon" && Array.isArray(p.boundary.coordinates)) {
+        const ring = (p.boundary.coordinates[0] as [number, number][]).slice(0, -1); // drop closing dup
+        const pts: [number, number][] = ring.map(([lo, la]) => [la, lo]); // [lat,lng]
+        if (pts.length >= 3) {
+          lat = pts.reduce((s, q) => s + q[0], 0) / pts.length;
+          lng = pts.reduce((s, q) => s + q[1], 0) / pts.length;
+          setBoundaryPolygon(pts);
+        }
       }
       setCenter([lat, lng]);
       const coords: AnalysisCoords = { lat, lng, projectId: id, bufferM, startDate, endDate };
+      setAnalysisCoords(coords);
+      climateRequestedRef.current = false;
 
       // Only run the modules the user selected at creation (default: all 5).
       const run = new Set<ModuleId>(p.modules_run ?? MODULE_META.map((m) => m.id));
+      // The zoning map overlay renders amenity pins, so amenities must run whenever
+      // zoning does — even if the project's modules_run didn't list it explicitly.
+      if (run.has("zoning")) run.add("amenities");
       const allFetchers: [ModuleId, () => Promise<unknown>][] = [
-        ["flood",       () => getFloodAnalysis(coords)],
-        ["rainfall",    () => getRainfallAnalysis(coords)],
-        ["sunpath",     () => getSunpathAnalysis(coords)],
-        ["wind",        () => getWindAnalysis(coords)],
-        ["temperature", () => getTemperatureAnalysis(coords)],
+        ["flood",             () => getFloodAnalysis(coords)],
+        ["rainfall",          () => getRainfallAnalysis(coords)],
+        ["sunpath",           () => getSunpathAnalysis(coords)],
+        ["wind",              () => getWindAnalysis(coords)],
+        ["temperature",       () => getTemperatureAnalysis(coords)],
+        ["zone",              () => getZoneAnalysis(lat, lng)],
+        ["planning",          () => getPlanningAnalysis(lat, lng)],
+        ["zoning",            () => getZoningAnalysis(lat, lng, p.area_sqm && p.area_sqm > 0 ? p.area_sqm : 1000)],
+        ["infrastructure",    () => getInfraAnalysis(lat, lng)],
+        ["soil",              () => getSoilAnalysis(lat, lng)],
+        ["waterConstraints",  () => getWaterConstraintsAnalysis(lat, lng)],
+        ["growth",            () => getGrowthAnalysis(lat, lng)],
+        ["amenities",         () => getAmenitiesAnalysis(lat, lng)],
       ];
 
       // Open the first selected module in canonical order.
@@ -168,6 +256,8 @@ export default function ProjectPage() {
       if (firstSelected) {
         setExpanded({
           flood: false, sunpath: false, wind: false, temperature: false, rainfall: false,
+          zone: false, planning: false, zoning: false, infrastructure: false, soil: false,
+          waterConstraints: false, growth: false, land: false, amenities: false,
           [firstSelected]: true,
         });
       }
@@ -182,9 +272,28 @@ export default function ProjectPage() {
     }).catch(console.error);
   }, [id, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Lazy-load the Core-3 climate modules the first time the Climate layer is
+  // toggled on — reuses the existing validated endpoints (no eager fetch).
+  useEffect(() => {
+    if (!showClimate || !analysisCoords || climateRequestedRef.current) return;
+    climateRequestedRef.current = true;
+    const climate: [ModuleId, (c: AnalysisCoords) => Promise<ModuleResult>][] = [
+      ["temperature", getTemperatureAnalysis],
+      ["wind",        getWindAnalysis],
+      ["sunpath",     getSunpathAnalysis],
+    ];
+    for (const [mid, fetcher] of climate) {
+      if (modules[mid]) continue; // already run via the project's modules_run
+      setModuleLoading(mid);
+      fetcher(analysisCoords)
+        .then((r) => setModuleResult(mid, r as never))
+        .catch((e) => setModuleError(mid, e instanceof Error ? e.message : "Failed"));
+    }
+  }, [showClimate, analysisCoords]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Composite site score — recomputed from module results as they resolve.
   useEffect(() => {
-    const total = project?.modules_run?.length ?? 5;
+    const total = project?.modules_run?.length ?? 14;
     const score = computeSiteScore(modules, total);
     if (score) setSiteScore(score);
   }, [modules, project, setSiteScore]);
@@ -192,6 +301,8 @@ export default function ProjectPage() {
   function toggleModule(moduleId: ModuleId) {
     setExpanded((prev) => ({
       flood: false, sunpath: false, wind: false, temperature: false, rainfall: false,
+      zone: false, planning: false, zoning: false, infrastructure: false, soil: false,
+      waterConstraints: false, growth: false, land: false, amenities: false,
       [moduleId]: !prev[moduleId],
     }));
   }
@@ -320,10 +431,9 @@ export default function ProjectPage() {
                 <MapContainer mode="full-screen" center={center} zoom={16}>
 
                   {project?.boundary && (
-                    <SiteBoundaryOverlay
-                      shape="circle"
-                      coordinates={{ center, radius: bufferM }}
-                    />
+                    boundaryPolygon
+                      ? <SiteBoundaryOverlay shape="polygon" coordinates={boundaryPolygon} />
+                      : <SiteBoundaryOverlay shape="circle" coordinates={{ center, radius: bufferM }} />
                   )}
                   {project && (
                     <SiteLabel
@@ -350,6 +460,15 @@ export default function ProjectPage() {
                   {detailModule === "sunpath" && result && !result.loading && !result.error && result.solar && (
                     <SunPathArc center={center} result={result} />
                   )}
+                  {detailModule === "zoning" && result && !result.loading && !result.error && result.zoning && (
+                    <ZoningContextOverlay center={center} zoningResult={result} amenitiesResult={modules.amenities} showAmenities={showAmenities} />
+                  )}
+                  {detailModule === "zoning" && showClimate && modules.wind && !modules.wind.loading && !modules.wind.error && (
+                    <WindRose center={center} result={modules.wind} />
+                  )}
+                  {detailModule === "zoning" && showClimate && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
+                    <SunPathArc center={center} result={modules.sunpath} />
+                  )}
                   <DrawTools />
                   <MapSearch />
                 </MapContainer>
@@ -369,6 +488,27 @@ export default function ProjectPage() {
                 )}
                 {detailModule === "sunpath" && result && !result.loading && !result.error && result.solar && (
                   <SunOverlay result={result} />
+                )}
+                {detailModule === "zoning" && result && !result.loading && !result.error && result.zoning && (
+                  <>
+                    <ZoningComplianceHUD result={result} variant="full" corner="tl" />
+                    <ZoningCapacityHUD result={result} variant="full" corner="bl" />
+                    <ZoningMapLegend zoningResult={result} amenitiesResult={modules.amenities} showAmenities={showAmenities} />
+                    <MapToggle
+                      label="Amenities" icon={<MapPin size={14} />} top={84}
+                      on={showAmenities} onToggle={() => setShowAmenities((v) => !v)}
+                      count={modules.amenities?.amenityPoints?.length}
+                    />
+                    <MapToggle
+                      label="Climate" icon={<Thermometer size={14} />} top={132} accent="#C4865A"
+                      on={showClimate} onToggle={() => setShowClimate((v) => !v)}
+                    />
+                    {showClimate && (
+                      <ClimateContextHUD
+                        temperature={modules.temperature} wind={modules.wind} sunpath={modules.sunpath}
+                      />
+                    )}
+                  </>
                 )}
 
                 <ModuleDetailCard
@@ -395,56 +535,197 @@ export default function ProjectPage() {
           <>
             {/* Map */}
             <div className="relative flex-1">
-              <MapContainer mode="split" center={center} zoom={16}>
-                {project?.boundary && (
-                  <SiteBoundaryOverlay
-                    shape="circle"
-                    coordinates={{ center, radius: bufferM }}
-                  />
-                )}
-                {project && (
-                  <SiteLabel
-                    projectName={project.name}
-                    coordinates={project.coordinates ?? ""}
-                    area={project.area_sqm ? `${(project.area_sqm / 10000).toFixed(2)} ha` : "—"}
-                    date={new Date(project.created_at).toLocaleDateString("en-IN", {
-                      day: "numeric", month: "short", year: "numeric",
-                    })}
-                  />
-                )}
-                {expanded.flood && modules.flood && !modules.flood.loading && !modules.flood.error && (
-                  <FloodZoneRings center={center} result={modules.flood} />
-                )}
-                {expanded.wind && modules.wind && !modules.wind.loading && !modules.wind.error && (
-                  <WindRose center={center} result={modules.wind} />
-                )}
-                {expanded.rainfall && modules.rainfall && !modules.rainfall.loading && !modules.rainfall.error && (
-                  <RainfallRose center={center} result={modules.rainfall} />
-                )}
-                {expanded.temperature && modules.temperature && !modules.temperature.loading && !modules.temperature.error && (
-                  <ThermalField center={center} result={modules.temperature} />
-                )}
-                {expanded.sunpath && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
-                  <SunPathArc center={center} result={modules.sunpath} />
-                )}
-                <DrawTools />
-                <MapSearch topOffset={16} />
-              </MapContainer>
-              {/* HTML badge + legend overlay — not inside Leaflet */}
-              {expanded.flood && modules.flood && !modules.flood.loading && !modules.flood.error && (
-                <FloodZoneOverlay result={modules.flood} />
+
+              {/* 2D / 3D view toggle — top-right corner of map area */}
+              <div style={{
+                position: "absolute", top: 14, right: 14, zIndex: 500,
+                display: "flex", gap: 0, borderRadius: 9,
+                border: "1px solid rgba(207,214,196,0.8)",
+                background: "rgba(253,252,251,0.92)",
+                backdropFilter: "blur(10px)",
+                boxShadow: "0 2px 10px rgba(58,63,59,0.12)",
+                overflow: "hidden",
+              }}>
+                {(["2D", "3D"] as const).map((mode) => {
+                  const active = (mode === "3D") === view3D;
+                  return (
+                    <button
+                      key={mode}
+                      onClick={() => setView3D(mode === "3D")}
+                      style={{
+                        padding: "5px 14px", fontSize: 11, fontWeight: 700,
+                        border: "none", cursor: "pointer", fontFamily: "inherit",
+                        background: active ? "#3A3F3B" : "transparent",
+                        color: active ? "#FDFCFB" : "#7B8F83",
+                        transition: "background 0.15s, color 0.15s",
+                      }}
+                    >
+                      {mode}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 3D scene (MapLibre + Three.js) — only after project coords loaded */}
+              {view3D && project && (
+                <Scene3D
+                  center={center}
+                  bufferM={bufferM}
+                  mode={viewMode}
+                  solar={solar}
+                  hour={hour}
+                  boundary={boundaryPolygon}
+                />
               )}
-              {expanded.wind && modules.wind && !modules.wind.loading && !modules.wind.error && (
-                <WindOverlay result={modules.wind} />
+
+              {/* ── 3D control panel (bottom-centre) ── */}
+              {view3D && (
+                <div style={{
+                  position: "absolute", bottom: 14, left: "50%",
+                  transform: "translateX(-50%)", zIndex: 500,
+                  display: "flex", flexDirection: "column", gap: 6,
+                  alignItems: "center",
+                }}>
+                  {/* Hour slider */}
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "7px 14px", borderRadius: 9,
+                    border: "1px solid rgba(207,214,196,0.8)",
+                    background: "rgba(253,252,251,0.92)",
+                    backdropFilter: "blur(10px)",
+                    boxShadow: "0 2px 10px rgba(58,63,59,0.12)",
+                  }}>
+                    <span style={{ fontSize: 11, color: "#7B8F83", userSelect: "none" }}>☀</span>
+                    <input
+                      type="range"
+                      min={sunRange.start}
+                      max={sunRange.end}
+                      step={0.25}
+                      value={hour}
+                      onChange={(e) => setHour(Number(e.target.value))}
+                      style={{ width: 160, accentColor: "#F4A259", cursor: "pointer" }}
+                    />
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, fontVariantNumeric: "tabular-nums",
+                      color: "#3A3F3B", minWidth: 36, fontFamily: "inherit",
+                    }}>
+                      {fmtHour(hour)}
+                    </span>
+                  </div>
+
+                  {/* Massing / Diagram toggle */}
+                  <div style={{
+                    display: "flex", gap: 0, borderRadius: 9,
+                    border: "1px solid rgba(207,214,196,0.8)",
+                    background: "rgba(253,252,251,0.92)",
+                    backdropFilter: "blur(10px)",
+                    boxShadow: "0 2px 10px rgba(58,63,59,0.12)",
+                    overflow: "hidden",
+                  }}>
+                    {(["massing", "diagram"] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => setViewMode(m)}
+                        style={{
+                          padding: "5px 14px", fontSize: 11, fontWeight: 700,
+                          border: "none", cursor: "pointer", fontFamily: "inherit",
+                          background: viewMode === m ? "#3A3F3B" : "transparent",
+                          color: viewMode === m ? "#FDFCFB" : "#7B8F83",
+                          transition: "background 0.15s, color 0.15s",
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {m.charAt(0).toUpperCase() + m.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
-              {expanded.rainfall && modules.rainfall && !modules.rainfall.loading && !modules.rainfall.error && (
-                <RainfallOverlay result={modules.rainfall} />
-              )}
-              {expanded.temperature && modules.temperature && !modules.temperature.loading && !modules.temperature.error && (
-                <TemperatureOverlay result={modules.temperature} />
-              )}
-              {expanded.sunpath && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
-                <SunOverlay result={modules.sunpath} />
+
+              {/* 2D map + HTML overlays (Leaflet) — hidden when 3D is active */}
+              {!view3D && (
+                <>
+                  <MapContainer mode="split" center={center} zoom={16}>
+                    {project?.boundary && (
+                      boundaryPolygon
+                        ? <SiteBoundaryOverlay shape="polygon" coordinates={boundaryPolygon} />
+                        : <SiteBoundaryOverlay shape="circle" coordinates={{ center, radius: bufferM }} />
+                    )}
+                    {project && (
+                      <SiteLabel
+                        projectName={project.name}
+                        coordinates={project.coordinates ?? ""}
+                        area={project.area_sqm ? `${(project.area_sqm / 10000).toFixed(2)} ha` : "—"}
+                        date={new Date(project.created_at).toLocaleDateString("en-IN", {
+                          day: "numeric", month: "short", year: "numeric",
+                        })}
+                      />
+                    )}
+                    {expanded.flood && modules.flood && !modules.flood.loading && !modules.flood.error && (
+                      <FloodZoneRings center={center} result={modules.flood} />
+                    )}
+                    {expanded.wind && modules.wind && !modules.wind.loading && !modules.wind.error && (
+                      <WindRose center={center} result={modules.wind} />
+                    )}
+                    {expanded.rainfall && modules.rainfall && !modules.rainfall.loading && !modules.rainfall.error && (
+                      <RainfallRose center={center} result={modules.rainfall} />
+                    )}
+                    {expanded.temperature && modules.temperature && !modules.temperature.loading && !modules.temperature.error && (
+                      <ThermalField center={center} result={modules.temperature} />
+                    )}
+                    {expanded.sunpath && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
+                      <SunPathArc center={center} result={modules.sunpath} />
+                    )}
+                    {expanded.zoning && modules.zoning && !modules.zoning.loading && !modules.zoning.error && modules.zoning.zoning && (
+                      <ZoningContextOverlay center={center} zoningResult={modules.zoning} amenitiesResult={modules.amenities} showAmenities={showAmenities} />
+                    )}
+                    {expanded.zoning && showClimate && modules.wind && !modules.wind.loading && !modules.wind.error && (
+                      <WindRose center={center} result={modules.wind} />
+                    )}
+                    {expanded.zoning && showClimate && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
+                      <SunPathArc center={center} result={modules.sunpath} />
+                    )}
+                    <DrawTools />
+                    <MapSearch topOffset={16} />
+                  </MapContainer>
+                  {/* HTML badge + legend overlay — not inside Leaflet */}
+                  {expanded.flood && modules.flood && !modules.flood.loading && !modules.flood.error && (
+                    <FloodZoneOverlay result={modules.flood} />
+                  )}
+                  {expanded.wind && modules.wind && !modules.wind.loading && !modules.wind.error && (
+                    <WindOverlay result={modules.wind} />
+                  )}
+                  {expanded.rainfall && modules.rainfall && !modules.rainfall.loading && !modules.rainfall.error && (
+                    <RainfallOverlay result={modules.rainfall} />
+                  )}
+                  {expanded.temperature && modules.temperature && !modules.temperature.loading && !modules.temperature.error && (
+                    <TemperatureOverlay result={modules.temperature} />
+                  )}
+                  {expanded.sunpath && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
+                    <SunOverlay result={modules.sunpath} />
+                  )}
+                  {expanded.zoning && modules.zoning && !modules.zoning.loading && !modules.zoning.error && modules.zoning.zoning && (
+                    <>
+                      <ZoningComplianceHUD result={modules.zoning} variant="compact" corner="tl" />
+                      <ZoningCapacityHUD result={modules.zoning} variant="compact" corner="br" />
+                      <ZoningMapLegend zoningResult={modules.zoning} amenitiesResult={modules.amenities} showAmenities={showAmenities} />
+                      <MapToggle
+                        label="Amenities" icon={<MapPin size={14} />} top={84}
+                        on={showAmenities} onToggle={() => setShowAmenities((v) => !v)}
+                        count={modules.amenities?.amenityPoints?.length}
+                      />
+                      <MapToggle
+                        label="Climate" icon={<Thermometer size={14} />} top={132} accent="#C4865A"
+                        on={showClimate} onToggle={() => setShowClimate((v) => !v)}
+                      />
+                      {showClimate && (
+                        <ClimateContextHUD
+                          temperature={modules.temperature} wind={modules.wind} sunpath={modules.sunpath}
+                        />
+                      )}
+                    </>
+                  )}
+                </>
               )}
             </div>
 
@@ -480,6 +761,11 @@ export default function ProjectPage() {
                       moduleId === "wind"    ? <WindPanel result={result} severity={result?.severity ?? "none"} /> :
                       moduleId === "rainfall" ? <RainfallPanel result={result} severity={result?.severity ?? "none"} /> :
                       moduleId === "temperature" ? <TemperaturePanel result={result} severity={result?.severity ?? "none"} /> :
+                      moduleId === "land" ? <LandRecordsPanel result={result} prefill={(() => {
+                        const k = modules.zoning?.zoning?.kgis;
+                        if (!k || k.type !== "Rural") return undefined;
+                        return { district: k.district ?? undefined, taluk: k.taluk ?? undefined, hobli: k.hobli ?? undefined, village: k.village ?? undefined, surveyNumber: k.surveyNumber ?? undefined };
+                      })()} /> :
                       undefined
                     }
                     expanded={expanded[moduleId]}

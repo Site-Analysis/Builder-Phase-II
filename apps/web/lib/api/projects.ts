@@ -102,6 +102,20 @@ export async function getProject(id: string): Promise<Project> {
   return found;
 }
 
+// Planar (equirectangular) polygon area in m² — accurate at site scale.
+function polygonAreaSqm(ring: [number, number][]): number {
+  if (ring.length < 4) return 0;
+  const lat0 = (ring.reduce((s, p) => s + p[1], 0) / ring.length) * Math.PI / 180;
+  const kx = 111_320 * Math.cos(lat0);
+  const ky = 110_540;
+  const xy = ring.map(([lng, lat]) => [lng * kx, lat * ky]);
+  let a = 0;
+  for (let i = 0; i < xy.length - 1; i++) {
+    a += xy[i][0] * xy[i + 1][1] - xy[i + 1][0] * xy[i][1];
+  }
+  return Math.abs(a / 2);
+}
+
 export async function createProject(
   data: Pick<Project, "name" | "location"> & {
     boundary: GeoJSON.Geometry;
@@ -111,9 +125,18 @@ export async function createProject(
   // No projects backend (GH#55) — persist client-side so the analysis page can
   // read the real coordinates from the boundary.
   let coordinates = "";
+  let area_sqm: number | undefined;
   if (data.boundary.type === "Point" && Array.isArray(data.boundary.coordinates)) {
     const [lng, lat] = data.boundary.coordinates as number[];
     coordinates = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  } else if (data.boundary.type === "Polygon" && Array.isArray(data.boundary.coordinates)) {
+    // Centroid for the label + planar area so buildable reflects the drawn site.
+    const ring = data.boundary.coordinates[0] as [number, number][]; // [lng,lat], closed
+    const pts = ring.slice(0, -1);
+    const clng = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+    const clat = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    coordinates = `${clat.toFixed(5)}, ${clng.toFixed(5)}`;
+    area_sqm = polygonAreaSqm(ring);
   }
 
   const project: Project = {
@@ -124,6 +147,7 @@ export async function createProject(
     created_at: new Date().toISOString(),
     boundary: data.boundary,
     coordinates,
+    area_sqm,
     modules_run: data.modules_run ?? ["sunpath", "flood", "temperature", "wind", "rainfall"],
   };
 
