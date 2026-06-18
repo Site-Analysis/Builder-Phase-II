@@ -8,7 +8,10 @@ export interface Building {
   height: number | null; // metres, or null when OSM has no height/levels tag
 }
 
-const OVERPASS = "https://overpass-api.de/api/interpreter";
+// overpass-api.de is 406/504-blocked in some networks; the FR mirror works and
+// the browser supplies a real User-Agent (no 403). Keep .de as a fallback.
+const OVERPASS_PRIMARY = "https://overpass.openstreetmap.fr/api/interpreter";
+const OVERPASS_FALLBACK = "https://overpass-api.de/api/interpreter";
 const NOMINATIM = "https://nominatim.openstreetmap.org";
 const MAX_BUILDINGS = 400;
 
@@ -40,13 +43,17 @@ export async function fetchBuildings(lat: number, lng: number, radiusM: number):
   if (hit) return hit;
 
   const query = `[out:json][timeout:25];(way["building"](around:${radiusM},${lat},${lng}););out geom;`;
-  try {
-    const res = await fetch(OVERPASS, {
+  const body = `data=${encodeURIComponent(query)}`;
+  const post = (url: string) =>
+    fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
+      body,
     });
-    if (!res.ok) return [];
+  try {
+    let res = await post(OVERPASS_PRIMARY).catch(() => null);
+    if (!res || !res.ok) res = await post(OVERPASS_FALLBACK).catch(() => null);
+    if (!res || !res.ok) return [];
     const data: { elements?: OverpassEl[] } = await res.json();
     const out: Building[] = [];
     for (const el of data.elements ?? []) {

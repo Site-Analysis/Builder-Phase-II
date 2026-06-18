@@ -20,6 +20,7 @@ import { TemperaturePanel } from "@/components/layout/TemperaturePanel";
 import { LandRecordsPanel } from "@/components/layout/LandRecordsPanel";
 import { TemperatureOverlay } from "@/components/map/TemperatureOverlay";
 import { SunOverlay } from "@/components/map/SunOverlay";
+import { MapCompass } from "@/components/map/MapCompass";
 import { useAuthStore } from "@/lib/stores/auth";
 import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
@@ -40,7 +41,9 @@ import {
   getWaterConstraintsAnalysis,
   getGrowthAnalysis,
   getAmenitiesAnalysis,
+  getSolarDay,
   type AnalysisCoords,
+  type SolarDay,
 } from "@/lib/api/analysis";
 import type { ModuleId, ModuleResult } from "@/lib/stores/analysis";
 import { dayRange, fmtHour } from "@/lib/solar";
@@ -186,11 +189,22 @@ export default function ProjectPage() {
   const [showClimate,  setShowClimate]  = useState(false);
   const [analysisCoords, setAnalysisCoords] = useState<AnalysisCoords | null>(null);
   const climateRequestedRef = useRef(false);
+  // 3D sun-path study — selected date drives the accurate sun/shadows.
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [solarDay,     setSolarDay]     = useState<SolarDay | null>(null);
+  const [showSurroundings, setShowSurroundings] = useState(true);
   const [viewMode,     setViewMode]     = useState<"massing" | "diagram">("massing");
   const [hour,         setHour]         = useState(12);
+  // 3D map orientation → compass widget (Scene3D default bearing is -20).
+  const [bearing,      setBearing]      = useState(-20);
+  const [northNonce,   setNorthNonce]   = useState(0);
 
-  const solar    = modules.sunpath?.solar ?? null;
-  const sunRange = solar ? dayRange(solar.equinox) : { start: 6, end: 18 };
+  const solar     = modules.sunpath?.solar ?? null;
+  const dayPoints = solarDay?.points ?? null;
+  // Slider window: prefer the selected date's daylight hours, else the equinox arc.
+  const sunRange  = dayPoints && dayPoints.length
+    ? dayRange(dayPoints)
+    : solar ? dayRange(solar.equinox) : { start: 6, end: 18 };
   const [expanded,     setExpanded]     = useState<Record<ModuleId, boolean>>({
     flood: true, sunpath: false, wind: false, temperature: false, rainfall: false,
     zone: false, planning: false, zoning: false, infrastructure: false, soil: false,
@@ -290,6 +304,22 @@ export default function ProjectPage() {
         .catch((e) => setModuleError(mid, e instanceof Error ? e.message : "Failed"));
     }
   }, [showClimate, analysisCoords]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Accurate per-date sun path for the 3D study — refetched when the date or
+  // site changes while the 3D view is open.
+  useEffect(() => {
+    if (!view3D || !analysisCoords) return;
+    let cancelled = false;
+    getSolarDay(analysisCoords.lat, analysisCoords.lng, selectedDate)
+      .then((d) => { if (!cancelled) setSolarDay(d); })
+      .catch(() => { if (!cancelled) setSolarDay(null); });
+    return () => { cancelled = true; };
+  }, [view3D, analysisCoords, selectedDate]);
+
+  // Keep the hour slider inside the selected day's daylight window.
+  useEffect(() => {
+    setHour((h) => Math.min(Math.max(h, sunRange.start), sunRange.end));
+  }, [sunRange.start, sunRange.end]);
 
   // Composite site score — recomputed from module results as they resolve.
   useEffect(() => {
@@ -566,6 +596,12 @@ export default function ProjectPage() {
                 })}
               </div>
 
+              {/* Compass — under the 2D/3D toggle; rotates with the live map bearing */}
+              <MapCompass
+                bearing={view3D ? bearing : 0}
+                onResetNorth={() => view3D && setNorthNonce((n) => n + 1)}
+              />
+
               {/* 3D scene (MapLibre + Three.js) — only after project coords loaded */}
               {view3D && project && (
                 <Scene3D
@@ -575,6 +611,10 @@ export default function ProjectPage() {
                   solar={solar}
                   hour={hour}
                   boundary={boundaryPolygon}
+                  dayPoints={dayPoints}
+                  showContext={showSurroundings}
+                  onBearingChange={setBearing}
+                  northNonce={northNonce}
                 />
               )}
 
@@ -586,6 +626,52 @@ export default function ProjectPage() {
                   display: "flex", flexDirection: "column", gap: 6,
                   alignItems: "center",
                 }}>
+                  {/* Date control — drives the accurate sun position + shadows */}
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "6px 10px", borderRadius: 9,
+                    border: "1px solid rgba(207,214,196,0.8)",
+                    background: "rgba(253,252,251,0.92)",
+                    backdropFilter: "blur(10px)",
+                    boxShadow: "0 2px 10px rgba(58,63,59,0.12)",
+                  }}>
+                    {(["Jun 21,06-21", "Equinox,03-20", "Dec 21,12-21"]).map((s) => {
+                      const [label, md] = s.split(",");
+                      const d = `${selectedDate.slice(0, 4)}-${md}`;
+                      const on = selectedDate === d;
+                      return (
+                        <button
+                          key={md}
+                          onClick={() => setSelectedDate(d)}
+                          title={label === "Dec 21" ? "Winter solstice — worst-case shadows" : label}
+                          style={{
+                            padding: "3px 8px", fontSize: 10, fontWeight: 700, borderRadius: 6,
+                            border: "none", cursor: "pointer", fontFamily: "inherit",
+                            background: on ? "#F4A259" : "transparent",
+                            color: on ? "#3A2A1A" : "#7B8F83",
+                            transition: "background 0.15s, color 0.15s",
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+                      style={{
+                        fontSize: 10, border: "1px solid #CFD6C4", borderRadius: 6,
+                        padding: "2px 5px", color: "#3A3F3B", background: "#FDFCFB", fontFamily: "inherit",
+                      }}
+                    />
+                    {solarDay?.dayLengthHours != null && (
+                      <span style={{ fontSize: 9.5, color: "#7B8F83", fontWeight: 600, whiteSpace: "nowrap" }}>
+                        {solarDay.dayLengthHours.toFixed(1)} h sun
+                      </span>
+                    )}
+                  </div>
+
                   {/* Hour slider */}
                   <div style={{
                     display: "flex", alignItems: "center", gap: 10,
@@ -639,6 +725,35 @@ export default function ProjectPage() {
                       </button>
                     ))}
                   </div>
+
+                  {/* Surroundings toggle — hide/show the context-city massing */}
+                  <button
+                    type="button"
+                    onClick={() => setShowSurroundings((v) => !v)}
+                    aria-pressed={showSurroundings}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: "5px 12px", borderRadius: 9, cursor: "pointer",
+                      border: "1px solid rgba(207,214,196,0.8)",
+                      background: "rgba(253,252,251,0.92)",
+                      backdropFilter: "blur(10px)",
+                      boxShadow: "0 2px 10px rgba(58,63,59,0.12)",
+                      fontSize: 11, fontWeight: 700, fontFamily: "inherit", color: "#3A3F3B",
+                    }}
+                  >
+                    <span>Surroundings</span>
+                    <span style={{
+                      width: 26, height: 15, borderRadius: 999, flexShrink: 0,
+                      background: showSurroundings ? "#657166" : "#CFD6C4",
+                      position: "relative", transition: "background .14s",
+                    }}>
+                      <span style={{
+                        position: "absolute", top: 2, left: showSurroundings ? 13 : 2,
+                        width: 11, height: 11, borderRadius: "50%", background: "#FDFCFB",
+                        transition: "left .14s", boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                      }} />
+                    </span>
+                  </button>
                 </div>
               )}
 

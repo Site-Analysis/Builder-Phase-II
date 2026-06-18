@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: SunPath Service
-  version: "1.5.0"
+  version: "1.6.0"
   description: Solar position, sun path diagrams (pvlib NREL SPA), shadow analysis, orientation & sunlight-hours.
 
 servers:
@@ -53,6 +53,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SunPathResponse"
+
+  /sunpath/solar-day:
+    get:
+      operationId: getSolarDay
+      summary: Accurate hourly sun path + events for a specific date (3D study)
+      description: >
+        Per-date hourly azimuth/elevation and sunrise/solar-noon/sunset computed
+        via pvlib NREL SPA for the exact site and date. Drives the 3D sun-path
+        study (sun light, sun marker, shadow direction, day arc). Gated by the
+        additional flag `feature.sunpath.solar-day`.
+      parameters:
+        - $ref: "#/components/parameters/lat"
+        - $ref: "#/components/parameters/lon"
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+          description: ISO date (YYYY-MM-DD)
+      responses:
+        "200":
+          description: Per-date sun path data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolarDayResponse"
+        "403": { description: feature.sunpath.solar-day flag disabled }
+        "422": { description: invalid date }
 
   /sunpath/events:
     get:
@@ -258,6 +285,33 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SolarPoint"
+
+    SolarDayResponse:
+      type: object
+      required: [latitude, longitude, date, timezone, hourly_data, events]
+      properties:
+        latitude:
+          type: number
+        longitude:
+          type: number
+        date:
+          type: string
+          format: date
+        timezone:
+          type: string
+        hourly_data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SolarPoint"
+        events:
+          type: object
+          properties:
+            sunrise:    { type: string, format: time, nullable: true }
+            solar_noon: { type: string, format: time, nullable: true }
+            sunset:     { type: string, format: time, nullable: true }
+        day_length_hours:
+          type: number
+          nullable: true
 
     SolarEventsResponse:
       type: object

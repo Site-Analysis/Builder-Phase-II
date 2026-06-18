@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-# Flag must be on before the app/handlers read it (read at request time).
-os.environ.setdefault("FLAGS", "feature.sunpath.diagram")
+# Flags must be on before the app/handlers read them (read at request time).
+os.environ.setdefault("FLAGS", "feature.sunpath.diagram,feature.sunpath.solar-day")
 
 _SUNPATH_SERVICE = Path(__file__).resolve().parents[1] / "services" / "sunpath"
 if str(_SUNPATH_SERVICE) not in sys.path:
@@ -87,6 +87,44 @@ def test_winter_day_length_delhi():
     d = CLIENT.get("/sunpath/winter", params=DEL).json()
     daylight = [h for h in d["hourly_data"] if h["elevation"] > 0]
     assert 9 <= len(daylight) <= 11
+
+
+@skip_no_app
+def test_solar_day_shape_and_accuracy():
+    # Accurate per-date sun path for the summer solstice at Bangalore.
+    r = CLIENT.get("/sunpath/solar-day", params={**BLR, "date": "2025-06-21"})
+    assert r.status_code == 200
+    d = r.json()
+    assert set(d) >= {"latitude", "longitude", "date", "timezone", "hourly_data", "events"}
+    assert d["date"] == "2025-06-21"
+    assert d["timezone"] == "Asia/Kolkata"
+    peak = max(d["hourly_data"], key=lambda x: x["elevation"])
+    assert 11 <= peak["hour"] <= 13            # peak at local solar noon
+    assert 76 <= peak["elevation"] <= 80       # BLR summer-solstice noon ~78°
+    assert all(0 <= h["azimuth"] <= 360 for h in d["hourly_data"])
+    assert all(d["events"][k] is not None for k in ("sunrise", "solar_noon", "sunset"))
+
+
+@skip_no_app
+def test_solar_day_winter_lower_sun():
+    # Dec-21 worst-case: noon altitude ≈ 90 − lat − 23.44 ≈ 53.6° at Bangalore,
+    # markedly lower than summer — the binding case for shadow studies.
+    d = CLIENT.get("/sunpath/solar-day", params={**BLR, "date": "2025-12-21"}).json()
+    peak = max(d["hourly_data"], key=lambda x: x["elevation"])
+    assert 50 <= peak["elevation"] <= 57
+
+
+@skip_no_app
+def test_solar_day_bad_date_422():
+    assert CLIENT.get("/sunpath/solar-day", params={**BLR, "date": "21-06-2025"}).status_code == 422
+
+
+@skip_no_app
+def test_solar_day_requires_own_flag(monkeypatch):
+    # Router flag on, solar-day flag off → endpoint-level gate must 403.
+    monkeypatch.setenv("FLAGS", "feature.sunpath.diagram")
+    assert CLIENT.get("/sunpath/summer", params=BLR).status_code == 200
+    assert CLIENT.get("/sunpath/solar-day", params={**BLR, "date": "2025-06-21"}).status_code == 403
 
 
 @skip_no_app

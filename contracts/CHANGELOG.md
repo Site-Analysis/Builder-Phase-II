@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 ### Added
+- sunpath.yaml v1.6.0: new `GET /sunpath/solar-day?lat&lon&date` — accurate per-date hourly azimuth/elevation + sunrise/solar-noon/sunset (pvlib NREL SPA) for the 3D sun-path study. New `SolarDayResponse` schema. Gated by additional flag `feature.sunpath.solar-day` (default off) on top of the router's `feature.sunpath.diagram`. Additive — no breaking change.
+- packages/flags: new `SUNPATH_SOLAR_DAY = "feature.sunpath.solar-day"` flag.
 - geo.yaml v1.6.0: AmenityCategory extended with `points` array (all located amenities in the category, ≤40, sorted by distance) so the Zoning map can render dense, per-location amenity markers instead of only the 5 nearest. `top_5` retained for the detail cards. Overpass result cap raised 200→500. Additive, optional — no breaking change.
 - geo.yaml v1.5.0: ZoneResult extended with nullable `kgis` (KgisContext) — authoritative Karnataka-GIS admin context (Urban: district/town/zone/ward; Rural: taluk/hobli/village/survey_number). Gated by new flag `feature.geo.kgis-context` (default off); null when flag off or KGIS unreachable. admin_zone is the BBMP administrative zone, NOT the RMP land-use zone. Additive, optional — no breaking change.
 - packages/flags: new `GEO_KGIS_CONTEXT = "feature.geo.kgis-context"` flag.

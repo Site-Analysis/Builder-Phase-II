@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from app.core.flags import require_sunpath_flag
+from app.core.flags import require_solar_day_flag, require_sunpath_flag
 from app.core.logging import get_logger
 from app.services.orientation_service import orientation_recommendation
 from app.services.solar_engine import SolarEngine
@@ -79,6 +79,59 @@ async def annual(lat: float = Query(...), lon: float = Query(...)) -> dict:
         tz, hourly = _day_curve(lat, lon, day)
         combined.extend(hourly)
     return {"latitude": lat, "longitude": lon, "timezone": tz, "hourly_data": combined}
+
+
+@router.get(
+    "/solar-day",
+    summary="Accurate hourly sun path + events for a specific date (3D study)",
+    dependencies=[Depends(require_solar_day_flag)],
+)
+async def solar_day(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    date: str = Query(..., description="ISO date (YYYY-MM-DD) to compute the sun path for"),
+) -> dict:
+    """Per-date hourly azimuth/elevation + sunrise/solar-noon/sunset via pvlib SPA.
+
+    Drives the 3D sun-path study: the sun light, sun marker, shadow direction and
+    day arc are all computed for the exact selected date and site — not
+    interpolated from fixed reference days.
+    """
+    try:
+        day = dt.date.fromisoformat(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="date must be ISO YYYY-MM-DD") from exc
+
+    start = dt.datetime.combine(day, dt.time(0, 0))
+    end = dt.datetime.combine(day, dt.time(23, 0))
+    rows = solar_engine.calculate_solar_position(lat, lon, start, end)
+    if not rows:
+        raise HTTPException(status_code=502, detail="solar engine returned no data")
+
+    tz = rows[0].timezone
+    zone = ZoneInfo(tz)
+    hourly = [
+        {
+            "hour": r.timestamp.astimezone(zone).hour,
+            "azimuth": r.azimuth,
+            "elevation": r.elevation,  # apparent (refraction-corrected)
+        }
+        for r in rows
+    ]
+    first = rows[0]
+    return {
+        "latitude": lat,
+        "longitude": lon,
+        "date": day.isoformat(),
+        "timezone": tz,
+        "hourly_data": hourly,
+        "events": {
+            "sunrise": first.sunrise,
+            "solar_noon": first.solar_noon,
+            "sunset": first.sunset,
+        },
+        "day_length_hours": first.day_length,
+    }
 
 
 @router.get("/events", summary="Solar events — sunrise, sunset, solar noon")

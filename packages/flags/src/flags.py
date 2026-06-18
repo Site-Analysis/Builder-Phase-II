@@ -16,6 +16,7 @@ class FeatureFlag(StrEnum):
     TEMPERATURE_THERMAL_PROFILE = "feature.temperature.thermal-profile"
     FLOOD_RISK_ANALYSIS = "feature.flood.risk-analysis"
     SUNPATH_DIAGRAM = "feature.sunpath.diagram"
+    SUNPATH_SOLAR_DAY = "feature.sunpath.solar-day"
     WIND_ANALYSIS = "feature.wind.analysis"
     RAINFALL_ARCHIVE = "feature.rainfall.archive"
     RAINFALL_SUMMARY = "feature.rainfall.summary"

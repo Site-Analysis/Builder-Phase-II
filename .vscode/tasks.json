@@ -63,7 +63,7 @@
       "args": ["app.main:app", "--port", "8001"],
       "options": {
         "cwd": "${workspaceFolder}/services/sunpath",
-        "env": { "FLAGS": "feature.sunpath.diagram" }
+        "env": { "FLAGS": "feature.sunpath.diagram,feature.sunpath.solar-day" }
       },
       "isBackground": true,
       "problemMatcher": [],

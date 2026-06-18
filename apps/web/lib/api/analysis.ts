@@ -694,6 +694,36 @@ export async function getSunpathAnalysis(coords: AnalysisCoords): Promise<Module
   };
 }
 
+// ─── Accurate per-date sun path — GET /sunpath/solar-day ─────────────────────
+// Drives the 3D sun-path study: exact hourly azimuth/elevation + sun events for
+// the selected date and site (pvlib NREL SPA). Gated by feature.sunpath.solar-day.
+
+interface SolarDayRaw {
+  latitude: number; longitude: number; date: string; timezone: string;
+  hourly_data: { hour: number; azimuth: number; elevation: number }[];
+  events: { sunrise: string | null; solar_noon: string | null; sunset: string | null };
+  day_length_hours: number | null;
+}
+
+export interface SolarDay {
+  date: string;
+  timezone: string;
+  points: import("../stores/analysis").SolarPoint[];
+  events: { sunrise: string | null; solar_noon: string | null; sunset: string | null };
+  dayLengthHours: number | null;
+}
+
+export async function getSolarDay(lat: number, lon: number, date: string): Promise<SolarDay> {
+  const d = await svcFetch<SolarDayRaw>(SVC.sunpath, `/sunpath/solar-day?lat=${lat}&lon=${lon}&date=${date}`);
+  return {
+    date: d.date,
+    timezone: d.timezone,
+    points: (d.hourly_data ?? []).map((h) => ({ hour: h.hour, az: h.azimuth, el: h.elevation })),
+    events: d.events ?? { sunrise: null, solar_noon: null, sunset: null },
+    dayLengthHours: d.day_length_hours,
+  };
+}
+
 // ─── Zone & Land Use — GET /geo/zone ─────────────────────────────────────────
 
 export async function getZoneAnalysis(lat: number, lon: number): Promise<ModuleResult> {
