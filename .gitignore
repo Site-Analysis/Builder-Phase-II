@@ -37,3 +37,6 @@ gee-sa.json
 
 # IMD test download artifacts
 stn/
+
+# Graphify knowledge-graph output (local tool artifact)
+graphify-out/

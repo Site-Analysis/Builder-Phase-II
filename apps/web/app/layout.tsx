@@ -6,6 +6,7 @@ import { Inter, Space_Grotesk, Space_Mono } from "next/font/google";
 import "./globals.css";
 import { requirePublicEnv } from "../lib/env";
 import { AuthHydrator } from "../components/AuthHydrator";
+import { ProfileGate } from "../components/ProfileGate";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -43,7 +44,10 @@ export default function RootLayout({
       className={`${inter.variable} ${spaceGrotesk.variable} ${spaceMono.variable} h-full antialiased`}
     >
       <body className="h-full bg-neutral-bg text-text-primary">
-        <AuthHydrator>{children}</AuthHydrator>
+        <AuthHydrator>
+          <ProfileGate />
+          {children}
+        </AuthHydrator>
       </body>
     </html>
   );

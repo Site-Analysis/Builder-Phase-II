@@ -36,6 +36,7 @@ class FeatureFlag(StrEnum):
     ENVIRONMENT_WATER_CONSTRAINTS = "feature.environment.water-constraints"
     GEO_AMENITIES = "feature.geo.amenities"
     GEO_KGIS_CONTEXT = "feature.geo.kgis-context"
+    GEO_PARCEL_GEOMETRY = "feature.geo.parcel-geometry"
 
 
 _enabled: set[str] = {f.strip() for f in os.getenv("FLAGS", "").split(",") if f.strip()}

@@ -8,7 +8,14 @@ import os
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 
-from app.models.geo import AmenitiesResult, SoilResult, WaterConstraintResult, ZoneResult
+from app.models.geo import (
+    AmenitiesResult,
+    ParcelGeometry,
+    SoilResult,
+    WaterConstraintResult,
+    ZoneResult,
+)
+from app.services import kgis_service
 from app.services.amenities_service import AmenitiesService
 from app.services.geo_service import GeoService
 from app.services.soil_service import SoilService
@@ -19,6 +26,7 @@ _SOIL_FLAG = "feature.environment.soil"
 _WATER_FLAG = "feature.environment.water-constraints"
 _AMENITY_FLAG = "feature.geo.amenities"
 _KGIS_FLAG = "feature.geo.kgis-context"
+_PARCEL_FLAG = "feature.geo.parcel-geometry"
 
 
 def _enabled_flags() -> set[str]:
@@ -83,3 +91,33 @@ async def get_amenities(
 ) -> AmenitiesResult:
     _require_flag(_AMENITY_FLAG)
     return await _amenities_service.get_amenities(lat, lon, radius_m)
+
+
+@router.get("/parcel", response_model=ParcelGeometry)
+async def get_parcel(
+    survey_no: str = Query(..., min_length=1),
+    village_code: str | None = Query(None),
+    kgis_village_id: str | None = Query(None),
+    crs: str = Query("DD"),
+) -> ParcelGeometry:
+    """Survey-number → parcel polygon (KGIS geomForSurveyNum, SAT-19).
+
+    `kgis_village_id` may be supplied directly; otherwise it is resolved from
+    `village_code` (pending KSRSAC mapping — see `kgis_service.resolve_kgis_village_id`).
+    When unresolved, returns `resolved=False` + `geometry=None` (no fabrication).
+    """
+    _require_flag(_PARCEL_FLAG)
+    vid = kgis_village_id or kgis_service.resolve_kgis_village_id(village_code)
+    geometry = None
+    if vid:
+        async with httpx.AsyncClient(
+            timeout=10, headers={"User-Agent": "SAT-SiteAnalysisTool/1.0"}
+        ) as client:
+            geometry = await kgis_service.fetch_parcel_geometry(vid, survey_no, client, crs=crs)
+    return ParcelGeometry(
+        survey_number=survey_no,
+        village_code=village_code,
+        kgis_village_id=vid,
+        geometry=geometry,
+        resolved=geometry is not None,
+    )

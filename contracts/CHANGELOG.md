@@ -98,6 +98,21 @@
 - Response schema unchanged (`WindAnalysis` and nested models).
 - `metadata.data_source` names Open-Meteo ERA5. Raises on no upstream data (no
   fabricated values).
+## 2.9.0 — 2026-06-23
+
+### Added — geo.yaml (SAT-19 Builders View: survey-number parcel geometry)
+- **Version**: geo 1.0.0 → 1.1.0
+- New `GET /geo/parcel?survey_no&village_code&kgis_village_id&crs` → `ParcelGeometry`
+  (GeoJSON Polygon, WGS84) for a Karnataka rural survey number via KGIS
+  `geomForSurveyNum` (forward survey→polygon — the Builders View core).
+- Gated by new flag `feature.geo.parcel-geometry` (`FeatureFlag.GEO_PARCEL_GEOMETRY`,
+  403 when disabled).
+- Schemas: `ParcelGeometry`, `GeoJsonPolygon`; `KgisContext.village_code` added
+  (reverse lookup now surfaces `villageCode`).
+- **Spike-backed scaffold (FVD SAT-19):** `KGISVillageId` ≠ reverse-lookup `villageCode`
+  (numeric master id, pending KSRSAC). `resolve_kgis_village_id()` is seamed; until the
+  mapping lands the endpoint returns `resolved=false` + `geometry=null` (no fabrication).
+- Indicative only — KGIS data not for legal use; non-commercial until KGIS license.
 
 ## 1.5.1 — 2026-06-09
 

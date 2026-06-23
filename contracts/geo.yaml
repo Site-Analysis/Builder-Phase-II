@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
     OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS administrative layers.
@@ -99,6 +99,31 @@ paths:
         "403": { description: Feature flag disabled }
         "422": { description: Validation error }
 
+  /geo/parcel:
+    get:
+      operationId: getParcel
+      summary: Survey-number → cadastral parcel polygon (Karnataka, KGIS)
+      description: >
+        Forward survey-number lookup. Returns the parcel boundary as a GeoJSON Polygon
+        (WGS84) for a Karnataka rural/revenue survey number via KGIS `geomForSurveyNum`.
+        Gated by `feature.geo.parcel-geometry`. Indicative only — not a legal survey
+        (KGIS data may not be used for legal purposes). When the KGIS village id cannot
+        be resolved the response is returned with `resolved=false` and `geometry=null`
+        (no fabrication). See FVD SAT-19.
+      parameters:
+        - { name: survey_no, in: query, required: true, schema: { type: string } }
+        - { name: village_code, in: query, required: false, schema: { type: string, nullable: true } }
+        - { name: kgis_village_id, in: query, required: false, schema: { type: string, nullable: true } }
+        - { name: crs, in: query, required: false, schema: { type: string, enum: ["DD", "UTM"], default: "DD" } }
+      responses:
+        "200":
+          description: Parcel geometry (or unresolved placeholder)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ParcelGeometry" }
+        "403": { description: Feature flag disabled }
+        "422": { description: Validation error }
+
 components:
   schemas:
     Severity:
@@ -136,6 +161,7 @@ components:
         taluk: { type: string, nullable: true }
         hobli: { type: string, nullable: true }
         village: { type: string, nullable: true }
+        village_code: { type: string, nullable: true }
         survey_number: { type: string, nullable: true }
 
     ZoneResult:
@@ -239,3 +265,32 @@ components:
         score: { type: number, format: float }
         severity: { $ref: "#/components/schemas/Severity" }
         data_source: { type: string }
+
+    GeoJsonPolygon:
+      type: object
+      required: [type, coordinates]
+      properties:
+        type: { type: string, enum: ["Polygon"] }
+        coordinates:
+          type: array
+          description: Array of linear rings; each ring is an array of [lng, lat] pairs (WGS84).
+          items:
+            type: array
+            items: { type: array, items: { type: number, format: float }, minItems: 2 }
+
+    ParcelGeometry:
+      type: object
+      required: [survey_number, resolved, crs, data_source]
+      properties:
+        survey_number: { type: string }
+        village_code: { type: string, nullable: true }
+        kgis_village_id: { type: string, nullable: true }
+        ulpin: { type: string, nullable: true }
+        resolved: { type: boolean, description: "true only when a real KGIS polygon was returned" }
+        geometry:
+          oneOf:
+            - $ref: "#/components/schemas/GeoJsonPolygon"
+            - type: "null"
+        crs: { type: string }
+        data_source: { type: string }
+        data_disclaimer: { type: string }

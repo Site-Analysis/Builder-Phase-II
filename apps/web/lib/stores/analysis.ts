@@ -83,6 +83,7 @@ export interface ZoningKgis {
   taluk: string | null;
   hobli: string | null;
   village: string | null;
+  villageCode: string | null;   // KGIS villageCode (e.g. "2905030017_1"), rural only
   surveyNumber: string | null;
 }
 

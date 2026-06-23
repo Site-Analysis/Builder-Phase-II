@@ -1131,6 +1131,7 @@ export async function getZoningAnalysis(
           taluk: (kgisRaw.taluk as string) ?? null,
           hobli: (kgisRaw.hobli as string) ?? null,
           village: (kgisRaw.village as string) ?? null,
+          villageCode: (kgisRaw.village_code as string) ?? null,
           surveyNumber: (kgisRaw.survey_number as string) ?? null,
         }
       : null,
@@ -1421,6 +1422,35 @@ export async function getLandRecordsAnalysis(
     method: "POST",
     body: JSON.stringify({ district, taluk, hobli, village, survey_number: surveyNumber }),
   });
+}
+
+// ─── Parcel geometry — GET /geo/parcel (SAT-19, KGIS geomForSurveyNum) ────────
+
+export interface ParcelGeometry {
+  survey_number: string;
+  village_code: string | null;
+  kgis_village_id: string | null;
+  ulpin: string | null;
+  resolved: boolean;                 // true only when KGIS returned a real polygon
+  geometry: GeoJSON.Polygon | null;  // WGS84 (lng, lat); null when unresolved
+  crs: string;
+  data_source: string;
+  data_disclaimer: string;
+}
+
+// Survey number → parcel polygon. Flag-gated server-side (feature.geo.parcel-geometry):
+// a 403 surfaces as an Error whose message contains "Feature flag disabled".
+export async function getParcel(opts: {
+  surveyNo: string;
+  villageCode?: string | null;
+  kgisVillageId?: string | null;
+  crs?: "DD" | "UTM";
+}): Promise<ParcelGeometry> {
+  const q = new URLSearchParams({ survey_no: opts.surveyNo });
+  if (opts.villageCode) q.set("village_code", opts.villageCode);
+  if (opts.kgisVillageId) q.set("kgis_village_id", opts.kgisVillageId);
+  if (opts.crs) q.set("crs", opts.crs);
+  return svcFetch<ParcelGeometry>(SVC.zone, `/geo/parcel?${q.toString()}`);
 }
 
 // ─── Amenities — GET /geo/amenities ──────────────────────────────────────────

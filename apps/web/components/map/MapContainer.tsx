@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapContainer as LeafletMap, TileLayer, useMap } from "react-leaflet";
 import { cn } from "@/lib/utils";
 import "leaflet/dist/leaflet.css";
@@ -37,6 +37,9 @@ export function MapContainer({
   children,
   className,
 }: MapContainerProps) {
+  // Satellite basemap (MapTiler) helps locate rural parcels the street basemap can't.
+  const mtKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
+  const [basemap, setBasemap] = useState<"street" | "satellite">("street");
   return (
     <div
       className={cn(
@@ -54,15 +57,39 @@ export function MapContainer({
         style={{ width: "100%", height: "100%" }}
         zoomControl={false}
       >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          subdomains="abcd"
-          maxZoom={20}
-        />
+        {basemap === "satellite" && mtKey ? (
+          <TileLayer
+            url={`https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key=${mtKey}`}
+            attribution='&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>'
+            maxZoom={20}
+          />
+        ) : (
+          <TileLayer
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            subdomains="abcd"
+            maxZoom={20}
+          />
+        )}
         <MapController center={center} zoom={zoom} />
         {children}
       </LeafletMap>
+      {mtKey && (
+        <button
+          type="button"
+          onClick={() => setBasemap((b) => (b === "street" ? "satellite" : "street"))}
+          aria-label="Toggle satellite basemap"
+          style={{
+            position: "absolute", bottom: 30, right: 12, zIndex: 500,
+            padding: "5px 10px", fontSize: 11, fontWeight: 700,
+            border: "1px solid rgba(0,0,0,0.15)", borderRadius: 6, cursor: "pointer",
+            background: "#FDFCFB", color: "#3A3F3B", fontFamily: "inherit",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+          }}
+        >
+          {basemap === "street" ? "Satellite" : "Street"}
+        </button>
+      )}
     </div>
   );
 }

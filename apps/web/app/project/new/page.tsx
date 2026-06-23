@@ -6,7 +6,7 @@
 import dynamic from "next/dynamic";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Sun, Waves, Thermometer, Wind, CloudRain, Scale } from "lucide-react";
+import { Sun, Waves, Thermometer, Wind, CloudRain, Scale, FileText } from "lucide-react";
 import { TopNav } from "@/components/layout/TopNav";
 import { useAuthStore } from "@/lib/stores/auth";
 import { supabase } from "@/lib/supabase/client";
@@ -18,6 +18,7 @@ import { AnalysisConfigCard } from "@/components/map/AnalysisConfigCard";
 import { SiteConfigCard } from "@/components/map/SiteConfigCard";
 import { createProject } from "@/lib/api/projects";
 import type { ModuleId } from "@/lib/stores/analysis";
+import { useProfileStore } from "@/lib/stores/profile";
 
 const MapContainer = dynamic(
   () => import("@/components/map/MapContainer").then((m) => m.MapContainer),
@@ -42,19 +43,22 @@ const MapSearch = dynamic(
 
 // TODO GH#55: boundary is a 200 m circle — replace with /api/geo/site-boundary when confirmed
 
-const ANALYSIS_MODULES: { id: ModuleId; name: string; color: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "sunpath",     name: "Sun Path",          color: "#F59E0B", icon: <Sun size={15} />,         desc: "Solar access, shadows, daylight" },
-  { id: "flood",       name: "Risks",             color: "#2563EB", icon: <Waves size={15} />,       desc: "Risk, terrain, hydrology" },
-  { id: "temperature", name: "Temperature",       color: "#EF4444", icon: <Thermometer size={15} />, desc: "Thermal profile, comfort" },
-  { id: "wind",        name: "Wind",              color: "#06B6D4", icon: <Wind size={15} />,         desc: "Speed, ventilation, gusts" },
-  { id: "rainfall",    name: "Rainfall",          color: "#1D4ED8", icon: <CloudRain size={15} />,    desc: "Annual totals, wet days" },
-  { id: "zoning",      name: "Zoning",            color: "#B45309", icon: <Scale size={15} />,        desc: "Zone, LULC, FAR, NA order, DGCA" },
+type ModuleCategory = "climate" | "builder";
+const ANALYSIS_MODULES: { id: ModuleId; name: string; color: string; icon: React.ReactNode; desc: string; category: ModuleCategory }[] = [
+  { id: "sunpath",     name: "Sun Path",          color: "#F59E0B", icon: <Sun size={15} />,         desc: "Solar access, shadows, daylight",            category: "climate" },
+  { id: "flood",       name: "Risks",             color: "#2563EB", icon: <Waves size={15} />,       desc: "Risk, terrain, hydrology",                   category: "climate" },
+  { id: "temperature", name: "Temperature",       color: "#EF4444", icon: <Thermometer size={15} />, desc: "Thermal profile, comfort",                   category: "climate" },
+  { id: "wind",        name: "Wind",              color: "#06B6D4", icon: <Wind size={15} />,         desc: "Speed, ventilation, gusts",                  category: "climate" },
+  { id: "rainfall",    name: "Rainfall",          color: "#1D4ED8", icon: <CloudRain size={15} />,    desc: "Annual totals, wet days",                    category: "climate" },
+  { id: "zoning",      name: "Zoning",            color: "#B45309", icon: <Scale size={15} />,        desc: "Zone, LULC, FAR, NA order, DGCA",            category: "builder" },
+  { id: "land",        name: "Title & Documents", color: "#6B21A8", icon: <FileText size={15} />,     desc: "Survey number, parcel boundary, RTC/EC links", category: "builder" },
 ];
 
 // ─── Floating module selector ─────────────────────────────────────────────────
 function ModuleSelector({
-  selected, onToggle, onAll, onNone, onStart, creating, error,
+  modules, selected, onToggle, onAll, onNone, onStart, creating, error,
 }: {
+  modules: typeof ANALYSIS_MODULES;
   selected: Set<ModuleId>;
   onToggle: (id: ModuleId) => void;
   onAll: () => void;
@@ -79,7 +83,7 @@ function ModuleSelector({
       }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#3A3F3B" }}>Analyses to run</div>
-          <div style={{ fontSize: 11, color: "#7B8F83", marginTop: 1 }}>{selected.size} of 5 selected</div>
+          <div style={{ fontSize: 11, color: "#7B8F83", marginTop: 1 }}>{selected.size} of {modules.length} selected</div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button onClick={onAll}  style={pillBtn}>All</button>
@@ -88,7 +92,7 @@ function ModuleSelector({
       </div>
 
       <div style={{ padding: 8 }}>
-        {ANALYSIS_MODULES.map((m) => {
+        {modules.map((m) => {
           const on = selected.has(m.id);
           return (
             <button
@@ -198,6 +202,11 @@ export default function NewAnalysisPage() {
   const [creating,    setCreating]    = useState(false);
   const [error,       setError]       = useState("");
   const [selected,    setSelected]    = useState<Set<ModuleId>>(new Set());
+  const profile = useProfileStore((s) => s.profile);
+  // The active view profile decides which analyses are offered.
+  const visibleModules = ANALYSIS_MODULES.filter(
+    (m) => m.category === (profile === "builder" ? "builder" : "climate"),
+  );
 
   function toggleModule(id: ModuleId) {
     setSelected((prev) => {
@@ -269,7 +278,7 @@ export default function NewAnalysisPage() {
         boundary = { type: "Point", coordinates: [center[1], center[0]] };
       }
       // Preserve the canonical module order.
-      const modules_run = ANALYSIS_MODULES.map((m) => m.id).filter((id) => selected.has(id));
+      const modules_run = visibleModules.map((m) => m.id).filter((id) => selected.has(id));
       const project = await createProject({
         name: projectName.trim(),
         location: address.trim() || `${center[0].toFixed(4)}, ${center[1].toFixed(4)}`,
@@ -302,6 +311,8 @@ export default function NewAnalysisPage() {
         onCurrentLocationClick={handleCurrentLocation}
         onSettingsClick={() => router.push("/settings")}
         onSignOut={async () => { await supabase.auth.signOut(); clearAuth(); router.replace("/login"); }}
+        viewProfile={profile ?? undefined}
+        onSwitchProfile={() => router.push("/select-profile")}
       />
 
       {/* Full-screen map */}
@@ -335,9 +346,10 @@ export default function NewAnalysisPage() {
         )}
         {pinDropped && (
           <ModuleSelector
+            modules={visibleModules}
             selected={selected}
             onToggle={toggleModule}
-            onAll={() => setSelected(new Set(ANALYSIS_MODULES.map((m) => m.id)))}
+            onAll={() => setSelected(new Set(visibleModules.map((m) => m.id)))}
             onNone={() => setSelected(new Set())}
             onStart={handleStart}
             creating={creating}

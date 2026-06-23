@@ -1,0 +1,178 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run All",
+      "detail": "Start backend (8 services) + frontend",
+      "dependsOn": ["Backend", "Frontend"],
+      "dependsOrder": "parallel",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend",
+      "detail": "Next.js dev server (apps/web) on :3000",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/apps/web",
+        "env": {
+          "NODE_PATH": "${workspaceFolder}/node_modules;${workspaceFolder}/apps/web/node_modules"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "Backend",
+      "detail": "All 8 analysis services (8000-8007)",
+      "dependsOn": [
+        "svc: temperature",
+        "svc: sunpath",
+        "svc: flood",
+        "svc: wind",
+        "svc: rainfall",
+        "svc: geo",
+        "svc: planning",
+        "svc: infrastructure"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+
+    {
+      "label": "svc: temperature",
+      "detail": ":8000 thermal-profile",
+      "type": "process",
+      "command": "${workspaceFolder}/services/temperature/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8000"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/temperature",
+        "env": { "FLAGS": "feature.temperature.thermal-profile" }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: sunpath",
+      "detail": ":8001 sunpath diagram",
+      "type": "process",
+      "command": "${workspaceFolder}/services/sunpath/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8001"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/sunpath",
+        "env": { "FLAGS": "feature.sunpath.diagram,feature.sunpath.solar-day" }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: flood",
+      "detail": ":8002 flood risk",
+      "type": "process",
+      "command": "${workspaceFolder}/services/flood/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8002"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/flood",
+        "env": { "FLAGS": "feature.flood.risk-analysis" }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: wind",
+      "detail": ":8003 wind analysis",
+      "type": "process",
+      "command": "${workspaceFolder}/services/wind/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8003"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/wind",
+        "env": { "FLAGS": "feature.wind.analysis" }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: rainfall",
+      "detail": ":8004 rainfall summary + archive",
+      "type": "process",
+      "command": "${workspaceFolder}/services/rainfall/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8004"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/rainfall",
+        "env": { "FLAGS": "feature.rainfall.summary,feature.rainfall.archive" }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: geo",
+      "detail": ":8005 zone, soil, water-constraints, amenities, parcel",
+      "type": "process",
+      "command": "${workspaceFolder}/services/geo/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8005"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/geo",
+        "env": {
+          "FLAGS": "feature.zoning.land-use,feature.environment.soil,feature.environment.water-constraints,feature.geo.amenities,feature.geo.kgis-context,feature.geo.parcel-geometry",
+          "OVERPASS_URL": "https://overpass.openstreetmap.fr/api/interpreter"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: planning",
+      "detail": ":8006 FAR, setbacks, height, TOD, ICAO",
+      "type": "process",
+      "command": "${workspaceFolder}/services/planning/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8006"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/planning",
+        "env": {
+          "FLAGS": "feature.planning.site-capacity",
+          "OVERPASS_URL": "https://overpass.openstreetmap.fr/api/interpreter"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: infrastructure",
+      "detail": ":8007 road, transit, power (OSM)",
+      "type": "process",
+      "command": "${workspaceFolder}/services/infrastructure/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8007"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/infrastructure",
+        "env": { "FLAGS": "feature.infrastructure.connectivity" }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+
+    {
+      "label": "Build (web)",
+      "detail": "next build (apps/web) with NODE_PATH set for OneDrive checkouts",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/apps/web",
+        "env": {
+          "NODE_PATH": "${workspaceFolder}/node_modules;${workspaceFolder}/apps/web/node_modules"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": { "group": "build", "panel": "dedicated", "reveal": "always" }
+    }
+  ]
+}

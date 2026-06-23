@@ -29,6 +29,7 @@ import { supabase } from "@/lib/supabase/client";
 import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
 import { useConfigStore } from "@/lib/stores/config";
+import { useParcelStore } from "@/lib/stores/parcel";
 import { getProject } from "@/lib/api/projects";
 import {
   computeSiteScore,
@@ -65,6 +66,10 @@ const MapContainer = dynamic(
 );
 const SiteBoundaryOverlay = dynamic(
   () => import("@/components/map/SiteBoundaryOverlay").then((m) => m.SiteBoundaryOverlay),
+  { ssr: false }
+);
+const ParcelOverlay = dynamic(
+  () => import("@/components/map/ParcelOverlay").then((m) => m.ParcelOverlay),
   { ssr: false }
 );
 const SiteLabel = dynamic(
@@ -179,6 +184,7 @@ export default function ProjectPage() {
     setSiteScore,
     resetAnalysis,
   } = useAnalysisStore();
+  const parcel = useParcelStore((s) => s.parcel);
 
   const [project,      setProject]      = useState<Awaited<ReturnType<typeof getProject>> | null>(null);
   const [center,       setCenter]       = useState<[number, number]>([12.9716, 77.5946]);
@@ -217,6 +223,15 @@ export default function ProjectPage() {
   }, [user, router]);
 
   useEffect(() => { setShowSiteCircle(true); }, [bufferM]);
+
+  // Recenter the map on a located KGIS parcel (centroid of its outer ring).
+  useEffect(() => {
+    const ring = parcel?.geometry?.coordinates?.[0];
+    if (!ring || ring.length === 0) return;
+    const lng = ring.reduce((s, p) => s + p[0], 0) / ring.length;
+    const lat = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+    setCenter([lat, lng]);
+  }, [parcel]);
 
   useEffect(() => {
     if (!id || !user) return;
@@ -474,6 +489,7 @@ export default function ProjectPage() {
                         ? <SiteBoundaryOverlay shape="circle" coordinates={{ center, radius: bufferM }} />
                         : null
                   )}
+                  <ParcelOverlay geometry={parcel?.geometry} surveyNumber={parcel?.survey_number} />
                   {project && (
                     <SiteLabel
                       projectName={project.name}
@@ -777,6 +793,7 @@ export default function ProjectPage() {
                           ? <SiteBoundaryOverlay shape="circle" coordinates={{ center, radius: bufferM }} />
                           : null
                     )}
+                    <ParcelOverlay geometry={parcel?.geometry} surveyNumber={parcel?.survey_number} />
                     {project && (
                       <SiteLabel
                         projectName={project.name}
@@ -890,7 +907,7 @@ export default function ProjectPage() {
                       moduleId === "land" ? <LandRecordsPanel result={result} prefill={(() => {
                         const k = modules.zoning?.zoning?.kgis;
                         if (!k || k.type !== "Rural") return undefined;
-                        return { district: k.district ?? undefined, taluk: k.taluk ?? undefined, hobli: k.hobli ?? undefined, village: k.village ?? undefined, surveyNumber: k.surveyNumber ?? undefined };
+                        return { district: k.district ?? undefined, taluk: k.taluk ?? undefined, hobli: k.hobli ?? undefined, village: k.village ?? undefined, villageCode: k.villageCode ?? undefined, surveyNumber: k.surveyNumber ?? undefined };
                       })()} /> :
                       undefined
                     }

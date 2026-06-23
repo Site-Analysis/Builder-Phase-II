@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -29,6 +29,7 @@ class KgisContext(BaseModel):
     taluk: str | None = None
     hobli: str | None = None
     village: str | None = None
+    village_code: str | None = None  # KGIS villageCode (e.g. "2905030017_1")
     survey_number: str | None = None
 
 
@@ -144,3 +145,27 @@ class AmenitiesResult(BaseModel):
     score: float
     severity: Severity
     data_source: str
+
+
+class ParcelGeometry(BaseModel):
+    """Forward survey-number → parcel boundary (KGIS geomForSurveyNum).
+
+    `resolved` is True only when KGIS returned a real polygon. When the KGIS village id
+    cannot be resolved (SAT-19 blocker) `resolved=False` and `geometry=None` — never a
+    fabricated boundary.
+    """
+
+    survey_number: str
+    village_code: str | None = None
+    kgis_village_id: str | None = None
+    ulpin: str | None = None
+    resolved: bool = False
+    geometry: dict[str, Any] | None = None  # GeoJSON Polygon, WGS84 (lng, lat)
+    crs: str = "EPSG:4326"
+    data_source: str = "KGIS (KSRSAC)"
+    data_disclaimer: str = (
+        "Parcel boundary from KGIS geomForSurveyNum — indicative only, NOT a legal "
+        "survey (KGIS data may not be used for legal purposes; survey-to-physical "
+        "offset 3-10 m). When resolved=false the KGIS village id is pending (SAT-19) "
+        "and no geometry is returned."
+    )
