@@ -11,6 +11,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.models.geo import KgisContext, NearbyFeature, ZoneResult
+from app.services import landuse_service
 from app.services.kgis_service import fetch_kgis_context
 from app.services.lulc_service import fetch_lulc, lulc_flags
 
@@ -129,6 +130,9 @@ out center;
                 lulc_label, lulc_code, lulc_vintage = await fetch_lulc(lat, lon, client)
                 # KGIS authoritative admin context — flag-gated, graceful None on failure
                 kgis_raw = await fetch_kgis_context(lat, lon, client) if kgis_enabled else None
+                # Authoritative BDA RMP-2015 land-use — None unless the licensed KGIS
+                # layer is configured + the point is inside the BDA LPA (SAT-20).
+                landuse_raw = await landuse_service.fetch_landuse_zone(lat, lon, client)
         except httpx.HTTPStatusError:
             raise HTTPException(status_code=502, detail="OSM upstream unavailable")
         except Exception:
@@ -197,8 +201,23 @@ out center;
         if lulc_label is not None and lulc_vintage:
             data_src = f"OpenStreetMap (Overpass API) + ISRO NRSC Bhuvan LULC {lulc_vintage}"
 
-        return ZoneResult(
+        # Authoritative BDA RMP-2015 land-use wins over the OSM-inferred zone when
+        # available. It only overrides zone_class + provenance; OSM nearby/LULC context
+        # is retained. zone_class drives permitted_uses/FAR/coverage/score below.
+        zone_authority = "OSM-inferred"
+        zone_code: str | None = None
+        if landuse_raw:
+            zone_class = landuse_raw["zone_class"]
+            zone_code = landuse_raw.get("zone_code")
+            primary_landuse = landuse_raw.get("raw_zone") or primary_landuse
+            zone_authority = "BDA-RMP-2015"
+            source_confidence = "authoritative"
+            score, severity = SCORE_MAP.get(zone_class, (50, "moderate"))
+            data_src = "KGIS BDA Revised Master Plan 2015 land-use"
+
+        result = ZoneResult(
             zone_class=zone_class,  # type: ignore[arg-type]
+            zone_code=zone_code,
             permitted_uses=PERMITTED_USES.get(zone_class, ["Verify with local authority"]),
             base_far=BASE_FAR.get(zone_class),
             permissible_ground_coverage=GROUND_COVERAGE.get(zone_class),
@@ -210,8 +229,17 @@ out center;
             na_order_required=na_required,
             forest_clearance_required=forest_required,
             source_confidence=source_confidence,  # type: ignore[arg-type]
+            zone_authority=zone_authority,
             kgis=KgisContext(**kgis_raw) if kgis_raw else None,
             score=score,
             severity=severity,  # type: ignore[arg-type]
             data_source=data_src,
         )
+        if landuse_raw:
+            result.data_disclaimer = (
+                "Zone class from the KGIS BDA Revised Master Plan 2015 land-use layer "
+                "(authoritative master plan). Indicative for planning — verify exact "
+                "zoning and any local amendments with BDA before development decisions. "
+                "KGIS data may not be used for legal purposes."
+            )
+        return result

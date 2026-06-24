@@ -113,6 +113,23 @@
   (numeric master id, pending KSRSAC). `resolve_kgis_village_id()` is seamed; until the
   mapping lands the endpoint returns `resolved=false` + `geometry=null` (no fabrication).
 - Indicative only — KGIS data not for legal use; non-commercial until KGIS license.
+## 2.10.0 — 2026-06-24
+
+### Added — geo.yaml (SAT-20 Builders View: authoritative BDA RMP-2015 land-use)
+- **Version**: geo 1.1.0 → 1.2.0
+- `GET /geo/zone` now returns authoritative `zone_class` from the **KGIS BDA Revised
+  Master Plan 2015** land-use layer when configured + the point is inside the BDA Local
+  Planning Area; otherwise it stays OSM-inferred.
+- New `ZoneResult.zone_authority` field: `"BDA-RMP-2015"` (authoritative) vs
+  `"OSM-inferred"` (preliminary) — provenance is first-class.
+- Source: KGIS ArcGIS REST `CITYGIS/BDA_Plans` MapServer (point `query`, intersects).
+  RMP zone codes (R/C/I/PSP/OS/AG/…) map to `ZoneClass`. Authoritative zone feeds the
+  existing `/planning/analyze` FAR/setback engine via `zone_class` (no planning change).
+- **Spike-backed scaffold (FVD SAT-20):** the published KGIS layer id + zone field name
+  are confirmed at license go-live; `fetch_landuse_zone()` is seamed + env-configurable
+  (`KGIS_LANDUSE_URL`, `KGIS_LANDUSE_ZONE_FIELD`). Until set it returns None → OSM
+  fallback (no fabricated authoritative labels). Gated by existing `feature.zoning.land-use`.
+- Indicative until KGIS license signed; non-commercial.
 
 ## 1.5.1 — 2026-06-09
 

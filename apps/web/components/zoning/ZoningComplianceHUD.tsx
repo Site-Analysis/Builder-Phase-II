@@ -45,6 +45,8 @@ export function ZoningComplianceHUD({ result, variant = "full", corner = "tl" }:
       {/* zone + blocker line */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 9, flexWrap: "wrap" }}>
         <ZoneChip label={z.zoneClass} />
+        {z.zoneAuthority === "BDA-RMP-2015" && <ZoneChip label="BDA RMP-2015" tone={Z.good} bg={Z.goodBg} />}
+        {z.zoneAuthority === "OSM-inferred" && <ZoneChip label="OSM-inferred" />}
         {z.todApplicable && <ZoneChip label="TOD FAR 4.0" tone={Z.good} bg={Z.goodBg} />}
         {blockers > 0 && <ZoneChip label={`${blockers} blocker${blockers > 1 ? "s" : ""}`} tone={Z.bad} bg={Z.badBg} />}
       </div>

@@ -65,6 +65,9 @@ class ZoneResult(BaseModel):
     na_order_required: bool = False
     forest_clearance_required: bool = False
     source_confidence: SourceConfidence = "community"
+    # Provenance of zone_class: "BDA-RMP-2015" (authoritative master-plan land-use)
+    # or "OSM-inferred" (preliminary). SAT-20.
+    zone_authority: str | None = None
     kgis: KgisContext | None = None  # authoritative admin context (flag-gated)
     score: float
     severity: Severity

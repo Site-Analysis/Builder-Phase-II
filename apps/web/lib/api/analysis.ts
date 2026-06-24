@@ -1093,6 +1093,7 @@ export async function getZoningAnalysis(
     lulcClass: lulcClass ?? null,
     lulcVintage: lulcVintage ?? null,
     sourceConfidence: srcConf ?? "community",
+    zoneAuthority: (z.zone_authority as string | null) ?? null,
     naRequired,
     forestRequired: forestReq,
     dgcaNocRequired: Boolean(ar.dgca_noc_required),

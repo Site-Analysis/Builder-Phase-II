@@ -113,6 +113,7 @@ export interface ZoningData {
   lulcClass: string | null;
   lulcVintage: string | null;
   sourceConfidence: string;    // "authoritative" | "community"
+  zoneAuthority: string | null; // "BDA-RMP-2015" (authoritative) | "OSM-inferred" (SAT-20)
   // Compliance flags
   naRequired: boolean;
   forestRequired: boolean;

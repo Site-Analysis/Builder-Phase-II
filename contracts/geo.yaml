@@ -1,11 +1,13 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.1.0"
+  version: "1.2.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
-    OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS administrative layers.
-    OSM-inferred zoning is indicative only — not official BDA/BBMP zoning. No synthetic data.
+    OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS layers. Zoning is
+    OSM-inferred (indicative) unless the KGIS BDA Revised Master Plan land-use layer
+    is configured, in which case `zone_class` is authoritative (`zone_authority`
+    distinguishes the two). No synthetic data.
 
 servers:
   - url: http://localhost:8005
@@ -32,7 +34,12 @@ paths:
     get:
       operationId: getZone
       summary: Land-use / zoning classification for a point
-      description: Gated by `feature.zoning.land-use` (KGIS context opt-in via `feature.geo.kgis-context`).
+      description: >
+        Gated by `feature.zoning.land-use` (KGIS context opt-in via
+        `feature.geo.kgis-context`). When the KGIS BDA RMP-2015 land-use layer is
+        configured (`KGIS_LANDUSE_URL`) and the point falls inside the BDA Local
+        Planning Area, `zone_class` is authoritative (`zone_authority="BDA-RMP-2015"`);
+        otherwise it is OSM-inferred (`zone_authority="OSM-inferred"`).
       parameters:
         - { name: lat, in: query, required: true, schema: { type: number, format: float } }
         - { name: lon, in: query, required: true, schema: { type: number, format: float } }
@@ -181,6 +188,12 @@ components:
         na_order_required: { type: boolean }
         forest_clearance_required: { type: boolean }
         source_confidence: { $ref: "#/components/schemas/SourceConfidence" }
+        zone_authority:
+          type: string
+          nullable: true
+          description: >
+            Provenance of `zone_class`: "BDA-RMP-2015" (authoritative BDA Revised
+            Master Plan land-use) or "OSM-inferred" (preliminary, from OSM tags).
         kgis:
           oneOf:
             - $ref: "#/components/schemas/KgisContext"
