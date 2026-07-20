@@ -1,0 +1,15 @@
+{
+  "config_version": "UNVERIFIED-0",
+  "plan_name": "BDA Revised Master Plan 2015 (Vol-III Zoning Regulations)",
+  "regulatory_source": null,
+  "transcription_origin": {
+    "source": "OpenCity bda-revised-master-plan-2015 (digitized fallback; PDF maps only)",
+    "confidence": "inferred",
+    "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015"
+  },
+  "source_note": "Container only. Authoritative cells are transcribed from the PRIMARY RMP-2015 Vol-III printed tables (regulatory_source) and verified against the plan's worked examples. OpenCity may seed geometry/candidates but only at 'inferred' confidence (Sprint-0 B). See app/config/README.md.",
+  "transcription_blocker": "UNRESOLVED doc inconsistency: some tables read 'RMP-2026' but the OPERATIVE plan is RMP-2015. Confirm the operative table set before transcribing any cell.",
+  "status": "template-empty",
+  "fallback_ruleset": "nbcs_2026",
+  "cells": []
+}

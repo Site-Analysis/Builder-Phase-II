@@ -1,0 +1,13 @@
+{
+  "config_version": "UNVERIFIED-0",
+  "ruleset_name": "NBCS 2026 (SP 7:2026) — FALLBACK only",
+  "regulatory_source": null,
+  "transcription_origin": {
+    "source": "BIS SP 7:2026 (NBCS 2026) — pending acquisition",
+    "confidence": "inferred",
+    "url": "https://www.bis.gov.in/"
+  },
+  "source_note": "Fallback rulebook. Used ONLY when an RMP-2015 cell is absent; any value sourced here is tagged 'derived/fallback' in output. Authoritative NBCS cells are transcribed from SP 7:2026 (regulatory_source). Container only (Sprint-0 C).",
+  "status": "template-empty",
+  "cells": []
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sat:planning/rmp-2015-config",
+  "title": "BDA RMP-2015 buildable-envelope lookup config",
+  "description": "Authoritative-tier. Cells transcribed from RMP-2015 Vol-III printed Zoning-Regulation tables and verified against the plan's worked examples. Provenance is SPLIT: regulatory_source is the PRIMARY citation (required + non-null for any 'authoritative' cell); transcription_origin is where the value was actually read THIS time (may be OpenCity = 'inferred'). An OpenCity-only cell is 'inferred', never 'authoritative'. Enforced at load time by app/config/rmp_loader.py (this schema is the human-facing contract; the loader is the runtime gate).",
+  "type": "object",
+  "required": ["config_version", "status", "cells", "transcription_origin"],
+  "properties": {
+    "config_version": { "type": "string", "description": "semver; 'UNVERIFIED-0' until the first cell is transcribed + verified" },
+    "plan_name": { "type": "string" },
+    "ruleset_name": { "type": "string" },
+    "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+    "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+    "source_note": { "type": "string" },
+    "transcription_blocker": { "type": "string" },
+    "status": { "type": "string", "enum": ["template-empty", "partial-unverified", "verified"] },
+    "fallback_ruleset": { "type": "string" },
+    "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" } }
+  },
+  "$defs": {
+    "band": {
+      "type": "object",
+      "required": ["min", "max"],
+      "additionalProperties": false,
+      "properties": {
+        "min": { "type": "number", "minimum": 0 },
+        "max": { "type": ["number", "null"], "minimum": 0, "description": "null = open-ended upper band" }
+      }
+    },
+    "regulatory_source": {
+      "type": ["object", "null"],
+      "description": "PRIMARY citation (RMP-2015 Vol-III / gazette). REQUIRED + non-null for any 'authoritative' cell or config; may be null while only inferred digitizations exist.",
+      "required": ["doc", "page_ref"],
+      "properties": {
+        "doc": { "type": "string", "minLength": 1, "description": "e.g. 'BDA RMP-2015 Vol-III Zoning Regulations'" },
+        "page_ref": { "type": "string", "minLength": 1, "description": "e.g. 'Table 5, p.42'" },
+        "url": { "type": "string" }
+      }
+    },
+    "transcription_origin": {
+      "type": "object",
+      "description": "Where the digitized value was actually read THIS time. May be OpenCity, which is 'inferred'.",
+      "required": ["source", "confidence"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "description": "e.g. 'RMP-2015 Vol-III PDF' or 'OpenCity bda-revised-master-plan-2015'" },
+        "confidence": { "enum": ["authoritative", "inferred"] },
+        "url": { "type": "string" }
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["zone", "ring", "road_width_band_m", "plot_size_band_sqm", "far", "ground_coverage", "setbacks", "ecs", "mixed_use_pct", "confidence", "transcription_origin"],
+      "properties": {
+        "zone": { "enum": ["Residential", "Commercial", "Industrial", "Mixed Use", "Institutional", "Agricultural", "Green Belt", "Water Body", "Restricted"] },
+        "ring": { "enum": ["I", "II", "III"], "description": "I core / II core-ORR / III beyond (US-082 classifier)" },
+        "road_width_band_m": { "$ref": "#/$defs/band" },
+        "plot_size_band_sqm": { "$ref": "#/$defs/band" },
+        "far": { "type": "number", "exclusiveMinimum": 0 },
+        "ground_coverage": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "setbacks": {
+          "type": "object",
+          "required": ["front_m", "rear_m", "side_m"],
+          "additionalProperties": false,
+          "properties": {
+            "front_m": { "type": "number", "minimum": 0 },
+            "rear_m": { "type": "number", "minimum": 0 },
+            "side_m": { "type": "number", "minimum": 0 }
+          }
+        },
+        "ecs": {
+          "type": "object",
+          "required": ["basis", "value_per_100sqm"],
+          "properties": {
+            "basis": { "type": "string", "minLength": 1 },
+            "value_per_100sqm": { "type": "number", "minimum": 0 },
+            "visitor_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+          }
+        },
+        "mixed_use_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "confidence": { "enum": ["authoritative", "inferred"], "description": "'authoritative' REQUIRES a non-null regulatory_source (doc+page_ref). An OpenCity-only cell is 'inferred'." },
+        "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+        "transcription_origin": { "$ref": "#/$defs/transcription_origin" }
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "story": "US-085",
+  "title": "Premium-FAR golden fixtures (gazette UDD 78 MNJ 2024(E), 21-Feb-2025)",
+  "mode": "percentage_of_permissible",
+  "status": "PENDING_TRANSCRIPTION_PRIMARY_PDF",
+  "note": "Case STRUCTURE follows the resolved reading in the build plan; the CHARGE and worked-example numbers are EMPTY until transcribed from the PRIMARY gazette PDF. 'candidate_from_plan' records the plan's UNVERIFIED candidate — NOT authoritative, confirm vs the PDF. A filled 'expected' without a 'source' fails tests/planning_rmp_smoke.py.",
+  "cases": [
+    {
+      "id": "gazette-illustration",
+      "inputs": { "plot_area_sqm": null, "permissible_far": null, "premium_far": null, "guidance_value_per_sqm": null },
+      "expected": { "notional_sital_area_sqm": null, "premium_charge": null, "charge_basis": null },
+      "candidate_from_plan": { "plot_area_sqm": 1000, "permissible_far": 2.5, "premium_far": 1.0, "notional_sital_area_sqm": 400, "note": "illustration predates the 28% floor — verify which basis binds" },
+      "source": "",
+      "status": "PENDING"
+    },
+    {
+      "id": "band-9-12m",
+      "inputs": { "road_width_m": 10.0, "permissible_far": null },
+      "expected": { "premium_pct": null, "max_with_premium": null },
+      "candidate_from_plan": { "premium_pct": 0.20 },
+      "source": "",
+      "status": "PENDING"
+    },
+    {
+      "id": "band-12-18m",
+      "inputs": { "road_width_m": 15.0, "permissible_far": null },
+      "expected": { "premium_pct": null },
+      "candidate_from_plan": { "premium_pct": 0.40 },
+      "source": "",
+      "status": "PENDING"
+    },
+    {
+      "id": "band-over-18m-cap",
+      "inputs": { "road_width_m": 24.0, "permissible_far": null },
+      "expected": { "premium_pct": null, "tdr_remainder_pct": null },
+      "candidate_from_plan": { "premium_pct": 0.40, "tdr_remainder_pct": 0.20, "note": "band max 60% capped to 40% purchasable; 20% via TDR (unpriced)" },
+      "source": "",
+      "status": "PENDING"
+    },
+    {
+      "id": "below-9m-gate",
+      "inputs": { "road_width_m": 8.0, "permissible_far": null },
+      "expected": { "premium_pct": null, "premium_charge": null },
+      "candidate_from_plan": { "premium_pct": 0.0, "premium_charge": 0.0 },
+      "source": "",
+      "status": "PENDING"
+    },
+    {
+      "id": "floor-binds-permissible-gt-1.786",
+      "inputs": { "permissible_far": 2.5, "road_width_m": 15.0, "guidance_value_per_sqm": null },
+      "expected": { "charge_basis": null, "premium_charge": null },
+      "candidate_from_plan": { "charge_basis": "28%-floor", "note": "floor binds when permissible_far > 0.50/0.28 = 1.786" },
+      "source": "",
+      "status": "PENDING"
+    },
+    {
+      "id": "band-edge-12.0m",
+      "inputs": { "road_width_m": 12.0, "permissible_far": null },
+      "expected": { "status": null },
+      "candidate_from_plan": { "status": "survey required", "note": "inherit US-084 band-edge rail; do not pick a band" },
+      "source": "",
+      "status": "PENDING"
+    }
+  ]
+}
