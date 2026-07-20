@@ -162,6 +162,8 @@ class ParcelGeometry(BaseModel):
     village_code: str | None = None
     kgis_village_id: str | None = None
     ulpin: str | None = None
+    lat: float | None = None  # echoes the reverse-geocode point, when supplied
+    lon: float | None = None
     resolved: bool = False
     geometry: dict[str, Any] | None = None  # GeoJSON Polygon, WGS84 (lng, lat)
     crs: str = "EPSG:4326"

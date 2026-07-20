@@ -80,10 +80,13 @@ def test_parcel_flag_on_resolved(monkeypatch):
 
     monkeypatch.setenv("FLAGS", "feature.geo.parcel-geometry")
 
+    async def _fake_resolve(_vc, _client):
+        return "123"
+
     async def _fake_geom(_vid, _survey, _client, crs="DD"):
         return _FAKE_POLY
 
-    monkeypatch.setattr(kgis_service, "resolve_kgis_village_id", lambda _vc: "123")
+    monkeypatch.setattr(kgis_service, "resolve_kgis_village_id", _fake_resolve)
     monkeypatch.setattr(kgis_service, "fetch_parcel_geometry", _fake_geom)
 
     resp = CLIENT.get("/geo/parcel", params=_PARAMS)
@@ -101,7 +104,15 @@ def test_parcel_flag_on_unresolved(monkeypatch):
     from app.services import kgis_service
 
     monkeypatch.setenv("FLAGS", "feature.geo.parcel-geometry")
-    monkeypatch.setattr(kgis_service, "resolve_kgis_village_id", lambda _vc: None)
+
+    async def _none_resolve(_vc, _client):
+        return None
+
+    async def _none_direct(_vc, _sno, _client):
+        return None
+
+    monkeypatch.setattr(kgis_service, "resolve_kgis_village_id", _none_resolve)
+    monkeypatch.setattr(kgis_service, "fetch_parcel_geometry_direct", _none_direct)
 
     resp = CLIENT.get("/geo/parcel", params=_PARAMS)
     assert resp.status_code == 200

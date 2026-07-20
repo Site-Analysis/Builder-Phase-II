@@ -1,7 +1,7 @@
 # FVD — SAT-19 Builders View: Survey-Number Site Search
 
 **Jira Ticket:** SAT-19
-**Status:** Spike complete · FVD-first (no product code yet) · Phase 1 blocked on `KGISVillageId` resolution
+**Status:** Phase 1 **landed** (banked, pre-commit) · resolver + direct KGIS Cadastral-L5 fallback implemented · live field-match pending Phase-0 (see `docs/phase-0-kgis-verification.md`)
 **Type:** Story
 **Target repo/branch:** fallback repo → `feat/geo-parcel-geometry`
 
@@ -70,7 +70,72 @@ terms forbid legal use; survey-to-physical offset 3–10 m).
 
 ---
 
-## Code Traceability Matrix (Phase 1 — planned)
+## Phase 1 — Implementation Landed (2026-07-02, banked pre-commit)
+
+The `KGISVillageId` blocker was resolved **without** the village-master email — via the
+public KGIS Cadastral layer:
+
+- **`resolve_kgis_village_id(village_code, client)`** — now **async + real**: queries the
+  public KGIS Cadastral **layer 5** (`CadastralData_Admin/…/MapServer/5/query`) by
+  `KGISVillageCode` (base + `_n`-suffixed form) → returns `KGISVillageID`. Fails soft to
+  `None` (unreachable / no match / parse error) → `resolved=false`, never a fabricated id.
+- **`fetch_parcel_geometry_direct(village_code, survey_no, client)`** — fallback when
+  `geomForSurveyNum` yields nothing: queries layer 5 directly by `KGISVillageCode` +
+  `surveynumberi`, `outSR=4326`, ESRI `rings` → GeoJSON (`_esri_rings_to_geojson`).
+- **`get_parcel` resolution order:** explicit `kgis_village_id` → resolve from
+  `village_code` → (if absent) reverse-geocode from `lat`/`lon` → `geomForSurveyNum` →
+  direct L5 fallback. Nothing resolves → `resolved=false` + `geometry=None`.
+- Added optional `lat`/`lon` params + echoed `lat`/`lon` on `ParcelGeometry`.
+- Contract `geo.yaml` 1.2.0 → **1.3.0**; `CHANGELOG` **2.11.0**.
+- Smoke: `tests/geo_smoke.py` `test_parcel_flag_off` / `_resolved` / `_unresolved` (mocked).
+  ⚠ **Overlaps the pre-existing `tests/geo_parcel_smoke.py`** — consolidate at the PR split
+  (do not ship duplicate parcel smoke across two process files; see § Gotchas in `CLAUDE.md`).
+- **Flag reconciliation pending:** rename `feature.geo.parcel-geometry` → canonical
+  **`feature.geo.parcel`** (Sprint-0 A) — lands with the split commit.
+
+### Duplicate-smoke overlap (mechanical merge map — do NOT delete either file now)
+
+Parcel smoke currently lives in **two** process files: committed `tests/geo_parcel_smoke.py`
+and the banked additions in `tests/geo_smoke.py`. The later one-file merge is mechanical:
+
+| Intent | `geo_parcel_smoke.py` (committed) | `geo_smoke.py` (banked) | Relationship / action |
+|---|---|---|---|
+| WKT→GeoJSON parser | `test_wkt_parser` | — | **UNIQUE** — keep (only copy) |
+| flag-off → 403 | `test_parcel_flag_off` (survey `88`) | `test_parcel_flag_off` (survey `45/2`) | **DUPLICATE** intent — keep one |
+| resolved path | `test_parcel_flag_on_resolved` — mocks resolver **sync 1-arg** `lambda _vc:` | `test_parcel_resolved` — mocks resolver **async 2-arg** `(_vc,_client)` + `fetch_parcel_geometry` | **DUPLICATE**; committed is **STALE** vs banked async signature → keep banked, drop committed |
+| unresolved path | `test_parcel_flag_on_unresolved` — sync mock; **does NOT patch `fetch_parcel_geometry_direct`** → live-egress risk | `test_parcel_unresolved` — async mock **+** patches `fetch_parcel_geometry_direct` | **DUPLICATE**; committed **STALE + unsafe** → keep banked, drop committed |
+
+**Merge target:** keep the dedicated `geo_parcel_smoke.py`; port the banked (correct, async)
+`flag_off`/`resolved`/`unresolved` into it, keep `test_wkt_parser`, delete the 3 stale
+committed versions **and** remove the 3 parcel tests from `geo_smoke.py`. Net: parcel smoke
+in one process file; `geo_smoke.py` keeps only zone/authority tests. This is dedup, **not a
+re-derivation** — the banked async versions already encode the correct signatures.
+
+**Commit-time gate (before deleting any committed coverage):** verify the banked async
+`{resolved, unresolved}` **assert everything** the committed sync versions assert — not just
+a nicer-mock happy path. e.g. committed `test_parcel_flag_on_resolved` also asserts
+`survey_number == "88"` and `kgis_village_id == "123"` echo back; the banked `test_parcel_resolved`
+must assert the equivalent echoes. Port any missing assertion into the banked test **first**;
+delete the committed sync tests only after assertion parity is proven.
+
+## Accuracy Report
+
+- **Golden set:** none hand-verified against **live** KGIS — egress was blocked during the
+  spike. The live field-match (`KGISVillageCode` / `KGISVillageID` / `surveynumberi` type)
+  is Phase-0 (`docs/phase-0-kgis-verification.md`, probes **P1/P2/P3**).
+- **Measured error:** unmeasured; survey-to-physical offset **3–10 m** per KGIS terms (not
+  independently measured).
+- **Known limitations:** (1) L5 `KGISVillageID`↔`geomForSurveyNum` equivalence + resolver /
+  direct-fallback field names = **PENDING LIVE VERIFICATION — KGIS egress blocked** (NOT
+  validated) — guarded by fail-soft to `resolved=false`; (2) BBMP/urban points return **no parcel** (khata/ward-
+  based) by design; (3) BMRDA/outskirt coverage unproven (see SAT-21 / US-081); (4) **not
+  legal title**.
+- **Regression:** mocked smoke asserts the `resolved=true` path **and** the honest
+  `resolved=false` path (no fabricated geometry).
+
+---
+
+## Code Traceability Matrix (Phase 1 — planned; see Phase 1 section above for landed deltas)
 
 | # | Acceptance Criterion | File (planned) | Function / Class |
 |---|---|---|---|

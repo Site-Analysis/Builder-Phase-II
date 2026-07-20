@@ -84,3 +84,60 @@ def test_zone_flag_on(monkeypatch):
     body = resp.json()
     assert body["zone_class"] == "Residential"
     assert body["score"] == 78.0
+
+
+@skip_no_app
+def test_parcel_flag_off(monkeypatch):
+    monkeypatch.setenv("FLAGS", "")
+    resp = CLIENT.get("/geo/parcel", params={"survey_no": "45/2"})
+    assert resp.status_code == 403
+
+
+@skip_no_app
+def test_parcel_resolved(monkeypatch):
+    """Resolver + geomForSurveyNum path returns a real polygon (US-080)."""
+    from app.services import kgis_service as ks
+
+    monkeypatch.setenv("FLAGS", "feature.geo.parcel-geometry")
+
+    async def _fake_resolve(_vc, _client):
+        return "12345"
+
+    async def _fake_geom(_vid, _sno, _client, crs="DD"):
+        return {
+            "type": "Polygon",
+            "coordinates": [[[77.0, 12.0], [77.1, 12.0], [77.1, 12.1], [77.0, 12.0]]],
+        }
+
+    monkeypatch.setattr(ks, "resolve_kgis_village_id", _fake_resolve)
+    monkeypatch.setattr(ks, "fetch_parcel_geometry", _fake_geom)
+
+    resp = CLIENT.get("/geo/parcel", params={"survey_no": "45/2", "village_code": "2905030017"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["resolved"] is True
+    assert body["kgis_village_id"] == "12345"
+    assert body["geometry"]["type"] == "Polygon"
+
+
+@skip_no_app
+def test_parcel_unresolved(monkeypatch):
+    """KGIS unreachable / no match → honest resolved=false, no fabricated geometry."""
+    from app.services import kgis_service as ks
+
+    monkeypatch.setenv("FLAGS", "feature.geo.parcel-geometry")
+
+    async def _none_resolve(_vc, _client):
+        return None
+
+    async def _none_direct(_vc, _sno, _client):
+        return None
+
+    monkeypatch.setattr(ks, "resolve_kgis_village_id", _none_resolve)
+    monkeypatch.setattr(ks, "fetch_parcel_geometry_direct", _none_direct)
+
+    resp = CLIENT.get("/geo/parcel", params={"survey_no": "45/2", "village_code": "2905030017"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["resolved"] is False
+    assert body["geometry"] is None

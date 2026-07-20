@@ -98,26 +98,46 @@ async def get_parcel(
     survey_no: str = Query(..., min_length=1),
     village_code: str | None = Query(None),
     kgis_village_id: str | None = Query(None),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
     crs: str = Query("DD"),
 ) -> ParcelGeometry:
-    """Survey-number → parcel polygon (KGIS geomForSurveyNum, SAT-19).
+    """Survey-number → parcel polygon (KGIS, SAT-19).
 
-    `kgis_village_id` may be supplied directly; otherwise it is resolved from
-    `village_code` (pending KSRSAC mapping — see `kgis_service.resolve_kgis_village_id`).
-    When unresolved, returns `resolved=False` + `geometry=None` (no fabrication).
+    Resolution order:
+    1. explicit `kgis_village_id`, else resolve it from `village_code`;
+    2. if `village_code` is absent but `lat`/`lon` are given, derive it via KGIS
+       reverse geocode (`getlocationdetails`);
+    3. fetch the polygon via `geomForSurveyNum`; if that yields nothing, fall back to a
+       direct KGIS Cadastral-layer query by village code + survey number.
+
+    When nothing resolves, returns `resolved=False` + `geometry=None` (no fabrication).
     """
     _require_flag(_PARCEL_FLAG)
-    vid = kgis_village_id or kgis_service.resolve_kgis_village_id(village_code)
     geometry = None
-    if vid:
-        async with httpx.AsyncClient(
-            timeout=10, headers={"User-Agent": "SAT-SiteAnalysisTool/1.0"}
-        ) as client:
+    village_code_eff = village_code
+    vid = kgis_village_id
+    async with httpx.AsyncClient(
+        timeout=12, headers={"User-Agent": "SAT-SiteAnalysisTool/1.0"}
+    ) as client:
+        if not village_code_eff and lat is not None and lon is not None:
+            ctx = await kgis_service.fetch_kgis_context(lat, lon, client)
+            if ctx:
+                village_code_eff = ctx.get("village_code")
+        if not vid:
+            vid = await kgis_service.resolve_kgis_village_id(village_code_eff, client)
+        if vid:
             geometry = await kgis_service.fetch_parcel_geometry(vid, survey_no, client, crs=crs)
+        if geometry is None and village_code_eff:
+            geometry = await kgis_service.fetch_parcel_geometry_direct(
+                village_code_eff, survey_no, client
+            )
     return ParcelGeometry(
         survey_number=survey_no,
-        village_code=village_code,
+        village_code=village_code_eff,
         kgis_village_id=vid,
         geometry=geometry,
         resolved=geometry is not None,
+        lat=lat,
+        lon=lon,
     )

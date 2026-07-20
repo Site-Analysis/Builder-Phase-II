@@ -1,5 +1,18 @@
 # Contract Changelog
 
+## 2.11.0 — 2026-07-02
+
+### Changed — geo.yaml (v1.2.0 → v1.3.0, SAT-19 parcel resolver, US-080)
+- `/geo/parcel` now resolves the KGIS village id from `village_code` (or from new
+  optional `lat`/`lon` via KGIS reverse geocode) and falls back to a direct KGIS
+  Cadastral-layer query by village code + survey number when `geomForSurveyNum` returns
+  nothing. Previously the resolver was a stub that always returned `resolved=false`.
+- Added optional `lat`, `lon` query params and echoed `lat`, `lon` response fields on
+  `ParcelGeometry`. No breaking changes; still gated by `feature.geo.parcel-geometry`;
+  honest `resolved=false` + `geometry=null` when KGIS is unreachable (no fabrication).
+- Data source: public token-free KGIS Cadastral MapServer (layer 5) +
+  `getlocationdetails` + `geomForSurveyNum`. Live field-match pending Phase-0 KGIS access.
+
 ## 2.1.0 — 2026-06-20
 
 ### Added — planning.yaml (new service, SAT-10 build-capacity)

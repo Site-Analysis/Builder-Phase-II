@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.2.0"
+  version: "1.3.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
     OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS layers. Zoning is
@@ -112,15 +112,19 @@ paths:
       summary: Survey-number → cadastral parcel polygon (Karnataka, KGIS)
       description: >
         Forward survey-number lookup. Returns the parcel boundary as a GeoJSON Polygon
-        (WGS84) for a Karnataka rural/revenue survey number via KGIS `geomForSurveyNum`.
+        (WGS84) for a Karnataka rural/revenue survey number. Resolution order: explicit
+        `kgis_village_id`, else resolved from `village_code` (or from `lat`/`lon` via KGIS
+        reverse geocode), then fetched via KGIS `geomForSurveyNum`; if that yields nothing
+        a direct KGIS Cadastral-layer query by village code + survey number is tried.
         Gated by `feature.geo.parcel-geometry`. Indicative only — not a legal survey
-        (KGIS data may not be used for legal purposes). When the KGIS village id cannot
-        be resolved the response is returned with `resolved=false` and `geometry=null`
-        (no fabrication). See FVD SAT-19.
+        (KGIS data may not be used for legal purposes). When nothing resolves the response
+        is returned with `resolved=false` and `geometry=null` (no fabrication). See FVD SAT-19.
       parameters:
         - { name: survey_no, in: query, required: true, schema: { type: string } }
         - { name: village_code, in: query, required: false, schema: { type: string, nullable: true } }
         - { name: kgis_village_id, in: query, required: false, schema: { type: string, nullable: true } }
+        - { name: lat, in: query, required: false, schema: { type: number, format: float, nullable: true } }
+        - { name: lon, in: query, required: false, schema: { type: number, format: float, nullable: true } }
         - { name: crs, in: query, required: false, schema: { type: string, enum: ["DD", "UTM"], default: "DD" } }
       responses:
         "200":
@@ -299,6 +303,8 @@ components:
         village_code: { type: string, nullable: true }
         kgis_village_id: { type: string, nullable: true }
         ulpin: { type: string, nullable: true }
+        lat: { type: number, format: float, nullable: true }
+        lon: { type: number, format: float, nullable: true }
         resolved: { type: boolean, description: "true only when a real KGIS polygon was returned" }
         geometry:
           oneOf:
