@@ -40,3 +40,9 @@ stn/
 
 # Graphify knowledge-graph output (local tool artifact)
 graphify-out/
+
+# Large fallback data blobs — download-on-setup, NOT committed (reproducible open data).
+# Fetch/verify via scripts/fetch_fallback_data.py; provenance in
+# services/geo/app/data/FALLBACK_SOURCES.md. The small wards file (2.9 MB, ODbL) is NOT
+# ignored — it stays committable.
+/services/geo/app/data/lgd_villages.geojson
