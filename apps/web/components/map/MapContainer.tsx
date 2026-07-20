@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MapContainer as LeafletMap, TileLayer, useMap } from "react-leaflet";
+import type * as L from "leaflet";
 import { cn } from "@/lib/utils";
 import "leaflet/dist/leaflet.css";
 
@@ -19,6 +20,41 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
     last.current = key;
     map.flyTo(center, zoom, { duration: 0.8 });
   }, [map, center, zoom]);
+  return null;
+}
+
+// KGIS cadastral (survey-parcel) grid as an ArcGIS dynamic overlay. esri-leaflet is
+// imported lazily because it touches `window` — keep it out of the SSR bundle. The
+// KGIS service enforces minScale 40000, so the grid only draws once zoomed in.
+const KGIS_CADASTRAL_URL =
+  "https://kgis.ksrsac.in/kgismaps/rest/services/CadastralData_Admin/Dynamic_CadastralData_Admin/MapServer";
+
+function CadastralLayer({ visible }: { visible: boolean }) {
+  const map = useMap();
+  const layerRef = useRef<L.Layer | null>(null);
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void (async () => {
+      const { dynamicMapLayer } = await import("esri-leaflet");
+      if (cancelled) return;
+      const layer = dynamicMapLayer({
+        url: KGIS_CADASTRAL_URL,
+        layers: [5],
+        opacity: 0.85,
+        attribution: "Cadastral: KGIS (KSRSAC) — indicative, not a legal survey",
+      });
+      layer.addTo(map);
+      layerRef.current = layer;
+    })();
+    return () => {
+      cancelled = true;
+      if (layerRef.current) {
+        map.removeLayer(layerRef.current);
+        layerRef.current = null;
+      }
+    };
+  }, [visible, map]);
   return null;
 }
 
@@ -40,6 +76,9 @@ export function MapContainer({
   // Satellite basemap (MapTiler) helps locate rural parcels the street basemap can't.
   const mtKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
   const [basemap, setBasemap] = useState<"street" | "satellite">("street");
+  // KGIS cadastral overlay ships dark — enabled per-deployment via env flag (US-081).
+  const cadastralEnabled = process.env.NEXT_PUBLIC_ENABLE_CADASTRAL === "1";
+  const [cadastral, setCadastral] = useState(false);
   return (
     <div
       className={cn(
@@ -72,6 +111,7 @@ export function MapContainer({
           />
         )}
         <MapController center={center} zoom={zoom} />
+        {cadastralEnabled && cadastral && <CadastralLayer visible />}
         {children}
       </LeafletMap>
       {mtKey && (
@@ -88,6 +128,24 @@ export function MapContainer({
           }}
         >
           {basemap === "street" ? "Satellite" : "Street"}
+        </button>
+      )}
+      {cadastralEnabled && (
+        <button
+          type="button"
+          onClick={() => setCadastral((c) => !c)}
+          aria-label="Toggle cadastral parcel grid"
+          aria-pressed={cadastral}
+          style={{
+            position: "absolute", bottom: 58, right: 12, zIndex: 500,
+            padding: "5px 10px", fontSize: 11, fontWeight: 700,
+            border: "1px solid rgba(0,0,0,0.15)", borderRadius: 6, cursor: "pointer",
+            background: cadastral ? "#0F766E" : "#FDFCFB",
+            color: cadastral ? "#FFFFFF" : "#3A3F3B", fontFamily: "inherit",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+          }}
+        >
+          Cadastral
         </button>
       )}
     </div>
