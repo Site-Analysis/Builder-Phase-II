@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.models.geo import (
     AmenitiesResult,
+    AuthorityResult,
     ParcelGeometry,
     SoilResult,
     WaterConstraintResult,
@@ -17,6 +18,7 @@ from app.models.geo import (
 )
 from app.services import kgis_service
 from app.services.amenities_service import AmenitiesService
+from app.services.authority_service import detect_authority
 from app.services.geo_service import GeoService
 from app.services.soil_service import SoilService
 from app.services.water_service import WaterService
@@ -27,6 +29,7 @@ _WATER_FLAG = "feature.environment.water-constraints"
 _AMENITY_FLAG = "feature.geo.amenities"
 _KGIS_FLAG = "feature.geo.kgis-context"
 _PARCEL_FLAG = "feature.geo.parcel-geometry"
+_AUTHORITY_FLAG = "feature.geo.authority"
 
 
 def _enabled_flags() -> set[str]:
@@ -141,3 +144,21 @@ async def get_parcel(
         lat=lat,
         lon=lon,
     )
+
+
+@router.get("/authority", response_model=AuthorityResult)
+async def get_authority(
+    lat: float = Query(...),
+    lon: float = Query(...),
+) -> AuthorityResult:
+    """Governing local authority + bye-laws / approval track for a point (US-093).
+
+    GBA-aware (BBMP dissolved 15-May-2025). Best-effort from KGIS admin context; the
+    authoritative Boundaries/LPA point-in-polygon check is deferred (`live_verified=false`)
+    until KGIS access lands. Gated by `feature.geo.authority`.
+    """
+    _require_flag(_AUTHORITY_FLAG)
+    async with httpx.AsyncClient(
+        timeout=10, headers={"User-Agent": "SAT-SiteAnalysisTool/1.0"}
+    ) as client:
+        return await detect_authority(lat, lon, client)

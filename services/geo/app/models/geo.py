@@ -174,3 +174,29 @@ class ParcelGeometry(BaseModel):
         "offset 3-10 m). When resolved=false the KGIS village id is pending (SAT-19) "
         "and no geometry is returned."
     )
+
+
+class AuthorityResult(BaseModel):
+    """Governing local authority + building bye-law / approval track for a point (US-093).
+
+    `live_verified=False` until the KGIS Boundaries / LPA point-in-polygon check lands
+    (Phase-0); values are best-effort from the KGIS admin context. `authority="Unknown"`
+    with low confidence when context is unavailable — never fabricated.
+    """
+
+    authority: str
+    jurisdiction_type: str  # "Urban" | "Rural" | "Unknown"
+    planning_authority: str | None = None
+    approval_track: str | None = None
+    bye_law_reference: str | None = None
+    portal: str | None = None
+    confidence: str = "low"  # "high" | "medium" | "low"
+    live_verified: bool = False
+    kgis: KgisContext | None = None
+    notes: str | None = None
+    data_source: str = "KGIS getlocationdetails + SAT authority ruleset (GBA-aware)"
+    data_disclaimer: str = (
+        "Indicative jurisdiction from KGIS admin context + a static ruleset encoding the "
+        "GBA transition (BBMP dissolved 15-May-2025). Authoritative authority/LPA requires "
+        "a KGIS Boundaries point-in-polygon check (pending). Verify before relying on it."
+    )

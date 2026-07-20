@@ -141,3 +141,60 @@ def test_parcel_unresolved(monkeypatch):
     body = resp.json()
     assert body["resolved"] is False
     assert body["geometry"] is None
+
+
+@skip_no_app
+def test_authority_flag_off(monkeypatch):
+    monkeypatch.setenv("FLAGS", "")
+    resp = CLIENT.get("/geo/authority", params=_PT)
+    assert resp.status_code == 403
+
+
+@skip_no_app
+def test_authority_bengaluru(monkeypatch):
+    """Bengaluru urban point → GBA-aware authority, live_verified false (US-093)."""
+    from app.services import authority_service as auth
+
+    monkeypatch.setenv("FLAGS", "feature.geo.authority")
+
+    async def _fake_ctx(_lat, _lon, _client):
+        return {
+            "type": "Urban",
+            "district": "Bengaluru Urban",
+            "town": "BBMP",
+            "admin_zone": "BBMP East",
+            "ward": "Hoysala Nagar",
+            "taluk": None,
+            "hobli": None,
+            "village": None,
+            "village_code": None,
+            "survey_number": None,
+        }
+
+    monkeypatch.setattr(auth, "fetch_kgis_context", _fake_ctx)
+
+    resp = CLIENT.get("/geo/authority", params=_PT)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "Greater Bengaluru Authority" in body["authority"]
+    assert body["jurisdiction_type"] == "Urban"
+    assert body["live_verified"] is False
+
+
+@skip_no_app
+def test_authority_no_context(monkeypatch):
+    """No KGIS context → honest Unknown / low confidence (no fabrication)."""
+    from app.services import authority_service as auth
+
+    monkeypatch.setenv("FLAGS", "feature.geo.authority")
+
+    async def _no_ctx(_lat, _lon, _client):
+        return None
+
+    monkeypatch.setattr(auth, "fetch_kgis_context", _no_ctx)
+
+    resp = CLIENT.get("/geo/authority", params=_PT)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["authority"] == "Unknown"
+    assert body["confidence"] == "low"

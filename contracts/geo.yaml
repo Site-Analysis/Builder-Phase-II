@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.3.0"
+  version: "1.4.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
     OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS layers. Zoning is
@@ -132,6 +132,29 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ParcelGeometry" }
+        "403": { description: Feature flag disabled }
+        "422": { description: Validation error }
+
+  /geo/authority:
+    get:
+      operationId: getAuthority
+      summary: Governing local authority + bye-laws / approval track for a point
+      description: >
+        Classifies the governing local authority and the applicable building bye-laws /
+        approval track from the KGIS admin context, encoding the GBA transition (BBMP
+        dissolved 15-May-2025 → Greater Bengaluru Authority). Gated by
+        `feature.geo.authority`. The authoritative Boundaries/LPA point-in-polygon check
+        is deferred (`live_verified=false`) until KGIS access lands; `authority="Unknown"`
+        (low confidence) when context is unavailable. Indicative only — verify before use.
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, format: float } }
+        - { name: lon, in: query, required: true, schema: { type: number, format: float } }
+      responses:
+        "200":
+          description: Authority classification
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthorityResult" }
         "403": { description: Feature flag disabled }
         "422": { description: Validation error }
 
@@ -311,5 +334,29 @@ components:
             - $ref: "#/components/schemas/GeoJsonPolygon"
             - type: "null"
         crs: { type: string }
+        data_source: { type: string }
+        data_disclaimer: { type: string }
+
+    AuthorityResult:
+      type: object
+      required: [authority, jurisdiction_type, confidence, live_verified, data_source]
+      properties:
+        authority: { type: string }
+        jurisdiction_type: { type: string, enum: ["Urban", "Rural", "Unknown"] }
+        planning_authority: { type: string, nullable: true }
+        approval_track: { type: string, nullable: true }
+        bye_law_reference: { type: string, nullable: true }
+        portal: { type: string, nullable: true }
+        confidence: { type: string, enum: ["high", "medium", "low"] }
+        live_verified:
+          type: boolean
+          description: >
+            true only once the KGIS Boundaries/LPA point-in-polygon check confirms the
+            authority; false while classification is from admin context only.
+        kgis:
+          oneOf:
+            - $ref: "#/components/schemas/KgisContext"
+            - type: "null"
+        notes: { type: string, nullable: true }
         data_source: { type: string }
         data_disclaimer: { type: string }

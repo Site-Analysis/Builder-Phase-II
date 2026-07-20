@@ -1,5 +1,17 @@
 # Contract Changelog
 
+## 2.12.0 — 2026-07-02
+
+### Added — geo.yaml (v1.3.0 → v1.4.0, authority auto-detect, US-093)
+- New `GET /geo/authority?lat&lon` → `AuthorityResult` (governing authority, jurisdiction
+  type, planning authority, approval track, bye-law reference, portal, confidence).
+- Gated by new flag `feature.geo.authority` (403 when disabled).
+- GBA-aware: encodes the BBMP → Greater Bengaluru Authority transition (15-May-2025).
+  Best-effort from KGIS `getlocationdetails` context + a static ruleset; the authoritative
+  Boundaries/LPA point-in-polygon check is deferred (`live_verified=false`) until KGIS
+  access lands. `authority="Unknown"` (low confidence) when context is unavailable — no
+  fabrication.
+
 ## 2.11.0 — 2026-07-02
 
 ### Changed — geo.yaml (v1.2.0 → v1.3.0, SAT-19 parcel resolver, US-080)
