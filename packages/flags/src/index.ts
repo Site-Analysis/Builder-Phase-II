@@ -17,7 +17,8 @@ export type FeatureFlag =
   | "feature.rainfall.climate-profile"
   | "feature.rainfall.anomaly"
   | "feature.rainfall.seasonality"
-  | "feature.rainfall.site-analysis";
+  | "feature.rainfall.site-analysis"
+  | "feature.planning.road-width-resolver";
 
 const enabled: Set<string> = new Set(
   (process.env.FLAGS ?? "").split(",").map((f) => f.trim()).filter(Boolean)

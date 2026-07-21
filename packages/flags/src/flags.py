@@ -28,6 +28,7 @@ class FeatureFlag(StrEnum):
     RAINFALL_SEASONALITY = "feature.rainfall.seasonality"
     RAINFALL_SITE_ANALYSIS = "feature.rainfall.site-analysis"
     PLANNING_SITE_CAPACITY = "feature.planning.site-capacity"
+    PLANNING_ROAD_WIDTH_RESOLVER = "feature.planning.road-width-resolver"
     INFRASTRUCTURE_CONNECTIVITY = "feature.infrastructure.connectivity"
     CONTEXT_GROWTH_PIPELINE = "feature.context.growth-pipeline"
     LAND_RECORDS = "feature.land.records"

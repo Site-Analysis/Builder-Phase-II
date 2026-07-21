@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Planning Service
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     Site build-capacity analysis for Indian urban plots. Computes applicable FAR,
     ground coverage, setbacks, and height limits from NBC 2016 Table 15, BDA CDP 2031,
@@ -52,6 +52,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlanningResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
+  /planning/road-width:
+    post:
+      operationId: resolveRoadWidth
+      summary: Resolve a road width to a FAR band (or edge-straddling range) + confidence tier
+      description: >
+        Feeds US-084 FAR. No authoritative queryable road source exists (RMP reg 3.2 = surveyed
+        right-of-way), so this returns a BAND with a confidence tier, never a false-authoritative
+        point; when the width straddles a band edge it returns BOTH bands + survey_required + an
+        option value. Best-available input tier wins (surveyed→authoritative, MapTiler
+        measurement→inferred [default], probe-confirmed KGIS, lane estimate→inferred); none →
+        unresolved. Gated by `feature.planning.road-width-resolver`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoadWidthRequest"
+      responses:
+        "200":
+          description: Road-width band/range + confidence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoadWidthResult"
         "403":
           description: Feature flag disabled
         "422":
@@ -204,3 +233,91 @@ components:
           type: string
         data_disclaimer:
           type: string
+
+    RoadWidthBand:
+      type: object
+      required: [min]
+      properties:
+        min: { type: number, format: float }
+        max: { type: number, format: float, nullable: true, description: "null = open-ended top band" }
+
+    RoadWidthRequest:
+      type: object
+      description: >
+        Best-available road-width inputs; all optional. The best tier present wins:
+        surveyed_width_m (authoritative) > measured_width_m (MapTiler, inferred; default) >
+        kgis_width_m + kgis_probe_confirmed > lane_count (inferred, weakest).
+      properties:
+        zone: { $ref: "#/components/schemas/ZoneClass" }
+        sub_zone: { type: string, nullable: true }
+        plot_area_sqm: { type: number, format: float, minimum: 1, nullable: true }
+        surveyed_width_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+        survey_date: { type: string, nullable: true }
+        measured_width_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+        imagery_date: { type: string, nullable: true }
+        kgis_width_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+        kgis_probe_confirmed: { type: boolean, default: false }
+        kgis_vintage: { type: string, nullable: true }
+        lane_count: { type: integer, minimum: 1, nullable: true }
+        service_road_widths_m: { type: array, items: { type: number, format: float }, nullable: true }
+        frontage_roads_m: { type: array, items: { type: number, format: float }, nullable: true }
+        saleable_value_per_sqm: { type: number, format: float, minimum: 0, nullable: true }
+        survey_cost: { type: number, format: float, minimum: 0, nullable: true }
+
+    RoadWidthOptionValue:
+      type: object
+      required: [note]
+      description: "Cost of not surveying at a band edge: FAR delta x plot area (optionally monetised). far_* null when FAR values are PENDING."
+      properties:
+        far_low: { type: number, format: float, nullable: true }
+        far_high: { type: number, format: float, nullable: true }
+        far_delta: { type: number, format: float, nullable: true }
+        extra_buildable_sqm: { type: number, format: float, nullable: true }
+        extra_value: { type: number, format: float, nullable: true }
+        survey_cost: { type: number, format: float, nullable: true }
+        note: { type: string }
+
+    RoadWidthFloorCap:
+      type: object
+      required: [residential_sqm, commercial_sqm, reg_basis]
+      properties:
+        residential_sqm: { type: number, format: float }
+        commercial_sqm: { type: number, format: float }
+        reg_basis: { type: string }
+
+    RoadWidthResult:
+      type: object
+      description: >
+        A road-width BAND (or edge-straddling RANGE) + confidence tier — never a
+        false-authoritative point. max_far_confidence propagates the ceiling downstream:
+        an inferred width can only yield a derived FAR.
+      required: [status, confidence, survey_required, max_far_confidence, reg_basis, notes]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        value_m: { type: number, format: float, nullable: true }
+        band:
+          oneOf:
+            - $ref: "#/components/schemas/RoadWidthBand"
+            - type: "null"
+        confidence: { type: string, enum: ["authoritative", "inferred", "unresolved"] }
+        data_source: { type: string, nullable: true }
+        data_vintage: { type: string, nullable: true }
+        error_band_m: { type: array, items: { type: number, format: float }, nullable: true }
+        reg_basis: { type: array, items: { type: string } }
+        survey_required: { type: boolean }
+        band_range:
+          type: array
+          nullable: true
+          items: { $ref: "#/components/schemas/RoadWidthBand" }
+        option_value:
+          oneOf:
+            - $ref: "#/components/schemas/RoadWidthOptionValue"
+            - type: "null"
+        floor_area_cap:
+          oneOf:
+            - $ref: "#/components/schemas/RoadWidthFloorCap"
+            - type: "null"
+        max_far_confidence: { type: string, enum: ["authoritative", "derived", "unresolved"] }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+        notes: { type: array, items: { type: string } }

@@ -914,6 +914,103 @@ export async function getPlanningAnalysis(
   };
 }
 
+// ─── Road-width resolver — POST /planning/road-width (US-084 feeder) ───────────
+// Gated by feature.planning.road-width-resolver. Feed it the distance the user draws
+// across the road on the MapTiler measurement overlay (measured_width_m). Renders a
+// BAND (or edge-straddling range) + a confidence tier — never a false-authoritative point.
+
+export interface RoadWidthBand { min: number; max: number | null }
+export interface RoadWidthResult {
+  status: "resolved" | "unresolved";
+  value_m: number | null;
+  band: RoadWidthBand | null;
+  confidence: "authoritative" | "inferred" | "unresolved";
+  data_source: string | null;
+  data_vintage: string | null;
+  error_band_m: number[] | null;
+  reg_basis: string[];
+  survey_required: boolean;
+  band_range: RoadWidthBand[] | null;
+  option_value: {
+    far_low: number | null; far_high: number | null; far_delta: number | null;
+    extra_buildable_sqm: number | null; extra_value: number | null;
+    survey_cost: number | null; note: string;
+  } | null;
+  floor_area_cap: { residential_sqm: number; commercial_sqm: number; reg_basis: string } | null;
+  max_far_confidence: "authoritative" | "derived" | "unresolved";
+  reason: string | null;
+  next_action: string | null;
+  notes: string[];
+}
+
+export interface RoadWidthInput {
+  zone?: string;
+  sub_zone?: string | null;
+  plot_area_sqm?: number;
+  /** distance drawn across the road on the measurement overlay (default tier). */
+  measured_width_m?: number;
+  /** user-entered surveyed width — the only authoritative tier. */
+  surveyed_width_m?: number;
+  service_road_widths_m?: number[];
+  frontage_roads_m?: number[];
+  saleable_value_per_sqm?: number;
+  survey_cost?: number;
+}
+
+export async function resolveRoadWidth(input: RoadWidthInput): Promise<RoadWidthResult> {
+  return svcFetch<RoadWidthResult>(SVC.planning, "/planning/road-width", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Map a RoadWidthResult to visibly-distinct qualitative rows: surveyed=good,
+ *  inferred=warn, unresolved=bad, edge-straddle=warn with the survey option value. */
+export function roadWidthQualitative(
+  r: RoadWidthResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  const bandStr = (b: RoadWidthBand | null) =>
+    b ? `${b.min}–${b.max ?? "∞"}m` : "—";
+
+  if (r.status === "unresolved") {
+    out.push({
+      label: "⚠ Road Width Unresolved",
+      value: `${r.reason ?? "No road-width input."} Next: ${r.next_action ?? "measure on the map or enter a surveyed width."}`,
+      tone: "bad",
+    });
+    return out;
+  }
+
+  if (r.survey_required && r.band_range) {
+    const ov = r.option_value;
+    const gain = ov?.extra_value != null
+      ? `≈ ₹${ov.extra_value.toLocaleString()} extra saleable value`
+      : ov?.extra_buildable_sqm != null
+        ? `+${ov.extra_buildable_sqm.toLocaleString()} sqm buildable`
+        : "FAR gain PENDING";
+    out.push({
+      label: "⚠ Survey Required — Band Edge",
+      value: `Width ${r.value_m}m straddles two FAR bands (${bandStr(r.band_range[0])} vs ${bandStr(r.band_range[1])}). Surveying resolves ${gain}${ov?.survey_cost != null ? ` vs ₹${ov.survey_cost.toLocaleString()} survey cost` : ""}. Not picking a side.`,
+      tone: "warn",
+    });
+  } else if (r.confidence === "authoritative") {
+    out.push({ label: "Road Width (surveyed)", value: `${r.value_m}m → band ${bandStr(r.band)} (authoritative)`, tone: "good" });
+  } else if (r.confidence === "inferred") {
+    const eb = r.error_band_m ? ` ±${r.error_band_m[0]}–${r.error_band_m[1]}m` : "";
+    out.push({ label: "⚠ Road Width (inferred)", value: `${r.value_m}m${eb} → band ${bandStr(r.band)}. ${r.data_source ?? ""} — verify with a survey (an inferred width yields at most a derived FAR).`, tone: "warn" });
+  }
+
+  if (r.floor_area_cap) {
+    out.push({
+      label: "⚠ Narrow Access — Floor-Area Cap",
+      value: `Access <3.5m → ${r.floor_area_cap.residential_sqm} sqm residential / ${r.floor_area_cap.commercial_sqm} sqm commercial cap (${r.floor_area_cap.reg_basis}).`,
+      tone: "bad",
+    });
+  }
+  return out;
+}
+
 // ─── Zoning — unified zone + planning synthesis ───────────────────────────────
 
 export async function getZoningAnalysis(

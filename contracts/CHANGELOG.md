@@ -1,5 +1,22 @@
 # Contract Changelog
 
+## 2.14.0 — 2026-07-21
+
+### Added — planning.yaml (v1.0.0 → v1.1.0, road-width resolver, US-084)
+- New `POST /planning/road-width` → `RoadWidthResult`. Feeds US-084 FAR. There is NO
+  authoritative queryable road source (RMP reg 3.2 = surveyed right-of-way), so the resolver
+  returns a `band` (or `band_range` when the width sits within ~1 m of a band edge) with a
+  `confidence` tier — never a false-authoritative point. When it straddles an edge it sets
+  `survey_required=true` + an `option_value` (FAR delta × plot area vs survey cost).
+- Best-available input tier wins (`RoadWidthRequest`): surveyed→authoritative,
+  MapTiler measurement→inferred (default), probe-confirmed KGIS (Phase-0-gated), lane
+  estimate→inferred; none → `status:"unresolved"` (never a default number).
+- reg-3.2 rules applied: service-road aggregation (3.2.ii), corner/multi-frontage two-wider
+  (3.1/3.16.ix), narrower-drops-FAR / wider-no-bonus (3.4.iii/iv), <3.5 m access floor-area
+  cap (3.8.i). `max_far_confidence` propagates: an inferred width can only yield a derived FAR.
+- Gated by new flag `feature.planning.road-width-resolver` (403 when disabled). Additive; no
+  existing planning field changed.
+
 ## 2.13.0 — 2026-07-21
 
 ### Changed — geo.yaml (v1.4.0 → v1.5.0, fallback wire-in, US-080/US-093)
