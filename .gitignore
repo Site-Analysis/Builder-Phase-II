@@ -41,6 +41,10 @@ stn/
 # Graphify knowledge-graph output (local tool artifact)
 graphify-out/
 
+# Spike / build-plan working docs (binary .docx working notes — not repo source-of-record).
+# Keep docs/feature-validation/ and all other docs tracked; only this path is ignored.
+docs/spikes/
+
 # Large fallback data blobs — download-on-setup, NOT committed (reproducible open data).
 # Fetch/verify via scripts/fetch_fallback_data.py; provenance in
 # services/geo/app/data/FALLBACK_SOURCES.md. The small wards file (2.9 MB, ODbL) is NOT
