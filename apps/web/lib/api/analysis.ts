@@ -1011,6 +1011,138 @@ export function roadWidthQualitative(
   return out;
 }
 
+// ─── FAR assembly — POST /planning/far (US-084 permissible vs achievable) ─────
+// Gated by feature.planning.far-assembly. Always two numbers; achievable <= permissible.
+
+export interface FarValue {
+  value: number | null;
+  confidence: "authoritative" | "derived" | "inferred" | "unresolved";
+  data_source: string | null;
+  data_vintage: string | null;
+  rule_citation: string;
+  notes: string[];
+  disclaimer: string;
+  modifier_pending?: boolean | null;
+  road_width_m?: number | null;
+  error_band_m?: number[] | null;
+  next_action?: string | null;
+}
+export interface EntitlementLabel {
+  name: string;
+  additional_far: number | null;
+  status: "applied" | "conditional" | "pending";
+  condition: string;
+  citation?: string | null;
+}
+export interface FarBandOption {
+  band: RoadWidthBand;
+  achievable_base: FarValue;
+  achievable_with_entitlements: FarValue;
+}
+export interface FarAssemblyResult {
+  status: "resolved" | "unresolved";
+  permissible_far: FarValue | null;
+  achievable_base: FarValue | null;
+  achievable_with_entitlements: FarValue | null;
+  achievable_matrix: { rows: FarBandOption[]; option_value: RoadWidthResult["option_value"] } | null;
+  entitlements: EntitlementLabel[];
+  ground_coverage: { value: number; rule_citation: string; disclaimer: string } | null;
+  setbacks: Record<string, number | string> | null;
+  road_width: RoadWidthResult | null;
+  invariant_ok: boolean;
+  reason: string | null;
+  next_action: string | null;
+  notes: string[];
+  disclaimer: string;
+}
+
+export interface FarAssemblyInput extends RoadWidthInput {
+  zone_confidence?: "authoritative" | "inferred";
+  ring?: "I" | "II" | "III" | null;
+  site_dim_m?: number;
+  building_height_m?: number;
+  additional_far_eligible?: boolean;
+  within_metro_150m?: boolean;
+  metro_bmrcl_confirmed?: boolean;
+}
+
+export async function assembleFar(input: FarAssemblyInput): Promise<FarAssemblyResult> {
+  return svcFetch<FarAssemblyResult>(SVC.planning, "/planning/far", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** permissible + TWO-LINE achievable (base / with-entitlements) as distinct lines; each
+ *  entitlement tagged with its condition; band-edge matrix; inferred/authoritative/conditional
+ *  visibly distinct; citations + sanction disclaimer. */
+export function farAssemblyQualitative(
+  r: FarAssemblyResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  const tone = (c: FarValue["confidence"]) =>
+    c === "authoritative" ? "good" : c === "unresolved" ? "bad" : "warn";
+  const far = (v: FarValue) => (v.value == null ? "—" : v.value.toFixed(2));
+
+  if (r.status === "unresolved") {
+    out.push({ label: "⚠ FAR Unresolved", value: `${r.reason ?? ""} Next: ${r.next_action ?? "confirm zone + inputs."}`, tone: "bad" });
+    return out;
+  }
+
+  const p = r.permissible_far;
+  if (p) {
+    out.push({
+      label: `Permissible FAR (${p.confidence})`,
+      value: `${far(p)}${p.modifier_pending ? " — upper bound INCOMPLETE (a modifier is PENDING; confirm with authority)" : ""}. ${p.rule_citation}.`,
+      tone: p.modifier_pending ? "warn" : tone(p.confidence),
+    });
+  }
+
+  const eb = (v: FarValue) => (v.error_band_m ? ` (road ±${v.error_band_m[0]}–${v.error_band_m[1]}m)` : "");
+
+  if (r.achievable_matrix) {
+    const rows = r.achievable_matrix.rows
+      .map((m) => `${m.band.min}–${m.band.max ?? "∞"}m → by-right ${m.achievable_base.value?.toFixed(2)} / with-entitlements ${m.achievable_with_entitlements.value?.toFixed(2)}`)
+      .join("  |  ");
+    const ov = r.achievable_matrix.option_value;
+    out.push({
+      label: "⚠ Achievable FAR — Survey Required (band edge)",
+      value: `Two candidates, both lines, no side picked: ${rows}. ${ov?.extra_buildable_sqm != null ? `Surveying resolves +${ov.extra_buildable_sqm.toLocaleString()} sqm buildable.` : ""}`,
+      tone: "warn",
+    });
+  } else {
+    const b = r.achievable_base;
+    if (b) {
+      out.push({
+        label: `Achievable FAR — by right (${b.confidence})`,
+        value: b.value == null
+          ? `Unresolved${b.next_action ? ` — ${b.next_action}` : ""}.`
+          : `${far(b)}${eb(b)} — after road-band + envelope. ${b.confidence !== "authoritative" ? "Inferred inputs → not authoritative." : ""}`,
+        tone: tone(b.confidence),
+      });
+    }
+    const w = r.achievable_with_entitlements;
+    if (w && w.value != null && b && w.value !== b.value) {
+      out.push({
+        label: `Achievable FAR — with entitlements (${w.confidence})`,
+        value: `${far(w)}${w.modifier_pending ? " — a qualifying modifier is PENDING (excluded; confirm with authority)" : ""}. Requires the conditions below.`,
+        tone: w.modifier_pending ? "warn" : tone(w.confidence),
+      });
+    }
+  }
+
+  for (const e of r.entitlements) {
+    out.push({
+      label: `${e.status === "applied" ? "Entitlement" : e.status === "conditional" ? "⚠ Conditional entitlement" : "⚠ Pending entitlement"}: ${e.name}${e.additional_far != null ? ` (+${e.additional_far})` : ""}`,
+      value: `${e.condition}${e.citation ? ` [${e.citation}]` : ""}`,
+      tone: e.status === "applied" ? "neutral" : "warn",
+    });
+  }
+
+  out.push({ label: "⚠ Disclaimer", value: r.disclaimer, tone: "warn" });
+  return out;
+}
+
 // ─── Zoning — unified zone + planning synthesis ───────────────────────────────
 
 export async function getZoningAnalysis(

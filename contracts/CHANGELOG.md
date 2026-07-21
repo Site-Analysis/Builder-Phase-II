@@ -1,5 +1,27 @@
 # Contract Changelog
 
+## 2.15.0 — 2026-07-21
+
+### Added — planning.yaml (v1.1.0 → v1.2.0, permissible-vs-achievable FAR, US-084)
+- New `POST /planning/far` → `FarAssemblyResult`. The moat: `permissible_far` (RMP table via
+  lookup_far + far_modifiers) plus a **TWO-LINE achievable**: `achievable_base` (table FAR after
+  the reg-3.4.iii road-band constraint + envelope — build by right) and
+  `achievable_with_entitlements` (base + QUALIFYING modifiers, each labelled in `entitlements[]`
+  with its condition). reg 3.4.v Additional-FAR is a rule-based entitlement (fixed uplift, no
+  discretion clause) → included when the plot qualifies, so achievable is not understated; metro
+  reg 3.16.ix is a conditional entitlement (added only when BMRCL-confirmed).
+- **Invariant `achievable_base <= achievable_with_entitlements <= permissible_far`** asserted on
+  every line (incl. matrix rows); a breach returns 422, never a laundered number.
+- A band-edge road width returns `achievable_matrix` — each row carries BOTH lines + `option_value`,
+  never a single picked side. Confidence PROPAGATES: an inferred road width or inferred zone never
+  yields an authoritative FAR (both lines typically `derived`, carrying the road-width error_band);
+  a metro-applied or PENDING line is capped at derived/conditional. A PENDING modifier (Additional-FAR
+  Ring II >4000 sqm, blank in source) is surfaced + EXCLUDED from the value — never assumed 0. Every
+  value carries rule_citation + a "subject to authority sanction" disclaimer.
+- New schemas `FarAssemblyRequest` (extends `RoadWidthRequest`), `FarValue`, `EntitlementLabel`,
+  `GroundCoverageValue`, `SetbackSet`, `FarBandOption`, `AchievableMatrix`, `FarAssemblyResult`.
+  Gated by new flag `feature.planning.far-assembly`. Additive; no existing planning field changed.
+
 ## 2.14.0 — 2026-07-21
 
 ### Added — planning.yaml (v1.0.0 → v1.1.0, road-width resolver, US-084)

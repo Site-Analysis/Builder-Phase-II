@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Planning Service
-  version: "1.1.0"
+  version: "1.2.0"
   description: >
     Site build-capacity analysis for Indian urban plots. Computes applicable FAR,
     ground coverage, setbacks, and height limits from NBC 2016 Table 15, BDA CDP 2031,
@@ -56,6 +56,39 @@ paths:
           description: Feature flag disabled
         "422":
           description: Validation error
+
+  /planning/far:
+    post:
+      operationId: assembleFar
+      summary: Permissible-vs-achievable FAR for a plot (US-084 final assembly)
+      description: >
+        Always TWO numbers, never one. permissible_far = what the RMP table allows + applicable
+        far_modifiers (Additional-FAR by ring, metro-150m override when BMRCL-confirmed).
+        achievable_far = what THIS plot realises after the road-width band constraint (reg 3.4.iii)
+        + setback/coverage/height envelope. Invariant achievable<=permissible (asserted; a breach
+        returns 422, never a laundered number). A band-edge road width returns achievable_matrix
+        (both candidates + option_value), never a single picked side. Confidence propagates: an
+        inferred road width or inferred zone can never yield an authoritative FAR. Gated by
+        `feature.planning.far-assembly`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FarAssemblyRequest"
+      responses:
+        "200":
+          description: Permissible-vs-achievable FAR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FarAssemblyResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error (or invariant breach — achievable > permissible)
+        "503":
+          description: RMP config unavailable
 
   /planning/road-width:
     post:
@@ -321,3 +354,116 @@ components:
         reason: { type: string, nullable: true }
         next_action: { type: string, nullable: true }
         notes: { type: array, items: { type: string } }
+
+    FarAssemblyRequest:
+      allOf:
+        - $ref: "#/components/schemas/RoadWidthRequest"
+        - type: object
+          description: "US-084 inputs = road-width tiers + zone/ring/height context."
+          properties:
+            zone_confidence: { type: string, enum: ["authoritative", "inferred"], default: "inferred" }
+            ring: { type: string, enum: ["I", "II", "III"], nullable: true }
+            site_dim_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+            building_height_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+            additional_far_eligible: { type: boolean, default: false }
+            within_metro_150m: { type: boolean, default: false }
+            metro_bmrcl_confirmed: { type: boolean, default: false }
+
+    FarValue:
+      type: object
+      required: [confidence, rule_citation, disclaimer]
+      properties:
+        value: { type: number, format: float, nullable: true }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
+        data_source: { type: string, nullable: true }
+        data_vintage: { type: string, nullable: true }
+        rule_citation: { type: string }
+        notes: { type: array, items: { type: string } }
+        disclaimer: { type: string }
+        modifier_pending: { type: boolean, nullable: true }
+        road_width_m: { type: number, format: float, nullable: true }
+        error_band_m: { type: array, items: { type: number, format: float }, nullable: true }
+        next_action: { type: string, nullable: true }
+
+    GroundCoverageValue:
+      type: object
+      required: [value, rule_citation, disclaimer]
+      properties:
+        value: { type: number, format: float }
+        rule_citation: { type: string }
+        disclaimer: { type: string }
+
+    SetbackSet:
+      type: object
+      description: "front/rear/left/right are metres (number) or a '%'-of-dimension string (Table 8 >9 m band)."
+      required: [front, rear, left, right, rule_citation, disclaimer]
+      properties:
+        front: { oneOf: [{ type: number }, { type: string }] }
+        rear: { oneOf: [{ type: number }, { type: string }] }
+        left: { oneOf: [{ type: number }, { type: string }] }
+        right: { oneOf: [{ type: number }, { type: string }] }
+        rule_citation: { type: string }
+        disclaimer: { type: string }
+
+    EntitlementLabel:
+      type: object
+      description: >
+        A far_modifier + the condition it needs. status: applied (in the with-entitlements value);
+        conditional (labelled, NOT added — e.g. metro unconfirmed); pending (blank in source, NOT
+        added). additional_far is the uplift when additive (null for metro override / pending).
+      required: [name, status, condition]
+      properties:
+        name: { type: string }
+        additional_far: { type: number, format: float, nullable: true }
+        status: { type: string, enum: ["applied", "conditional", "pending"] }
+        condition: { type: string }
+        citation: { type: string, nullable: true }
+
+    FarBandOption:
+      type: object
+      required: [band, achievable_base, achievable_with_entitlements]
+      properties:
+        band: { $ref: "#/components/schemas/RoadWidthBand" }
+        achievable_base: { $ref: "#/components/schemas/FarValue" }
+        achievable_with_entitlements: { $ref: "#/components/schemas/FarValue" }
+
+    AchievableMatrix:
+      type: object
+      required: [rows]
+      properties:
+        rows: { type: array, items: { $ref: "#/components/schemas/FarBandOption" } }
+        option_value:
+          oneOf:
+            - $ref: "#/components/schemas/RoadWidthOptionValue"
+            - type: "null"
+
+    FarAssemblyResult:
+      type: object
+      description: >
+        Permissible-vs-achievable FAR (US-084). TWO-LINE achievable: achievable_base (build by
+        right) + achievable_with_entitlements (base + qualifying modifiers, each labelled in
+        entitlements[]). Invariant achievable_base <= achievable_with_entitlements <= permissible_far.
+        A band-edge road width yields achievable_matrix (both lines per band), never a picked side.
+      required: [status, invariant_ok, disclaimer]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        permissible_far:
+          oneOf: [{ $ref: "#/components/schemas/FarValue" }, { type: "null" }]
+        achievable_base:
+          oneOf: [{ $ref: "#/components/schemas/FarValue" }, { type: "null" }]
+        achievable_with_entitlements:
+          oneOf: [{ $ref: "#/components/schemas/FarValue" }, { type: "null" }]
+        achievable_matrix:
+          oneOf: [{ $ref: "#/components/schemas/AchievableMatrix" }, { type: "null" }]
+        entitlements: { type: array, items: { $ref: "#/components/schemas/EntitlementLabel" } }
+        ground_coverage:
+          oneOf: [{ $ref: "#/components/schemas/GroundCoverageValue" }, { type: "null" }]
+        setbacks:
+          oneOf: [{ $ref: "#/components/schemas/SetbackSet" }, { type: "null" }]
+        road_width:
+          oneOf: [{ $ref: "#/components/schemas/RoadWidthResult" }, { type: "null" }]
+        invariant_ok: { type: boolean }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+        notes: { type: array, items: { type: string } }
+        disclaimer: { type: string }

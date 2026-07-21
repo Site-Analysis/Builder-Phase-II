@@ -10,16 +10,20 @@ from fastapi import APIRouter, HTTPException
 
 from app.config.rmp_loader import load_config
 from app.models.planning import (
+    FarAssemblyRequest,
+    FarAssemblyResult,
     PlanningRequest,
     PlanningResult,
     RoadWidthRequest,
     RoadWidthResult,
 )
+from app.services import far_assembly as fa
 from app.services import road_width_resolver as rwr
 from app.services.planning_service import PlanningService
 
 _PLANNING_FLAG = "feature.planning.site-capacity"
 _ROAD_WIDTH_FLAG = "feature.planning.road-width-resolver"
+_FAR_ASSEMBLY_FLAG = "feature.planning.far-assembly"
 _RMP_CONFIG = Path(__file__).resolve().parents[1] / "config" / "rmp_2015.json"
 
 
@@ -63,3 +67,22 @@ async def resolve_road_width(request: RoadWidthRequest) -> RoadWidthResult:
         sub_zone=request.sub_zone,
     )
     return RoadWidthResult(**out)
+
+
+@router.post("/far", response_model=FarAssemblyResult)
+async def assemble_far(request: FarAssemblyRequest) -> FarAssemblyResult:
+    """Permissible-vs-achievable FAR for a plot (US-084 final assembly).
+
+    Always two numbers (achievable <= permissible, invariant-checked); a band-edge road width
+    returns achievable_matrix (both candidates), never a single picked side. Composes lookup_far
+    + far_modifiers + governing_setbacks + the road-width resolver. Gated by
+    `feature.planning.far-assembly`. Returns 422 (invariant) only if a laundered number is caught.
+    """
+    _require_flag(_FAR_ASSEMBLY_FLAG)
+    if _rmp_cfg is None:
+        raise HTTPException(status_code=503, detail="RMP config unavailable")
+    try:
+        out = fa.assemble_far(request.model_dump(exclude_none=True), cfg=_rmp_cfg)
+    except AssertionError as exc:  # invariant breach -> fail loud, never emit a laundered FAR
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return FarAssemblyResult(**out)
