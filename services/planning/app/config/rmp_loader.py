@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,24 @@ _TIERS = {"authoritative", "derived", "inferred"}
 _SOURCED_TIERS = {"authoritative", "derived"}  # tiers that require a regulatory_source
 _REQUIRED_META = ("config_version", "status", "cells", "transcription_origin")
 _REQUIRED_AMENDMENT = ("effective_date", "applies_to", "supersedes", "status")
+
+# Gate-0: the RMP does NOT key FAR uniformly by [zone x ring x road x plot]. Base FAR comes
+# from per-zone tables with DIFFERENT key shapes; ring is only a MODIFIER (Additional-FAR
+# reg 3.4.v + TDR), and setbacks are a SEPARATE height/plot-keyed system (Table 8/9). The
+# far_tables[] / far_modifiers / setback_rules blocks model that; the legacy cells[] block
+# (rigid uniform key) is retained for back-compat but is not used by the RMP-2015 config.
+_KEY_TYPES = {"plot_size", "road_width", "flat"}
+_SETBACK_SIDES = ("front", "rear", "left", "right")
+
+
+def _check_setback_value(cid: str, field: str, v: Any) -> None:
+    """A setback is metres (number >= 0) OR a percentage string like '8%'/'12%' (Table 8
+    keys the >9 m band as a percent of width/depth, not a fixed metre value)."""
+    if isinstance(v, str):
+        if not re.fullmatch(r"\d+(\.\d+)?%", v.strip()):
+            raise RMPConfigError(f"{cid}: {field}={v!r} is neither metres nor a 'NN%' string")
+        return
+    _check_number(cid, field, v, lo=0.0)
 
 
 class RMPConfigError(ValueError):
@@ -194,6 +213,102 @@ def _validate_amendment(a: Any, idx: int, block_reg: Any) -> None:
         raise RMPConfigError(f"{aid}: {a.get('confidence')} amendment requires a regulatory_source")
 
 
+def _validate_far_row(row: Any, tid: str, idx: int, key_type: str) -> None:
+    if not isinstance(row, dict):
+        raise RMPConfigError(f"{tid} row[{idx}] is not an object")
+    rid = f"{tid} row[{idx}]"
+    _check_number(rid, "far", row.get("far"), lo=0.0)
+    if row.get("far") == 0:
+        raise RMPConfigError(f"{rid}: far must be > 0")
+    _check_number(rid, "ground_coverage", row.get("ground_coverage"), lo=0.0, hi=1.0)
+    if row.get("ground_coverage") == 0:
+        raise RMPConfigError(f"{rid}: ground_coverage must be > 0")
+    # The band that KEYS this table is required; the other is optional/informational.
+    if key_type == "plot_size":
+        _check_band(rid, "plot_size_band_sqm", row.get("plot_size_band_sqm"))
+    elif key_type == "road_width":
+        _check_band(rid, "road_width_band_m", row.get("road_width_band_m"))
+    # flat: no band required (single value)
+    if "setbacks_inline" in row:  # e.g. Industrial (General) Table 16 carries its own setbacks
+        sb = row["setbacks_inline"]
+        if not isinstance(sb, dict):
+            raise RMPConfigError(f"{rid}: setbacks_inline must be an object")
+        for side, val in sb.items():
+            _check_setback_value(rid, f"setbacks_inline.{side}", val)
+
+
+def _validate_far_table(t: Any, idx: int, block_reg: Any) -> None:
+    if not isinstance(t, dict):
+        raise RMPConfigError(f"far_tables[{idx}] is not an object")
+    tid = f"far_tables[{idx}] {t.get('zone')}/{t.get('sub_zone')}"
+    if not _nonempty(t.get("zone")):
+        raise RMPConfigError(f"{tid}: zone missing/sentinel")
+    key_type = t.get("key_type")
+    if key_type not in _KEY_TYPES:
+        raise RMPConfigError(f"{tid}: key_type must be one of {sorted(_KEY_TYPES)}, got {key_type!r}")
+    conf = t.get("confidence")
+    if conf not in _TIERS:
+        raise RMPConfigError(f"{tid}: confidence must be one of {sorted(_TIERS)}")
+    _check_origin_and_confidence(tid, t)
+    if conf in _SOURCED_TIERS and not _regulatory_source_ok(_resolve_regulatory_source(t, block_reg)):
+        raise RMPConfigError(f"{tid}: confidence='{conf}' requires a regulatory_source (doc + page_ref)")
+    rows = t.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise RMPConfigError(f"{tid}: rows must be a non-empty list")
+    if key_type == "flat" and len(rows) != 1:
+        raise RMPConfigError(f"{tid}: key_type 'flat' must have exactly one row")
+    for i, row in enumerate(rows):
+        _validate_far_row(row, tid, i, key_type)
+
+
+def _validate_far_modifiers(mods: Any, block_reg: Any) -> None:
+    if not isinstance(mods, dict):
+        raise RMPConfigError("far_modifiers must be an object")
+    add = mods.get("additional_far_by_ring")
+    if add is not None:
+        if add.get("confidence") in _SOURCED_TIERS and not _regulatory_source_ok(
+            _resolve_regulatory_source(add, block_reg)
+        ):
+            raise RMPConfigError("far_modifiers.additional_far_by_ring: needs a regulatory_source")
+        for i, row in enumerate(add.get("rows", [])):
+            rid = f"additional_far_by_ring row[{i}]"
+            if row.get("ring") not in _RINGS:
+                raise RMPConfigError(f"{rid}: ring must be I|II|III")
+            _check_band(rid, "plot_size_band_sqm", row.get("plot_size_band_sqm"))
+            # additional_far may be 0 (as-per-existing) but never negative/sentinel/null
+            _check_number(rid, "additional_far", row.get("additional_far"), lo=0.0)
+    override = mods.get("metro_terminal_override")
+    if override is not None:
+        if override.get("confidence") in _SOURCED_TIERS and not _regulatory_source_ok(
+            _resolve_regulatory_source(override, block_reg)
+        ):
+            raise RMPConfigError("far_modifiers.metro_terminal_override: needs a regulatory_source")
+        _check_number("metro_terminal_override", "radius_m", override.get("radius_m"), lo=0.0)
+        _check_number("metro_terminal_override", "max_far", override.get("max_far"), lo=0.0)
+
+
+def _validate_setback_rules(rules: Any, block_reg: Any) -> None:
+    if not isinstance(rules, dict):
+        raise RMPConfigError("setback_rules must be an object")
+    base = rules.get("base") or {}
+    t8 = base.get("table8_low_rise")
+    if t8 is not None:
+        for i, row in enumerate(t8.get("rows", [])):
+            rid = f"setback_rules.table8 row[{i}]"
+            _check_band(rid, "site_dim_band_m", row.get("site_dim_band_m"))
+            for side in _SETBACK_SIDES:
+                _check_setback_value(rid, side, row.get(side))
+        if "over_4000_sqm_all_sides_m" in t8:
+            _check_number("setback_rules.table8", "over_4000_sqm_all_sides_m",
+                          t8["over_4000_sqm_all_sides_m"], lo=0.0)
+    t9 = base.get("table9_by_height")
+    if t9 is not None:
+        for i, row in enumerate(t9.get("rows", [])):
+            rid = f"setback_rules.table9 row[{i}]"
+            _check_band(rid, "height_band_m", row.get("height_band_m"))
+            _check_number(rid, "all_around_m", row.get("all_around_m"), lo=0.0)
+
+
 def validate_config(cfg: Any) -> dict:
     """Return ``cfg`` unchanged if valid; raise :class:`RMPConfigError` otherwise."""
     if not isinstance(cfg, dict):
@@ -214,6 +329,17 @@ def validate_config(cfg: Any) -> dict:
         raise RMPConfigError("cells must be a list")
     for i, cell in enumerate(cells):
         _validate_cell(cell, i, block_reg)
+
+    # Gate-0 blocks (optional; the RMP-2015 config uses these instead of cells[]).
+    far_tables = cfg.get("far_tables", [])
+    if not isinstance(far_tables, list):
+        raise RMPConfigError("far_tables must be a list")
+    for i, t in enumerate(far_tables):
+        _validate_far_table(t, i, block_reg)
+    if "far_modifiers" in cfg:
+        _validate_far_modifiers(cfg["far_modifiers"], block_reg)
+    if "setback_rules" in cfg:
+        _validate_setback_rules(cfg["setback_rules"], block_reg)
 
     amendments = cfg.get("amendments", [])
     if not isinstance(amendments, list):
@@ -252,4 +378,69 @@ def lookup_cell(
             and _in_band(plot_size_sqm, cell["plot_size_band_sqm"])
         ):
             return cell
+    return None
+
+
+def _find_far_table(cfg: dict, zone: str, sub_zone: str | None) -> dict | None:
+    for t in cfg.get("far_tables", []):
+        if t.get("zone") == zone and (sub_zone is None or t.get("sub_zone") == sub_zone):
+            return t
+    return None
+
+
+def lookup_far(
+    cfg: dict, zone: str, sub_zone: str | None = None, *,
+    road_width_m: float | None = None, plot_size_sqm: float | None = None,
+) -> dict | None:
+    """Return the matching FAR row (dispatching on the table's key_type), or ``None``.
+
+    ``None`` = no RMP row for this key → the caller MUST fall back (NBCS-2026, derived) or
+    return unresolved. Ring is NOT a key here (it only modifies via far_modifiers).
+    """
+    t = _find_far_table(cfg, zone, sub_zone)
+    if t is None:
+        return None
+    key = t["key_type"]
+    for row in t["rows"]:
+        if key == "flat":
+            return {**row, "_table": t}
+        if key == "plot_size" and plot_size_sqm is not None and _in_band(plot_size_sqm, row["plot_size_band_sqm"]):
+            return {**row, "_table": t}
+        if key == "road_width" and road_width_m is not None and _in_band(road_width_m, row["road_width_band_m"]):
+            return {**row, "_table": t}
+    return None
+
+
+def governing_setbacks(
+    cfg: dict, *, height_m: float, plot_size_sqm: float, site_dim_m: float | None = None,
+) -> dict | None:
+    """Return the IN-FORCE base setback from setback_rules for a given height/plot.
+
+    Amendments with ``governing: false`` (the unreadable/draft 2025 overlays) are NOT applied
+    — the strictest IN-FORCE overlay governs, which here is the RMP-2015 base; a draft never
+    supersedes the notified base. Returns ``None`` if no rule matches (never a default guess).
+
+    Table 8 (height <= 11.5 m & plot <= 4000 sqm) keys by site width/depth, so ``site_dim_m``
+    is required to pick a row there; plots > 4000 sqm use the flat 5 m rule. Table 9 keys by
+    height. Values may be metres (number) or a '%'-of-dimension string (Table 8 >9 m band).
+    """
+    base = (cfg.get("setback_rules") or {}).get("base") or {}
+    if height_m <= 11.5 and plot_size_sqm <= 4000:
+        t8 = base.get("table8_low_rise") or {}
+        if site_dim_m is None:
+            return None  # cannot pick a Table 8 row without the site dimension
+        for row in t8.get("rows", []):
+            if _in_band(site_dim_m, row["site_dim_band_m"]):
+                return {s: row.get(s) for s in _SETBACK_SIDES} | {"_source": "Table 8"}
+        return None
+    if height_m <= 11.5:  # plot > 4000 sqm
+        t8 = base.get("table8_low_rise") or {}
+        if "over_4000_sqm_all_sides_m" in t8:
+            v = t8["over_4000_sqm_all_sides_m"]
+            return {s: v for s in _SETBACK_SIDES} | {"_source": "Table 8 (>4000 sqm)"}
+        return None
+    for row in (base.get("table9_by_height") or {}).get("rows", []):
+        if _in_band(height_m, row["height_band_m"]):
+            v = row["all_around_m"]
+            return {s: v for s in _SETBACK_SIDES} | {"_source": "Table 9"}
     return None

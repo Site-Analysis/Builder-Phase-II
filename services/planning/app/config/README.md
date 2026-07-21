@@ -1,21 +1,33 @@
 # Planning regulation configs — RMP-2015 (authoritative) · NBCS-2026 (fallback)
 
-**Sprint-0 B/C container. Holds NO authoritative values yet.** Ships empty; cells are
-transcribed from the **primary** PDFs later. This directory is *not* wired into
-`planning_service` — that happens in **US-084**.
+**RMP-2015 base is TRANSCRIBED** (Part A/B base) by reading the primary RMP-2015 Vol-III PDF
+via `pymupdf` positioned extraction — every FAR/GC/setback value verified against its printed
+table, not from any secondary/pasted copy. NBCS-2026 fallback stays an empty template. Not yet
+wired into `planning_service` — that happens in **US-084**.
 
 ## Files
 | File | Role |
 |---|---|
-| `rmp_2015.schema.json` | Human-facing JSON-Schema contract for a cell + config metadata |
-| `rmp_2015.json` | RMP-2015 data — **empty template** (`cells: []`) |
+| `rmp_2015.schema.json` | JSON-Schema contract: `far_tables` / `far_modifiers` / `setback_rules` + legacy `cell` + config metadata |
+| `rmp_2015.json` | RMP-2015 data — **base transcribed** (`status: partial-verified`, 9 `far_tables`) |
 | `nbcs_2026_fallback.json` | NBCS-2026 (SP 7:2026) fallback — **empty template** |
-| `rmp_loader.py` | Loader + **strict validator** (the runtime gate) + `lookup_cell` |
+| `rmp_loader.py` | Loader + **strict validator** + `lookup_far` / `governing_setbacks` / (legacy `lookup_cell`) |
 
-## Cell shape
-Keyed by `[zone × ring × road_width_band_m × plot_size_band_sqm]` →
-`{ far, ground_coverage, setbacks{front_m,rear_m,side_m}, ecs{basis,value_per_100sqm},
-mixed_use_pct }` + a **confidence** tier + **split provenance**.
+## Gate-0 structure (the RMP does NOT key FAR uniformly)
+Verified against the PDF: **ring does not set base FAR**, and **FAR keying differs per zone**.
+So the config uses:
+- **`far_tables[]`** — one per zone, each with `key_type`:
+  - `plot_size` — Residential-Main (Table 10), Industrial/P&SP/T&T — rows carry `plot_size_band_sqm`;
+  - `road_width` — Commercial-Business (Table 14), Residential-Mixed (Table 12), Mutation (Table 15) — rows carry `road_width_band_m`;
+  - `flat` — Commercial-Central (Table 13) — one row, keyed by neither.
+- **`far_modifiers`** — `additional_far_by_ring` (reg 3.4.v, Ring I/II incentive OVER base) +
+  `metro_terminal_override` (reg 3.16.ix, 150 m → max FAR 4, post-completion/BMRCL). **Ring is a
+  modifier here, not a base-FAR axis.**
+- **`setback_rules`** — decoupled from FAR: `table8_low_rise` (≤11.5 m & ≤4000 sqm, keyed by site
+  width/depth; >9 m band is a `%`) + `table9_by_height`. `lookup_far()` / `governing_setbacks()`.
+
+The legacy rigid `cell` block (`[zone × ring × road × plot]`) is retained for back-compat but
+left empty (`cells: []`) — it mis-modelled the tables.
 
 ## Split provenance (the confidence-ladder rule)
 Every cell (and the config block) carries two provenance fields so an inferred fallback can
@@ -76,12 +88,20 @@ answers.
 are inferred-tier and must never fill an authoritative/derived cell. If the primary text is
 not in hand, the cell stays empty + PENDING.
 
-## Part B — dated setback amendment overlay (`amendments[]`)
-The 11-Nov-2025 UDD small-plot setback amendment is modelled as a **dated overlay**, not an
-overwrite: `{ effective_date:"2025-11-11", applies_to, supersedes:<base cell key>, status:
-"draft"|"notified" (confirm from primary), setbacks:{…}, regulatory_source, transcription_origin }`.
-Current/strictest governs; the base Table-8 cell keeps its own value + effective_date.
-`amendments` is empty until the primary amendment values are supplied.
+## Part B — dated setback amendment overlays (`amendments[]`) — BOTH NON-GOVERNING
+Two 2025 amendments are recorded as dated overlays; **neither is applied** (`governing:false`)
+because neither PDF could be read:
+- **Aug-2025** (`d7b00660…`, UDD 31 MNJ 2022(E), 01.08.2025, FINAL): Table 8 threshold 11.5→12 m,
+  Table 9 stilt-floor rewrite, Mutation cap 12000→10000 sqm. PDF is **Type0/CID fonts, no
+  ToUnicode** → no readable text. `status:"final-unreadable"`, `confidence:"inferred"`.
+- **Nov-2025** (`revised-setback-gazette-copy.pdf`, UDD 235 MNJ 2025(E), 11.11.2025): full Table 8
+  replacement for small plots. Header says **DRAFT** and the PDF is a **raster scan (0 text)** →
+  in-force status unconfirmed + values unread. `status:"draft"`, `confidence:"inferred"`.
+
+**Rule applied:** the strictest **in-force** overlay governs; a draft never supersedes the
+notified base; an unread value is never transcribed. With both unreadable, the **RMP-2015 base
+Table 8/9 governs**. To complete these: supply a searchable/notified copy (or OCR) — then the
+values move to `authoritative` + `governing:true` per the strictest-in-force rule.
 
 ## Part C — NBCS fallback cells (`derived`, never authoritative)
 Each NBCS cell carries `confidence:"derived"`, a `regulatory_source` = SP 7:2026 gazette,

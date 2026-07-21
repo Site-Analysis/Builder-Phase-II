@@ -5,20 +5,20 @@
   "note": "Expected values are EMPTY until transcribed from RMP-2015 Vol-III printed worked examples and public RERA-Karnataka sanctions. A filled 'expected' without a 'source' fails tests/planning_rmp_smoke.py (guess = P0). 'inputs' are chosen test scenarios, not regulatory data.",
   "worked_examples": [
     {
-      "id": "rmp-worked-example-1",
-      "inputs": { "zone": null, "ring": null, "road_width_m": null, "plot_frontage_m": null, "plot_depth_m": null, "plot_area_sqm": null, "plot_area_unit": null },
-      "expected": { "permissible_far": null, "achievable_far": null, "ground_coverage": null, "setback_front_m": null, "setback_rear_m": null, "setback_side_m": null },
-      "source": "",
-      "page_ref": "",
-      "status": "PENDING"
+      "id": "rmp-residential-main-1000-2000",
+      "inputs": { "zone": "Residential", "sub_zone": "Main", "ring": null, "road_width_m": 20.0, "plot_frontage_m": null, "plot_depth_m": null, "plot_area_sqm": 1500, "plot_area_unit": "sqm" },
+      "expected": { "permissible_far": 2.50, "achievable_far": null, "ground_coverage": 0.60, "setback_front_m": null, "setback_rear_m": null, "setback_side_m": null },
+      "source": "RMP-2015 Vol-III Table 10 (Residential Main), read from the primary PDF via pymupdf: plot 1000-2000 sqm -> FAR 2.50, GC 60%, road 18-24 m. achievable_far/setbacks null (need ring modifier + building height).",
+      "page_ref": "Table 10, p.27",
+      "status": "VERIFIED"
     },
     {
-      "id": "rmp-worked-example-2",
-      "inputs": { "zone": null, "ring": null, "road_width_m": null, "plot_frontage_m": null, "plot_depth_m": null, "plot_area_sqm": null, "plot_area_unit": null },
-      "expected": { "permissible_far": null, "achievable_far": null, "ground_coverage": null, "setback_front_m": null, "setback_rear_m": null, "setback_side_m": null },
-      "source": "",
-      "page_ref": "",
-      "status": "PENDING"
+      "id": "rmp-commercial-business-18-24",
+      "inputs": { "zone": "Commercial", "sub_zone": "Business", "ring": null, "road_width_m": 20.0, "plot_frontage_m": null, "plot_depth_m": null, "plot_area_sqm": 800, "plot_area_unit": "sqm" },
+      "expected": { "permissible_far": 2.50, "achievable_far": null, "ground_coverage": 0.45, "setback_front_m": null, "setback_rear_m": null, "setback_side_m": null },
+      "source": "RMP-2015 Vol-III Table 14 (Commercial Business, keyed by road width), read from the primary PDF via pymupdf: road 18-24 m -> FAR 2.50, GC 45% (plot cap 12000 sqm).",
+      "page_ref": "Table 14, p.31",
+      "status": "VERIFIED"
     }
   ],
   "band_edge_cases": [

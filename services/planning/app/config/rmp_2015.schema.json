@@ -15,9 +15,12 @@
     "enforceability_note": { "type": "string" },
     "source_note": { "type": "string" },
     "transcription_blocker": { "type": "string" },
-    "status": { "type": "string", "enum": ["template-empty", "partial-unverified", "verified"] },
+    "status": { "type": "string", "enum": ["template-empty", "partial-unverified", "partial-verified", "verified"] },
     "fallback_ruleset": { "type": "string" },
-    "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" } },
+    "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" }, "description": "LEGACY rigid uniform-key block ([zone x ring x road x plot]). Retained for back-compat; the RMP-2015 config leaves this empty and uses far_tables[] instead (Gate-0: ring is a modifier, not a base-FAR axis; FAR keying differs per zone)." },
+    "far_tables": { "type": "array", "items": { "$ref": "#/$defs/far_table" }, "description": "Per-zone base FAR/GC tables with DIFFERENT key shapes (key_type: plot_size | road_width | flat)." },
+    "far_modifiers": { "$ref": "#/$defs/far_modifiers" },
+    "setback_rules": { "$ref": "#/$defs/setback_rules" },
     "amendments": { "type": "array", "items": { "$ref": "#/$defs/amendment" } }
   },
   "$defs": {
@@ -89,16 +92,143 @@
         "transcription_origin": { "$ref": "#/$defs/transcription_origin" }
       }
     },
+    "far_table": {
+      "type": "object",
+      "description": "One zone's base FAR/GC table (Gate-0). key_type declares the key shape: 'plot_size' rows carry plot_size_band_sqm; 'road_width' rows carry road_width_band_m; 'flat' is a single row keyed by neither. Ring is NOT a key here.",
+      "required": ["zone", "key_type", "confidence", "transcription_origin", "rows"],
+      "properties": {
+        "zone": { "type": "string", "minLength": 1 },
+        "sub_zone": { "type": "string" },
+        "key_type": { "enum": ["plot_size", "road_width", "flat"] },
+        "plot_cap_sqm": { "type": "number", "minimum": 0 },
+        "min_frontage_m": { "type": "number", "minimum": 0 },
+        "notes": { "type": "string" },
+        "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+        "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+        "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+        "rows": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["far", "ground_coverage"],
+            "properties": {
+              "far": { "type": "number", "exclusiveMinimum": 0 },
+              "ground_coverage": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+              "plot_size_band_sqm": { "$ref": "#/$defs/band" },
+              "road_width_band_m": { "$ref": "#/$defs/band" },
+              "setbacks_inline": { "type": "object", "description": "Table 16 (Industrial General) carries its own front / rear_and_sides setbacks (metres or 'NN%')." }
+            }
+          }
+        }
+      }
+    },
+    "far_modifiers": {
+      "type": "object",
+      "description": "Ring-keyed Additional-FAR incentive (reg 3.4.v) + metro-terminal override (reg 3.16.ix). Ring modifies; it does not set base FAR.",
+      "properties": {
+        "additional_far_by_ring": {
+          "type": "object",
+          "properties": {
+            "eligibility": { "type": "string" },
+            "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+            "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+            "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["ring", "plot_size_band_sqm", "additional_far"],
+                "properties": {
+                  "ring": { "enum": ["I", "II", "III"] },
+                  "plot_size_band_sqm": { "$ref": "#/$defs/band" },
+                  "additional_far": { "type": "number", "minimum": 0, "description": "OVER the base FAR; 0 = as-per-existing" },
+                  "note": { "type": "string" }
+                }
+              }
+            },
+            "unspecified": { "type": "string" }
+          }
+        },
+        "metro_terminal_override": {
+          "type": "object",
+          "properties": {
+            "radius_m": { "type": "number", "minimum": 0 },
+            "max_far": { "type": "number", "minimum": 0 },
+            "condition": { "type": "string" },
+            "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+            "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+            "transcription_origin": { "$ref": "#/$defs/transcription_origin" }
+          }
+        }
+      }
+    },
+    "setback_rules": {
+      "type": "object",
+      "description": "Setbacks decoupled from FAR cells (Gate-0). Table 8 = low-rise (<=11.5 m & <=4000 sqm) keyed by site width/depth (>9 m band is a '%'); Table 9 = by height band. Amendments in amendments[] with governing:false are NOT applied.",
+      "properties": {
+        "base": {
+          "type": "object",
+          "properties": {
+            "table8_low_rise": {
+              "type": "object",
+              "properties": {
+                "applies": { "type": "string" },
+                "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+                "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+                "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+                "over_4000_sqm_all_sides_m": { "type": "number", "minimum": 0 },
+                "rows": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["site_dim_band_m", "front", "rear", "left", "right"],
+                    "properties": {
+                      "site_dim_band_m": { "$ref": "#/$defs/band" },
+                      "front": { "type": ["number", "string"] },
+                      "rear": { "type": ["number", "string"] },
+                      "left": { "type": ["number", "string"] },
+                      "right": { "type": ["number", "string"] }
+                    }
+                  }
+                }
+              }
+            },
+            "table9_by_height": {
+              "type": "object",
+              "properties": {
+                "applies": { "type": "string" },
+                "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+                "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+                "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+                "rows": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["height_band_m", "all_around_m"],
+                    "properties": {
+                      "height_band_m": { "$ref": "#/$defs/band" },
+                      "all_around_m": { "type": "number", "minimum": 0 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "amendment": {
       "type": "object",
-      "description": "A DATED overlay on a base cell (current/strictest governs; base cell is never overwritten).",
+      "description": "A DATED overlay on a base cell (current/strictest IN-FORCE governs; base cell is never overwritten). governing:false + confidence:inferred when the amendment PDF could not be read.",
       "required": ["effective_date", "applies_to", "supersedes", "status", "transcription_origin"],
       "properties": {
         "id": { "type": "string" },
         "effective_date": { "type": "string", "description": "ISO date, e.g. '2025-11-11'" },
         "applies_to": { "type": "string", "description": "e.g. 'plots <= 4000 sqm brackets'" },
         "supersedes": { "type": "string", "description": "the base cell key/id this modifies" },
-        "status": { "type": "string", "description": "'draft' | 'notified' — confirm from primary" },
+        "status": { "type": "string", "description": "'draft' | 'notified' | 'final-unreadable' — confirm from primary" },
+        "governing": { "type": "boolean", "description": "false if not applied (draft, or values unread) — a draft never supersedes the notified base" },
+        "transcription_blocker": { "type": "string" },
         "setbacks": {
           "type": "object",
           "properties": {

@@ -35,8 +35,10 @@ sys.modules.pop("app", None)
 
 from app.config.rmp_loader import (  # noqa: E402
     RMPConfigError,
+    governing_setbacks,
     load_config,
     lookup_cell,
+    lookup_far,
     validate_config,
 )
 
@@ -125,15 +127,59 @@ def _amendment() -> dict:
     }
 
 
-# ── shipped templates are empty + valid ─────────────────────────────────────
-def test_rmp_template_empty_and_valid():
+# ── shipped RMP config: now transcribed (base) + valid ──────────────────────
+def test_rmp_config_loads_and_validates():
     cfg = load_config(_CONFIG / "rmp_2015.json")
-    assert cfg["status"] == "template-empty"
-    assert cfg["cells"] == []
-    assert cfg["amendments"] == []
-    assert cfg["transcription_origin"]["confidence"] == "inferred"
-    assert cfg["regulatory_source"] is None
-    assert lookup_cell(cfg, "Residential", "II", 12.0, 300.0) is None
+    assert cfg["status"] == "partial-verified"
+    # base transcribed from the primary PDF -> config carries an authoritative origin + G.O. ref
+    assert cfg["transcription_origin"]["confidence"] == "authoritative"
+    assert cfg["regulatory_source"]["doc"].startswith("RMP-2015")
+    assert "UDD 540" in cfg["regulatory_source"]["page_ref"]  # G.O. grounded from the PDF
+    assert len(cfg["far_tables"]) == 9
+    assert cfg["cells"] == []  # legacy uniform-key block unused
+    assert lookup_cell(cfg, "Residential", "II", 12.0, 300.0) is None  # legacy block empty
+
+
+def test_rmp_far_lookup_known_answers():
+    """Known-answer cells read from the primary RMP-2015 tables."""
+    cfg = load_config(_CONFIG / "rmp_2015.json")
+    # Residential (Main) Table 10: plot 1500 sqm -> FAR 2.50 / GC 0.60 (keyed by plot size)
+    r = lookup_far(cfg, "Residential", "Main", plot_size_sqm=1500)
+    assert r["far"] == 2.50 and r["ground_coverage"] == 0.60
+    # Commercial (Business) Table 14: road 20 m -> FAR 2.50 / GC 0.45 (keyed by road width)
+    c = lookup_far(cfg, "Commercial", "Business", road_width_m=20.0)
+    assert c["far"] == 2.50 and c["ground_coverage"] == 0.45
+    # Commercial (Central) Table 13: flat -> FAR 2.50 / GC 0.75
+    f = lookup_far(cfg, "Commercial", "Central")
+    assert f["far"] == 2.50 and f["ground_coverage"] == 0.75
+    # Ring is NOT a base-FAR key: the same plot resolves without a ring argument.
+    assert lookup_far(cfg, "Residential", "Main", plot_size_sqm=200)["far"] == 1.75
+
+
+def test_rmp_far_lookup_miss_returns_none():
+    cfg = load_config(_CONFIG / "rmp_2015.json")
+    # No table for this zone -> None (caller must fall back, never a default).
+    assert lookup_far(cfg, "Green Belt", None, plot_size_sqm=500) is None
+
+
+def test_rmp_governing_setbacks_base_governs():
+    """Table 9 (high-rise) known answers; the 2025 amendments are non-governing."""
+    cfg = load_config(_CONFIG / "rmp_2015.json")
+    assert governing_setbacks(cfg, height_m=14.0, plot_size_sqm=1000)["front"] == 5.00
+    assert governing_setbacks(cfg, height_m=55.0, plot_size_sqm=1000)["front"] == 16.00
+    # low-rise needs a site dimension (Table 8 keys by width/depth)
+    assert governing_setbacks(cfg, height_m=10.0, plot_size_sqm=300) is None
+    assert governing_setbacks(cfg, height_m=10.0, plot_size_sqm=300, site_dim_m=5.0)["front"] == 1.0
+    # plot > 4000 sqm low-rise -> flat 5 m
+    assert governing_setbacks(cfg, height_m=10.0, plot_size_sqm=5000)["front"] == 5.0
+
+
+def test_rmp_amendments_present_but_non_governing():
+    cfg = load_config(_CONFIG / "rmp_2015.json")
+    ams = {a["id"]: a for a in cfg["amendments"]}
+    assert ams["nov-2025-small-plot-setback"]["status"] == "draft"
+    assert all(a["governing"] is False for a in cfg["amendments"])  # neither is applied
+    assert all(a["confidence"] == "inferred" for a in cfg["amendments"])  # unread -> not authoritative
 
 
 def test_nbcs_template_empty_and_valid():
@@ -240,8 +286,7 @@ def test_amendment_sentinel_status_rejected():
 # ── golden-fixture guards ───────────────────────────────────────────────────
 def _iter_cases(data: dict):
     for key in ("worked_examples", "band_edge_cases", "unit_conversion_cases", "rera_benchmarks", "cases"):
-        for case in data.get(key, []):
-            yield case
+        yield from data.get(key, [])
 
 
 @pytest.mark.parametrize("name", ["us084_far.json", "us085_premium.json"])
