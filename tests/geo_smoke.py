@@ -179,11 +179,19 @@ def test_authority_bengaluru(monkeypatch):
     assert "Greater Bengaluru Authority" in body["authority"]
     assert body["jurisdiction_type"] == "Urban"
     assert body["live_verified"] is False
+    # ADDITIVE check: pre-existing fields unchanged + KGIS-live provenance = authoritative.
+    for f in ("authority", "jurisdiction_type", "planning_authority", "approval_track",
+              "bye_law_reference", "portal", "confidence", "live_verified", "kgis",
+              "notes", "data_source", "data_disclaimer"):
+        assert f in body
+    assert body["confidence"] == "medium"  # unchanged from pre-wire-in
+    assert body["provenance"]["tier"] == "authoritative"
+    assert body["provenance"]["mode"] == "kgis-live"
 
 
 @skip_no_app
-def test_authority_no_context(monkeypatch):
-    """No KGIS context → honest Unknown / low confidence (no fabrication)."""
+def test_authority_kgis_unavailable_inferred_fallback(monkeypatch):
+    """KGIS unavailable + Bengaluru point → inferred from the committed GBA wards layer."""
     from app.services import authority_service as auth
 
     monkeypatch.setenv("FLAGS", "feature.geo.authority")
@@ -192,9 +200,37 @@ def test_authority_no_context(monkeypatch):
         return None
 
     monkeypatch.setattr(auth, "fetch_kgis_context", _no_ctx)
+    # reset the load-once caches so the real wards layer is (re)loaded for this test
+    auth._wards_cache.update({"loaded": False, "feats": None})
 
-    resp = CLIENT.get("/geo/authority", params=_PT)
+    resp = CLIENT.get("/geo/authority", params={"lat": 12.9716, "lon": 77.5946})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "Greater Bengaluru Authority" in body["authority"]
+    assert body["provenance"]["tier"] == "inferred"
+    assert body["provenance"]["mode"] == "inferred-fallback"
+    assert body["provenance"]["data_vintage"] == "2025"
+
+
+@skip_no_app
+def test_authority_no_context_no_fallback_unresolved(monkeypatch):
+    """No KGIS context AND point outside every bundled layer → honest unresolved."""
+    from app.services import authority_service as auth
+
+    monkeypatch.setenv("FLAGS", "feature.geo.authority")
+
+    async def _no_ctx(_lat, _lon, _client):
+        return None
+
+    monkeypatch.setattr(auth, "fetch_kgis_context", _no_ctx)
+    auth._wards_cache.update({"loaded": False, "feats": None})
+    auth._villages_cache.update({"loaded": False, "index": None})
+
+    # A non-Karnataka point → wards + villages both miss → unresolved, never a guess.
+    resp = CLIENT.get("/geo/authority", params={"lat": 0.0, "lon": 0.0})
     assert resp.status_code == 200
     body = resp.json()
     assert body["authority"] == "Unknown"
     assert body["confidence"] == "low"
+    assert body["provenance"]["tier"] == "unresolved"
+    assert body["provenance"]["mode"] == "unresolved"

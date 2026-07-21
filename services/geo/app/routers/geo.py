@@ -12,6 +12,7 @@ from app.models.geo import (
     AmenitiesResult,
     AuthorityResult,
     ParcelGeometry,
+    Provenance,
     SoilResult,
     WaterConstraintResult,
     ZoneResult,
@@ -135,12 +136,30 @@ async def get_parcel(
             geometry = await kgis_service.fetch_parcel_geometry_direct(
                 village_code_eff, survey_no, client
             )
+    # KGIS-live is the ONLY source of a parcel polygon. There is no public vector-parcel
+    # equivalent, so a KGIS miss is honest degradation → unresolved (no synthesized
+    # boundary, no inferred polygon). resolved / geometry are unchanged from before.
+    if geometry is not None:
+        provenance = Provenance(
+            tier="authoritative", mode="kgis-live",
+            data_source="KGIS geomForSurveyNum (KSRSAC)", data_vintage=None,
+        )
+    else:
+        provenance = Provenance(
+            tier="unresolved", mode="unresolved",
+            data_source="KGIS geomForSurveyNum (KSRSAC)", data_vintage=None,
+            reason="KGIS returned no parcel polygon; there is no public vector-parcel "
+            "fallback to infer a boundary from.",
+            next_action="draw the site boundary; cross-check area against the Bhoomi RTC; "
+            "open the parcel in Dishaank.",
+        )
     return ParcelGeometry(
         survey_number=survey_no,
         village_code=village_code_eff,
         kgis_village_id=vid,
         geometry=geometry,
         resolved=geometry is not None,
+        provenance=provenance,
         lat=lat,
         lon=lon,
     )

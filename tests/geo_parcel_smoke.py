@@ -96,6 +96,14 @@ def test_parcel_flag_on_resolved(monkeypatch):
     assert body["geometry"]["type"] == "Polygon"
     assert body["survey_number"] == "88"
     assert body["kgis_village_id"] == "123"
+    # ADDITIVE check: every pre-existing field still present + unchanged.
+    for f in ("survey_number", "village_code", "kgis_village_id", "resolved", "geometry",
+              "crs", "data_source", "data_disclaimer", "lat", "lon"):
+        assert f in body
+    assert body["crs"] == "EPSG:4326"
+    # NEW provenance: KGIS-live polygon → authoritative / kgis-live.
+    assert body["provenance"]["tier"] == "authoritative"
+    assert body["provenance"]["mode"] == "kgis-live"
 
 
 @skip_no_app
@@ -119,3 +127,7 @@ def test_parcel_flag_on_unresolved(monkeypatch):
     body = resp.json()
     assert body["resolved"] is False
     assert body["geometry"] is None
+    # Honest degradation: no vector-parcel fallback → unresolved, never a synthesized polygon.
+    assert body["provenance"]["tier"] == "unresolved"
+    assert body["provenance"]["mode"] == "unresolved"
+    assert body["provenance"]["next_action"]  # tells the user how to proceed

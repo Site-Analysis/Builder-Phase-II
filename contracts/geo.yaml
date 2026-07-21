@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.4.0"
+  version: "1.5.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
     OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS layers. Zoning is
@@ -334,8 +334,32 @@ components:
             - $ref: "#/components/schemas/GeoJsonPolygon"
             - type: "null"
         crs: { type: string }
+        provenance:
+          description: >
+            ADDITIVE (optional, nullable). Accuracy-ladder tier/mode for the answer.
+            authoritative/kgis-live when a real KGIS polygon resolved; unresolved/unresolved
+            on a KGIS miss (there is no vector-parcel fallback — honest degradation, never a
+            synthesized boundary). Existing fields are unchanged.
+          oneOf:
+            - $ref: "#/components/schemas/Provenance"
+            - type: "null"
         data_source: { type: string }
         data_disclaimer: { type: string }
+
+    Provenance:
+      type: object
+      description: >
+        Accuracy-ladder provenance (US-080/US-093 fallback wire-in). `tier` is OUR ladder,
+        never an upstream label: KGIS-live answers are authoritative; the bundled open-data
+        fallback is always inferred; unresolved withholds the value (never a guess).
+      required: [tier, mode, data_source]
+      properties:
+        tier: { type: string, enum: ["authoritative", "inferred", "unresolved"] }
+        mode: { type: string, enum: ["kgis-live", "inferred-fallback", "unresolved"] }
+        data_source: { type: string }
+        data_vintage: { type: string, nullable: true, description: "source snapshot date; null for a live service" }
+        reason: { type: string, nullable: true, description: "populated when unresolved" }
+        next_action: { type: string, nullable: true, description: "populated when unresolved / needs verification" }
 
     AuthorityResult:
       type: object
@@ -358,5 +382,14 @@ components:
             - $ref: "#/components/schemas/KgisContext"
             - type: "null"
         notes: { type: string, nullable: true }
+        provenance:
+          description: >
+            ADDITIVE (optional, nullable). authoritative/kgis-live when classified from KGIS
+            context; inferred/inferred-fallback when KGIS is unavailable and the bundled GBA
+            wards (2025) or LGD villages (LGD-2024) layer contained the point;
+            unresolved/unresolved when neither answered. Existing fields are unchanged.
+          oneOf:
+            - $ref: "#/components/schemas/Provenance"
+            - type: "null"
         data_source: { type: string }
         data_disclaimer: { type: string }

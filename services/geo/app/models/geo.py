@@ -8,6 +8,24 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 
+class Provenance(BaseModel):
+    """Accuracy-ladder provenance for a resolved/unresolved answer (ADDITIVE, optional).
+
+    `tier` is OUR confidence ladder (never an upstream "authoritative" label): KGIS-live
+    answers are `authoritative`; the bundled open-data fallback is always `inferred`; when
+    neither answers it is `unresolved` (value withheld, never a guess). `mode` names which
+    seam produced it. Existing scalar fields (data_source, confidence, live_verified, …)
+    are unchanged — this object is added alongside them, not a replacement.
+    """
+
+    tier: Literal["authoritative", "inferred", "unresolved"]
+    mode: Literal["kgis-live", "inferred-fallback", "unresolved"]
+    data_source: str
+    data_vintage: str | None = None  # source snapshot date; null for a live service
+    reason: str | None = None        # populated when unresolved
+    next_action: str | None = None   # populated when unresolved / needs verification
+
+
 class NearbyFeature(BaseModel):
     type: str
     value: str
@@ -167,6 +185,7 @@ class ParcelGeometry(BaseModel):
     resolved: bool = False
     geometry: dict[str, Any] | None = None  # GeoJSON Polygon, WGS84 (lng, lat)
     crs: str = "EPSG:4326"
+    provenance: Provenance | None = None  # ADDITIVE: accuracy-ladder tier/mode (US-080 wire-in)
     data_source: str = "KGIS (KSRSAC)"
     data_disclaimer: str = (
         "Parcel boundary from KGIS geomForSurveyNum — indicative only, NOT a legal "
@@ -194,6 +213,7 @@ class AuthorityResult(BaseModel):
     live_verified: bool = False
     kgis: KgisContext | None = None
     notes: str | None = None
+    provenance: Provenance | None = None  # ADDITIVE: accuracy-ladder tier/mode (US-093 wire-in)
     data_source: str = "KGIS getlocationdetails + SAT authority ruleset (GBA-aware)"
     data_disclaimer: str = (
         "Indicative jurisdiction from KGIS admin context + a static ruleset encoding the "

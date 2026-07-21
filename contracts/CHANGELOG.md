@@ -1,5 +1,26 @@
 # Contract Changelog
 
+## 2.13.0 — 2026-07-21
+
+### Changed — geo.yaml (v1.4.0 → v1.5.0, fallback wire-in, US-080/US-093)
+- **Additive only — no breaking change.** New optional/nullable `provenance` object on
+  `ParcelGeometry` and `AuthorityResult`, plus a new `Provenance` schema
+  (`tier` authoritative|inferred|unresolved, `mode` kgis-live|inferred-fallback|unresolved,
+  `data_source`, `data_vintage`, `reason`, `next_action`). No existing field is removed,
+  renamed, or retyped; existing consumers keep working unchanged.
+- `/geo/authority`: resolution order is now KGIS-live first; **only** when KGIS returns no
+  context does it fall to the inferred tier — the committed GBA wards layer (2025, urban)
+  then the fetch-on-setup LGD villages layer (LGD-2024, rural), both `tier=inferred`. When
+  neither answers → `Unknown` + `provenance.tier=unresolved` (never a guess). A KGIS-live
+  answer is identical to before **plus** `provenance` = authoritative/kgis-live.
+- `/geo/parcel`: KGIS-live remains the only source of a parcel polygon. On a KGIS miss the
+  response is unchanged (`resolved=false`, `geometry=null`) **plus** `provenance` =
+  unresolved/unresolved with a `next_action` (draw boundary + Bhoomi RTC cross-check +
+  Dishaank) — honest degradation, no synthesized/inferred boundary.
+- Performance: the 30,416-feature villages layer is queried through a load-once uniform
+  grid spatial index (candidate bucket ≪ full layer); no linear PIP over all villages.
+- Still gated by the existing `feature.geo.authority` / `feature.geo.parcel-geometry` flags.
+
 ## 2.12.0 — 2026-07-02
 
 ### Added — geo.yaml (v1.3.0 → v1.4.0, authority auto-detect, US-093)

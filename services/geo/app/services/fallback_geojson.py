@@ -201,6 +201,63 @@ def locate_features(
     )
 
 
+# ── spatial index (villages is 30,416 features — on a request path now) ──────
+# A uniform ~0.05° (~5.5 km) grid over the precomputed per-feature bbox. Built ONCE at
+# load time; a lookup scans only the target cell's bucket instead of all N polygons, so a
+# request runs the expensive ring PIP over a handful of candidates, never the full layer.
+GRID_CELL_DEG = 0.05
+
+
+def build_grid_index(features: list, *, cell: float = GRID_CELL_DEG) -> dict[str, Any]:
+    """Bucket features into a uniform grid by their bbox. Load-once; the caller caches it."""
+    grid: dict[tuple[int, int], list] = {}
+    for feat in features:
+        bb = feat.get("_bbox") or _bbox(feat.get("geometry") or {})
+        if not bb:
+            continue
+        x0, y0, x1, y1 = bb
+        for ix in range(int(x0 // cell), int(x1 // cell) + 1):
+            for iy in range(int(y0 // cell), int(y1 // cell) + 1):
+                grid.setdefault((ix, iy), []).append(feat)
+    return {"cell": cell, "grid": grid, "n_features": len(features)}
+
+
+def index_candidates(index: dict, lat: float, lon: float) -> list:
+    """The candidate features whose grid cell holds the point — the pre-filtered set the
+    full PIP runs over. len(...) proves the index is used (<< n_features)."""
+    cell = index["cell"]
+    return index["grid"].get((int(lon // cell), int(lat // cell)), [])
+
+
+def locate_indexed(
+    index: dict, lat: float, lon: float, *,
+    layer_name: str, data_source: str, data_vintage: str,
+    next_action_no_match: str, name_field: str | None = None,
+) -> dict[str, Any]:
+    """PIP over the grid-index bucket only (not the whole layer). Inferred hit, or unresolved."""
+    for feat in index_candidates(index, lat, lon):
+        bb = feat.get("_bbox")
+        if bb and not (bb[0] <= lon <= bb[2] and bb[1] <= lat <= bb[3]):
+            continue
+        if _geom_contains(feat.get("geometry") or {}, lon, lat):
+            props = feat.get("properties") or {}
+            return {
+                "status": "resolved",
+                "mode": MODE_FALLBACK,
+                "confidence": "inferred",
+                "data_source": data_source,
+                "data_vintage": data_vintage,
+                "name": props.get(name_field) if name_field else None,
+                "properties": props,
+                "value": props,
+            }
+    return unresolved(
+        reason=f"{layer_name}: point ({lat},{lon}) is outside all bundled polygons",
+        next_action=next_action_no_match,
+        data_source=data_source,
+    )
+
+
 def locate(
     path: str | Path, lat: float, lon: float, *,
     layer_name: str, data_source: str, data_vintage: str,

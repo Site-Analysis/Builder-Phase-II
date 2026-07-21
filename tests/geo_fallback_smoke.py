@@ -121,6 +121,60 @@ def test_mode_flags_distinct():
     assert len({fb.MODE_KGIS, fb.MODE_FALLBACK, fb.MODE_UNRESOLVED}) == 3
 
 
+# ── spatial index (villages perf: no linear PIP over 30,416 per request) ─────
+def _grid_layer(n_side: int = 40) -> dict:
+    """n_side x n_side unit squares tiled across Karnataka (real bounds) → n_side^2 features."""
+    feats = []
+    for i in range(n_side):
+        for j in range(n_side):
+            x = fb.KA_LON[0] + i * 0.1
+            y = fb.KA_LAT[0] + j * 0.1
+            feats.append({
+                "type": "Feature", "properties": {"id": f"{i}-{j}"},
+                "geometry": {"type": "Polygon", "coordinates": [
+                    [[x, y], [x + 0.1, y], [x + 0.1, y + 0.1], [x, y + 0.1], [x, y]]
+                ]},
+            })
+    return {"type": "FeatureCollection", "features": feats}
+
+
+def test_grid_index_candidate_count_far_below_total(tmp_path):
+    feats = fb.load(_write(tmp_path, _grid_layer(40)))  # 1600 features, in-bounds
+    index = fb.build_grid_index(feats)
+    assert index["n_features"] == 1600
+    lat = fb.KA_LAT[0] + 1.05
+    lon = fb.KA_LON[0] + 1.05
+    cands = fb.index_candidates(index, lat, lon)
+    # The index scans a single grid cell's bucket, NOT all 1600 polygons.
+    assert 0 < len(cands) < 50, f"index not used: {len(cands)} candidates of 1600"
+    r = fb.locate_indexed(
+        index, lat, lon, name_field="id", layer_name="grid",
+        data_source="TEST", data_vintage="1991", next_action_no_match="n/a",
+    )
+    assert r["status"] == "resolved"
+    assert r["confidence"] == "inferred"
+
+
+def test_grid_index_miss_is_unresolved(tmp_path):
+    feats = fb.load(_write(tmp_path, _grid_layer(5)))
+    index = fb.build_grid_index(feats)
+    # A Karnataka point in a cell with no polygon → unresolved (bucket empty), never a guess.
+    r = fb.locate_indexed(
+        index, fb.KA_LAT[1] - 0.01, fb.KA_LON[1] - 0.01, name_field="id",
+        layer_name="grid", data_source="TEST", data_vintage="1991", next_action_no_match="draw",
+    )
+    assert r["status"] == "unresolved"
+    assert r["value"] is None
+
+
+def test_real_villages_index_candidate_count(villages):
+    """Real 30,416-village layer: a Bengaluru lookup checks a tiny bucket, not all polygons."""
+    index = fb.build_grid_index(villages)
+    assert index["n_features"] == 30416
+    cands = fb.index_candidates(index, _BLR_LAT, _BLR_LON)
+    assert len(cands) < 500, f"index not used: {len(cands)} candidates of 30416"
+
+
 # ── REAL ingested layers (skip if not bundled) ──────────────────────────────
 @pytest.fixture(scope="module")
 def wards():
