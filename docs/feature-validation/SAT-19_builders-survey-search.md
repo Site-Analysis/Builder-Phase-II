@@ -118,6 +118,48 @@ a nicer-mock happy path. e.g. committed `test_parcel_flag_on_resolved` also asse
 must assert the equivalent echoes. Port any missing assertion into the banked test **first**;
 delete the committed sync tests only after assertion parity is proven.
 
+### Parity ledger (FIX-2 — resolved 2026-07-20; merge now unblocked)
+
+**Update:** PR1 (`d0d1093`) aligned `geo_parcel_smoke.py` to the **async** resolver signature
+(+ patched `fetch_parcel_geometry_direct`). Both parcel smokes are now async, so the "STALE
+sync" rows above are historical — the remaining question is pure **assertion coverage**.
+
+Assertion-by-assertion, committed `geo_parcel_smoke.py` (`d0d1093`) vs banked `geo_smoke.py`:
+
+| Assertion | geo_parcel_smoke.py | geo_smoke.py (banked) | Status |
+|---|---|---|---|
+| flag-off `status == 403` | ✓ | ✓ | COVERED |
+| resolved `status == 200` | ✓ | ✓ | COVERED |
+| resolved `resolved is True` | ✓ | ✓ | COVERED |
+| resolved `geometry["type"] == "Polygon"` | ✓ | ✓ | COVERED |
+| resolved `kgis_village_id` echo | ✓ (`"123"`) | ✓ (`"12345"`) | COVERED |
+| resolved `survey_number` echo | ✓ (`"88"`) | ✗ | **GAP (banked lacks)** |
+| unresolved `status == 200` | ✓ | ✓ | COVERED |
+| unresolved `resolved is False` | ✓ | ✓ | COVERED |
+| unresolved `geometry is None` | ✓ | ✓ | COVERED |
+| `test_wkt_parser` (5 asserts) | ✓ | ✗ | **GAP (banked lacks; unique)** |
+
+**Direction (post-PR1):** `geo_parcel_smoke.py` is the **superset** — it asserts `survey_number`
+AND everything banked asserts, and it owns `test_wkt_parser`. Banked asserts **nothing** that
+`geo_parcel_smoke.py` lacks (no extra coverage).
+
+**Merge, mechanical — pick base:**
+- **Base = `geo_parcel_smoke.py` (RECOMMENDED, ZERO ports):** delete the 3 parcel tests from
+  `geo_smoke.py`; leave `geo_parcel_smoke.py` unchanged. Supersedes the "keep banked" note above.
+- Base = banked `geo_smoke.py` (2 ports required before deleting `geo_parcel_smoke.py`):
+  1. in `geo_smoke.py::test_parcel_resolved`, after the `kgis_village_id` assert, add
+     `assert body["survey_number"] == "45/2"`
+  2. copy `test_wkt_parser` (verbatim) into the survivor file.
+
+**Shared gaps (in NEITHER file — optional adds during merge, NOT parity blockers):**
+- direct-L5-fallback **success** path is untested (both unresolved tests mock
+  `fetch_parcel_geometry_direct` → `None`); no test drives it to return a polygon.
+- provenance fields (`data_source`, `crs`, `data_disclaimer`) asserted by neither.
+
+**Verdict:** merge is **mechanical once a commit window opens — no decision needed from you.**
+The recommended base (`geo_parcel_smoke.py`) needs **zero ports**; the banked-base alternative
+needs the 2 listed ports. Either way, no re-derivation.
+
 ## Accuracy Report
 
 - **Golden set:** none hand-verified against **live** KGIS — egress was blocked during the
