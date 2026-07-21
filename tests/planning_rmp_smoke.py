@@ -5,12 +5,10 @@
 
 Proves the guardrails with ZERO authoritative data:
   - the shipped RMP/NBCS templates are empty + valid; lookup on an empty config → None;
-  - the validator REJECTS a sentinel page_ref, a numeric-sentinel FAR, and a null required
-    value (a guess must fail loud, never default);
-  - split-provenance ladder: an OpenCity-origin cell CANNOT pass as 'authoritative', but is
-    accepted as 'inferred'; an 'authoritative' cell requires a non-null regulatory_source;
-  - block↔cell inheritance: an authoritative cell with no cell-level regulatory_source is
-    REJECTED when the block is also null, but ACCEPTED when it inherits a block citation;
+  - the validator REJECTS sentinels, nulls, and laundered confidence;
+  - split-provenance ladder + block↔cell inheritance;
+  - derived (NBCS fallback) cells require a regulatory_source AND a karnataka_adoption_status;
+  - dated amendment overlays validate structurally (sentinel status rejected);
   - golden fixtures never carry a filled 'expected' without a 'source' (guess = P0);
   - untranscribed fixtures are surfaced loudly (skip w/ reason), never silently green.
 
@@ -74,7 +72,6 @@ def _cell_body() -> dict:
 
 
 def _authoritative_cell() -> dict:
-    """Authoritative cell WITH its own primary regulatory_source (TEST-ONLY synthetic)."""
     return {
         **_cell_body(),
         "confidence": "authoritative",
@@ -84,7 +81,6 @@ def _authoritative_cell() -> dict:
 
 
 def _authoritative_cell_no_reg() -> dict:
-    """Authoritative cell that OMITS regulatory_source (relies on block inheritance)."""
     return {
         **_cell_body(),
         "confidence": "authoritative",
@@ -93,7 +89,6 @@ def _authoritative_cell_no_reg() -> dict:
 
 
 def _opencity_cell() -> dict:
-    """Digitized OpenCity cell — no regulatory_source. Caller sets confidence."""
     return {
         **_cell_body(),
         "confidence": "inferred",
@@ -105,56 +100,78 @@ def _opencity_cell() -> dict:
     }
 
 
+def _derived_cell() -> dict:
+    """NBCS-2026 fallback cell: confidence='derived', SP7 regulatory_source + adoption status."""
+    return {
+        **_cell_body(),
+        "confidence": "derived",
+        "karnataka_adoption_status": "not_adopted_as_of:2026-06",
+        "regulatory_source": {"doc": "SP 7:2026 (NBCS 2026) TEST-ONLY", "page_ref": "TEST-ONLY p.1"},
+        "transcription_origin": {"source": "TEST-ONLY SP7 PDF", "confidence": "derived"},
+    }
+
+
+def _amendment() -> dict:
+    """Well-formed dated overlay (TEST-ONLY synthetic; no real values)."""
+    return {
+        "id": "test-amendment",
+        "effective_date": "2025-11-11",
+        "applies_to": "plots <= 4000 sqm brackets",
+        "supersedes": "cell:Residential/II/12-18m/0-open",
+        "status": "notified",
+        "confidence": "authoritative",
+        "regulatory_source": {"doc": "UDD amendment TEST-ONLY", "page_ref": "TEST-ONLY"},
+        "transcription_origin": {"source": "TEST-ONLY UDD PDF", "confidence": "authoritative"},
+    }
+
+
 # ── shipped templates are empty + valid ─────────────────────────────────────
 def test_rmp_template_empty_and_valid():
     cfg = load_config(_CONFIG / "rmp_2015.json")
     assert cfg["status"] == "template-empty"
     assert cfg["cells"] == []
-    # config block is honestly 'inferred' origin (OpenCity), no primary yet:
+    assert cfg["amendments"] == []
     assert cfg["transcription_origin"]["confidence"] == "inferred"
     assert cfg["regulatory_source"] is None
-    # an empty config never invents a cell:
     assert lookup_cell(cfg, "Residential", "II", 12.0, 300.0) is None
 
 
 def test_nbcs_template_empty_and_valid():
     cfg = load_config(_CONFIG / "nbcs_2026_fallback.json")
     assert cfg["cells"] == []
+    # fallback config states its Karnataka enforceability up front:
+    assert cfg["karnataka_adoption_status"].startswith("not_adopted_as_of")
 
 
 # ── split-provenance ladder ─────────────────────────────────────────────────
 def test_accepts_authoritative_cell_with_regulatory_source():
-    validate_config(_meta([_authoritative_cell()]))  # must not raise
+    validate_config(_meta([_authoritative_cell()]))
 
 
 def test_opencity_origin_cannot_be_authoritative():
-    """An OpenCity-only cell tagged authoritative must be REJECTED (no laundering)."""
     c = _opencity_cell()
-    c["confidence"] = "authoritative"  # claim it, but there is no regulatory_source
+    c["confidence"] = "authoritative"
     with pytest.raises(RMPConfigError):
         validate_config(_meta([c]))
 
 
 def test_opencity_origin_valid_as_inferred():
-    """The same OpenCity cell is fine at 'inferred' confidence."""
-    validate_config(_meta([_opencity_cell()]))  # must not raise
+    validate_config(_meta([_opencity_cell()]))
 
 
-# ── block↔cell regulatory_source inheritance (the HARDEN guard) ─────────────
+# ── block↔cell inheritance ──────────────────────────────────────────────────
 def test_authoritative_rejected_when_both_regs_null():
-    """Authoritative cell + null cell reg + null block reg → REJECTED."""
     with pytest.raises(RMPConfigError):
-        validate_config(_meta([_authoritative_cell_no_reg()]))  # block reg absent → null
+        validate_config(_meta([_authoritative_cell_no_reg()]))
 
 
 def test_authoritative_inherits_block_regulatory_source():
-    """Authoritative cell that omits its reg is ACCEPTED when it inherits a block citation."""
     validate_config(
         _meta(
             [_authoritative_cell_no_reg()],
             block_reg={"doc": "TEST-ONLY block primary (not RMP)", "page_ref": "Tbl B p.1"},
         )
-    )  # must not raise
+    )
 
 
 def test_rejects_authoritative_without_regulatory_source():
@@ -183,6 +200,41 @@ def test_rejects_null_required_value():
     c["ground_coverage"] = None
     with pytest.raises(RMPConfigError):
         validate_config(_meta([c]))
+
+
+# ── derived (NBCS fallback) cells (Part C) ──────────────────────────────────
+def test_derived_cell_wellformed_accepted():
+    validate_config(_meta([_derived_cell()]))
+
+
+def test_derived_cell_rejected_without_regulatory_source():
+    c = _derived_cell()
+    c["regulatory_source"] = None
+    with pytest.raises(RMPConfigError):
+        validate_config(_meta([c]))
+
+
+def test_derived_cell_rejected_without_adoption_status():
+    c = _derived_cell()
+    c.pop("karnataka_adoption_status")
+    with pytest.raises(RMPConfigError):
+        validate_config(_meta([c]))
+
+
+# ── dated amendment overlays (Part B) ───────────────────────────────────────
+def test_amendment_wellformed_accepted():
+    m = _meta([])
+    m["amendments"] = [_amendment()]
+    validate_config(m)
+
+
+def test_amendment_sentinel_status_rejected():
+    a = _amendment()
+    a["status"] = "TODO"
+    m = _meta([])
+    m["amendments"] = [a]
+    with pytest.raises(RMPConfigError):
+        validate_config(m)
 
 
 # ── golden-fixture guards ───────────────────────────────────────────────────

@@ -63,3 +63,31 @@ load. `lookup_cell()` returns `None` for an unknown key — the caller must fall
 
 Treat any transcription error as **P0** — one wrong cell becomes thousands of wrong FAR
 answers.
+
+## Confirmed primary sources (use verbatim in `regulatory_source`)
+- **RMP-2015 (authoritative):** RMP-2015 Vol-III Zoning Regulations — IndiaCode,
+  `zoning_regulations_rmp2015f.pdf`, G.O. UDD 540 BEM AA SE 2004 dated 22-06-2007.
+  **Table 22** = FAR & ground coverage; **Table 8** = setbacks by height & plot size;
+  + the three-ring land-use classification.
+- **NBCS-2026 (fallback only):** SP 7:2026 (NBCS 2026) — BIS gazette
+  `CG-DL-E-30042026-272177` dated 30-Apr-2026 (withdrew SP 7:2016).
+
+**Values are transcribed ONLY from these primary PDFs.** Secondary blog/SlideShare copies
+are inferred-tier and must never fill an authoritative/derived cell. If the primary text is
+not in hand, the cell stays empty + PENDING.
+
+## Part B — dated setback amendment overlay (`amendments[]`)
+The 11-Nov-2025 UDD small-plot setback amendment is modelled as a **dated overlay**, not an
+overwrite: `{ effective_date:"2025-11-11", applies_to, supersedes:<base cell key>, status:
+"draft"|"notified" (confirm from primary), setbacks:{…}, regulatory_source, transcription_origin }`.
+Current/strictest governs; the base Table-8 cell keeps its own value + effective_date.
+`amendments` is empty until the primary amendment values are supplied.
+
+## Part C — NBCS fallback cells (`derived`, never authoritative)
+Each NBCS cell carries `confidence:"derived"`, a `regulatory_source` = SP 7:2026 gazette,
+**and** a `karnataka_adoption_status` (e.g. `"not_adopted_as_of:2026-06"`) + an
+`enforceability_note`. Rationale: SP 7:2026 is advisory until Karnataka adopts it into
+bye-laws (none as of mid-2026), and the Nov-2025 RMP amendment still mandates NBC-2016 for
+fire up to 15 m — so a fallback value is **`derived`**, never a silent 2016→2026 swap. The
+validator rejects a `derived` cell lacking either `regulatory_source` or
+`karnataka_adoption_status`.

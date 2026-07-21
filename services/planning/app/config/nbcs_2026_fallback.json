@@ -3,11 +3,14 @@
   "ruleset_name": "NBCS 2026 (SP 7:2026) — FALLBACK only",
   "regulatory_source": null,
   "transcription_origin": {
-    "source": "BIS SP 7:2026 (NBCS 2026) — pending acquisition",
+    "source": "none yet — awaiting SP 7:2026 primary PDF text (human-supplied)",
     "confidence": "inferred",
     "url": "https://www.bis.gov.in/"
   },
-  "source_note": "Fallback rulebook. Used ONLY when an RMP-2015 cell is absent; any value sourced here is tagged 'derived/fallback' in output. Authoritative NBCS cells are transcribed from SP 7:2026 (regulatory_source). Container only (Sprint-0 C).",
+  "karnataka_adoption_status": "not_adopted_as_of:2026-06",
+  "enforceability_note": "SP 7:2026 replaced NBC-2016 nationally on 30-Apr-2026 (gazette CG-DL-E-30042026-272177, withdrew SP 7:2016) but is ADVISORY until Karnataka adopts it into bye-laws — no KA adoption as of mid-2026 (12-24 mo typical). The 11-Nov-2025 RMP amendment still mandates NBC-2016 for fire up to 15 m, so KA bye-law enforceability may still trace to NBC-2016. Do NOT silently swap 2016->2026 as binding. Fallback cells are confidence='derived', never 'authoritative'.",
+  "source_note": "Container only — ZERO cells transcribed. Confirmed PRIMARY source: SP 7:2026 (NBCS 2026), BIS gazette CG-DL-E-30042026-272177 dated 30-Apr-2026. Used ONLY when an RMP-2015 cell is absent; each derived cell carries its own SP 7:2026 regulatory_source.page_ref + karnataka_adoption_status.",
   "status": "template-empty",
-  "cells": []
+  "cells": [],
+  "amendments": []
 }

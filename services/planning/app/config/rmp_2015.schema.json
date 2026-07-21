@@ -2,20 +2,23 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sat:planning/rmp-2015-config",
   "title": "BDA RMP-2015 buildable-envelope lookup config",
-  "description": "Authoritative-tier. Cells transcribed from RMP-2015 Vol-III printed Zoning-Regulation tables and verified against the plan's worked examples. Provenance is SPLIT: regulatory_source is the PRIMARY citation (required + non-null for any 'authoritative' cell); transcription_origin is where the value was actually read THIS time (may be OpenCity = 'inferred'). An OpenCity-only cell is 'inferred', never 'authoritative'. Enforced at load time by app/config/rmp_loader.py (this schema is the human-facing contract; the loader is the runtime gate).",
+  "description": "Authoritative-tier. Cells transcribed from RMP-2015 Vol-III printed Zoning-Regulation tables (IndiaCode, zoning_regulations_rmp2015f.pdf; Table 22 = FAR & ground coverage, Table 8 = setbacks by height & plot size, + three-ring land-use classification) and verified against the plan's worked examples. Provenance is SPLIT: regulatory_source = PRIMARY citation (required + non-null for any 'authoritative' or 'derived' cell); transcription_origin = where the value was read THIS time (OpenCity = 'inferred'). A cell you cannot read from the primary PDF stays EMPTY + PENDING; NBCS-2026 fallback cells are 'derived' and carry karnataka_adoption_status. Dated overlays (e.g. 11-Nov-2025 UDD setback amendment) live in amendments[]. Enforced at load time by app/config/rmp_loader.py.",
   "type": "object",
   "required": ["config_version", "status", "cells", "transcription_origin"],
   "properties": {
-    "config_version": { "type": "string", "description": "semver; 'UNVERIFIED-0' until the first cell is transcribed + verified" },
+    "config_version": { "type": "string" },
     "plan_name": { "type": "string" },
     "ruleset_name": { "type": "string" },
     "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
     "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+    "karnataka_adoption_status": { "type": "string", "description": "e.g. 'not_adopted_as_of:2026-06' — required on derived (NBCS) cells; may be set at config level for inheritance" },
+    "enforceability_note": { "type": "string" },
     "source_note": { "type": "string" },
     "transcription_blocker": { "type": "string" },
     "status": { "type": "string", "enum": ["template-empty", "partial-unverified", "verified"] },
     "fallback_ruleset": { "type": "string" },
-    "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" } }
+    "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" } },
+    "amendments": { "type": "array", "items": { "$ref": "#/$defs/amendment" } }
   },
   "$defs": {
     "band": {
@@ -29,21 +32,21 @@
     },
     "regulatory_source": {
       "type": ["object", "null"],
-      "description": "PRIMARY citation (RMP-2015 Vol-III / gazette). REQUIRED + non-null for any 'authoritative' cell or config; may be null while only inferred digitizations exist.",
+      "description": "PRIMARY citation. REQUIRED + non-null for any 'authoritative'/'derived' cell or config.",
       "required": ["doc", "page_ref"],
       "properties": {
-        "doc": { "type": "string", "minLength": 1, "description": "e.g. 'BDA RMP-2015 Vol-III Zoning Regulations'" },
-        "page_ref": { "type": "string", "minLength": 1, "description": "e.g. 'Table 5, p.42'" },
+        "doc": { "type": "string", "minLength": 1, "description": "e.g. 'RMP-2015 Vol-III' or 'SP 7:2026 (NBCS 2026)'" },
+        "page_ref": { "type": "string", "minLength": 1, "description": "exact page/table, e.g. 'Table 22, p.NN'" },
         "url": { "type": "string" }
       }
     },
     "transcription_origin": {
       "type": "object",
-      "description": "Where the digitized value was actually read THIS time. May be OpenCity, which is 'inferred'.",
+      "description": "Where the digitized value was actually read THIS time. May be OpenCity ('inferred').",
       "required": ["source", "confidence"],
       "properties": {
-        "source": { "type": "string", "minLength": 1, "description": "e.g. 'RMP-2015 Vol-III PDF' or 'OpenCity bda-revised-master-plan-2015'" },
-        "confidence": { "enum": ["authoritative", "inferred"] },
+        "source": { "type": "string", "minLength": 1 },
+        "confidence": { "enum": ["authoritative", "derived", "inferred"] },
         "url": { "type": "string" }
       }
     },
@@ -53,7 +56,7 @@
       "required": ["zone", "ring", "road_width_band_m", "plot_size_band_sqm", "far", "ground_coverage", "setbacks", "ecs", "mixed_use_pct", "confidence", "transcription_origin"],
       "properties": {
         "zone": { "enum": ["Residential", "Commercial", "Industrial", "Mixed Use", "Institutional", "Agricultural", "Green Belt", "Water Body", "Restricted"] },
-        "ring": { "enum": ["I", "II", "III"], "description": "I core / II core-ORR / III beyond (US-082 classifier)" },
+        "ring": { "enum": ["I", "II", "III"], "description": "I core / II core-ORR / III beyond (RMP-2015 three-ring classification)" },
         "road_width_band_m": { "$ref": "#/$defs/band" },
         "plot_size_band_sqm": { "$ref": "#/$defs/band" },
         "far": { "type": "number", "exclusiveMinimum": 0 },
@@ -78,7 +81,33 @@
           }
         },
         "mixed_use_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
-        "confidence": { "enum": ["authoritative", "inferred"], "description": "'authoritative' REQUIRES a non-null regulatory_source (doc+page_ref). An OpenCity-only cell is 'inferred'." },
+        "confidence": { "enum": ["authoritative", "derived", "inferred"], "description": "'authoritative'/'derived' REQUIRE a non-null regulatory_source; 'derived' (NBCS fallback) also requires karnataka_adoption_status. OpenCity-only -> 'inferred'." },
+        "effective_date": { "type": "string", "description": "ISO date the base value takes effect (for dated bases; amendments live in amendments[])" },
+        "karnataka_adoption_status": { "type": "string", "description": "required on 'derived' NBCS cells, e.g. 'not_adopted_as_of:2026-06'" },
+        "enforceability_note": { "type": "string" },
+        "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+        "transcription_origin": { "$ref": "#/$defs/transcription_origin" }
+      }
+    },
+    "amendment": {
+      "type": "object",
+      "description": "A DATED overlay on a base cell (current/strictest governs; base cell is never overwritten).",
+      "required": ["effective_date", "applies_to", "supersedes", "status", "transcription_origin"],
+      "properties": {
+        "id": { "type": "string" },
+        "effective_date": { "type": "string", "description": "ISO date, e.g. '2025-11-11'" },
+        "applies_to": { "type": "string", "description": "e.g. 'plots <= 4000 sqm brackets'" },
+        "supersedes": { "type": "string", "description": "the base cell key/id this modifies" },
+        "status": { "type": "string", "description": "'draft' | 'notified' — confirm from primary" },
+        "setbacks": {
+          "type": "object",
+          "properties": {
+            "front_m": { "type": "number", "minimum": 0 },
+            "rear_m": { "type": "number", "minimum": 0 },
+            "side_m": { "type": "number", "minimum": 0 }
+          }
+        },
+        "confidence": { "enum": ["authoritative", "derived", "inferred"] },
         "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
         "transcription_origin": { "$ref": "#/$defs/transcription_origin" }
       }

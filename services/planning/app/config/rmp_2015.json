@@ -3,13 +3,14 @@
   "plan_name": "BDA Revised Master Plan 2015 (Vol-III Zoning Regulations)",
   "regulatory_source": null,
   "transcription_origin": {
-    "source": "OpenCity bda-revised-master-plan-2015 (digitized fallback; PDF maps only)",
+    "source": "none yet — awaiting primary RMP-2015 Vol-III PDF text (human-supplied); OpenCity is inferred-tier only",
     "confidence": "inferred",
     "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015"
   },
-  "source_note": "Container only. Authoritative cells are transcribed from the PRIMARY RMP-2015 Vol-III printed tables (regulatory_source) and verified against the plan's worked examples. OpenCity may seed geometry/candidates but only at 'inferred' confidence (Sprint-0 B). See app/config/README.md.",
-  "transcription_blocker": "UNRESOLVED doc inconsistency: some tables read 'RMP-2026' but the OPERATIVE plan is RMP-2015. Confirm the operative table set before transcribing any cell.",
+  "source_note": "Container only — ZERO authoritative cells transcribed. Confirmed PRIMARY source: RMP-2015 Vol-III Zoning Regulations, IndiaCode file zoning_regulations_rmp2015f.pdf, G.O. UDD 540 BEM AA SE 2004 dated 22-06-2007 (Table 22 = FAR & ground coverage; Table 8 = setbacks by height & plot size; + three-ring classification). Each authoritative cell must carry its OWN exact regulatory_source.page_ref; config-level regulatory_source is left null so cells cannot inherit a vague ref. See app/config/README.md.",
+  "transcription_blocker": "PENDING primary PDF text: exact road-width bands, plot-size brackets, ring definitions, and Table 8/22 values. Do NOT transcribe from secondary blog/SlideShare copies (inferred-tier). Nov-2025 UDD setback amendment goes in amendments[] once its primary values are supplied.",
   "status": "template-empty",
   "fallback_ruleset": "nbcs_2026",
-  "cells": []
+  "cells": [],
+  "amendments": []
 }

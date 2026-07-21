@@ -4,22 +4,30 @@
 """RMP-2015 / NBCS-2026 buildable-envelope config: loader + strict validator.
 
 Sprint-0 B/C CONTAINER — holds NO authoritative values yet. The shipped configs are empty
-templates; cells are transcribed from the primary RMP-2015 Vol-III / SP 7:2026 PDFs later
-(see ``app/config/README.md``).
+templates; cells are transcribed from the primary RMP-2015 Vol-III (IndiaCode) / SP 7:2026
+(BIS gazette) PDFs later (see ``app/config/README.md``).
 
 Provenance is SPLIT so the confidence ladder cannot be laundered:
-  * ``regulatory_source``   = the PRIMARY citation ({doc, page_ref, url}) (RMP-2015 Vol-III /
-                              gazette).
+  * ``regulatory_source``   = the PRIMARY citation ({doc, page_ref, url}).
   * ``transcription_origin``= where the value was actually read THIS time ({source,
                               confidence, url}). MAY be OpenCity, which is ``inferred``.
 
-Block↔cell precedence: an ``authoritative`` cell resolves its ``regulatory_source`` from the
-CELL if present, else INHERITED from the config block. If BOTH are null/sentinel the cell is
-rejected. Cell-level overrides the block; block-level applies only where the cell omits it.
+Block↔cell precedence: an ``authoritative``/``derived`` cell resolves its ``regulatory_source``
+from the CELL if present, else INHERITED from the config block. Both null/sentinel -> reject.
 
-The validator's whole job is to make a GUESS — or a laundered fallback — fail loud: it
-REJECTS (raises RMPConfigError, never defaults). An OpenCity-only source can be ``inferred``
-but NEVER ``authoritative``. Not yet wired into ``planning_service`` — that is US-084.
+Tiers (config-cell subset of the Accuracy-Contract ladder):
+  * ``authoritative`` — transcribed from the primary RMP-2015 tables. Requires regulatory_source.
+  * ``derived``       — NBCS-2026 fallback (SP 7:2026): a national standard, ADVISORY in
+                        Karnataka until adopted into bye-laws. Requires regulatory_source +
+                        a ``karnataka_adoption_status``. Never label a fallback authoritative.
+  * ``inferred``      — OpenCity / non-primary digitization. No regulatory_source required.
+
+Dated overlays (Part B): ``amendments[]`` model a dated modification of a base cell (e.g. the
+11-Nov-2025 UDD small-plot setback amendment) — current/strictest governs; the base cell is
+never overwritten. The validator checks structure; values still come from the primary.
+
+The validator's whole job is to make a GUESS — or a laundered fallback — fail loud. Not yet
+wired into ``planning_service`` — that is US-084.
 """
 
 from __future__ import annotations
@@ -42,8 +50,10 @@ _ZONES = {
     "Agricultural", "Green Belt", "Water Body", "Restricted",
 }
 _RINGS = {"I", "II", "III"}
-_TIERS = {"authoritative", "inferred"}
+_TIERS = {"authoritative", "derived", "inferred"}
+_SOURCED_TIERS = {"authoritative", "derived"}  # tiers that require a regulatory_source
 _REQUIRED_META = ("config_version", "status", "cells", "transcription_origin")
+_REQUIRED_AMENDMENT = ("effective_date", "applies_to", "supersedes", "status")
 
 
 class RMPConfigError(ValueError):
@@ -96,7 +106,7 @@ def _regulatory_source_ok(reg: Any) -> bool:
 
 def _check_origin_and_confidence(cid: str, obj: dict) -> None:
     """transcription_origin required (non-sentinel source + valid tier); confidence, if
-    present, must be a valid tier. Does NOT check regulatory_source — that is resolved with
+    present, must be a valid tier. Does NOT check regulatory_source — resolved with
     block↔cell inheritance by the caller."""
     origin = obj.get("transcription_origin")
     if not isinstance(origin, dict) or not _nonempty(origin.get("source")):
@@ -110,6 +120,12 @@ def _check_origin_and_confidence(cid: str, obj: dict) -> None:
         raise RMPConfigError(f"{cid}: confidence must be one of {sorted(_TIERS)}, got {conf!r}")
 
 
+def _resolve_regulatory_source(obj: dict, block_reg: Any) -> Any:
+    """Cell/amendment regulatory_source overrides; else inherit the config block."""
+    own = obj.get("regulatory_source")
+    return own if own is not None else block_reg
+
+
 def _validate_cell(cell: Any, idx: int, block_reg: Any) -> None:
     if not isinstance(cell, dict):
         raise RMPConfigError(f"cell[{idx}] is not an object")
@@ -120,20 +136,24 @@ def _validate_cell(cell: Any, idx: int, block_reg: Any) -> None:
     if ring not in _RINGS:
         raise RMPConfigError(f"{cid}: ring must be I|II|III, got {ring!r}")
 
-    if cell.get("confidence") not in _TIERS:
-        raise RMPConfigError(f"{cid}: cell confidence must be 'authoritative'|'inferred'")
+    conf = cell.get("confidence")
+    if conf not in _TIERS:
+        raise RMPConfigError(f"{cid}: cell confidence must be one of {sorted(_TIERS)}")
     _check_origin_and_confidence(cid, cell)
 
-    if cell.get("confidence") == "authoritative":
-        # Precedence: cell's own regulatory_source overrides; else inherit the config block.
-        cell_reg = cell.get("regulatory_source")
-        effective = cell_reg if cell_reg is not None else block_reg
-        if not _regulatory_source_ok(effective):
-            raise RMPConfigError(
-                f"{cid}: confidence='authoritative' requires a non-null regulatory_source "
-                f"(doc + page_ref) on the cell OR inherited from the config block — both are "
-                f"null/sentinel. An OpenCity/inferred-only source cannot be authoritative."
-            )
+    if conf in _SOURCED_TIERS and not _regulatory_source_ok(_resolve_regulatory_source(cell, block_reg)):
+        raise RMPConfigError(
+            f"{cid}: confidence='{conf}' requires a non-null regulatory_source (doc + page_ref) "
+            f"on the cell OR inherited from the config block — both are null/sentinel. An "
+            f"OpenCity/inferred-only source cannot be authoritative or derived."
+        )
+    # A derived (NBCS fallback) cell must state its Karnataka enforceability, since SP 7:2026
+    # is advisory until adopted into bye-laws.
+    if conf == "derived" and not _nonempty(cell.get("karnataka_adoption_status")):
+        raise RMPConfigError(
+            f"{cid}: a 'derived' (NBCS fallback) cell must carry karnataka_adoption_status "
+            f"(SP 7:2026 is advisory until state adoption)"
+        )
 
     _check_band(cid, "road_width_band_m", cell.get("road_width_band_m"))
     _check_band(cid, "plot_size_band_sqm", cell.get("plot_size_band_sqm"))
@@ -158,6 +178,22 @@ def _validate_cell(cell: Any, idx: int, block_reg: Any) -> None:
     _check_number(cid, "mixed_use_pct", cell.get("mixed_use_pct"), lo=0.0, hi=1.0, allow_none=True)
 
 
+def _validate_amendment(a: Any, idx: int, block_reg: Any) -> None:
+    """Dated overlay on a base cell (Part B). Structure-only; amended values follow the
+    same rules as a cell when populated. Empty ``amendments`` is fine."""
+    if not isinstance(a, dict):
+        raise RMPConfigError(f"amendment[{idx}] is not an object")
+    aid = a.get("id") or f"amendment[{idx}]"
+    for f in _REQUIRED_AMENDMENT:
+        if not _nonempty(a.get(f)):
+            raise RMPConfigError(f"{aid}: missing/sentinel {f}")
+    _check_origin_and_confidence(aid, a)
+    if a.get("confidence") in _SOURCED_TIERS and not _regulatory_source_ok(
+        _resolve_regulatory_source(a, block_reg)
+    ):
+        raise RMPConfigError(f"{aid}: {a.get('confidence')} amendment requires a regulatory_source")
+
+
 def validate_config(cfg: Any) -> dict:
     """Return ``cfg`` unchanged if valid; raise :class:`RMPConfigError` otherwise."""
     if not isinstance(cfg, dict):
@@ -168,10 +204,9 @@ def validate_config(cfg: Any) -> dict:
     _check_origin_and_confidence("config", cfg)
 
     block_reg = cfg.get("regulatory_source")
-    # A block that itself claims 'authoritative' cannot inherit from anywhere.
-    if cfg.get("confidence") == "authoritative" and not _regulatory_source_ok(block_reg):
+    if cfg.get("confidence") in _SOURCED_TIERS and not _regulatory_source_ok(block_reg):
         raise RMPConfigError(
-            "config: confidence='authoritative' requires a non-null regulatory_source (doc + page_ref)"
+            f"config: confidence='{cfg.get('confidence')}' requires a non-null regulatory_source"
         )
 
     cells = cfg["cells"]
@@ -179,6 +214,12 @@ def validate_config(cfg: Any) -> dict:
         raise RMPConfigError("cells must be a list")
     for i, cell in enumerate(cells):
         _validate_cell(cell, i, block_reg)
+
+    amendments = cfg.get("amendments", [])
+    if not isinstance(amendments, list):
+        raise RMPConfigError("amendments must be a list")
+    for i, a in enumerate(amendments):
+        _validate_amendment(a, i, block_reg)
     return cfg
 
 
@@ -201,7 +242,7 @@ def lookup_cell(
     """Return the matching cell, or ``None``.
 
     ``None`` means 'no RMP cell for this key' — the caller MUST fall back (NBCS-2026,
-    tagged derived/fallback) or return unresolved. Never synthesise a default here.
+    tagged derived) or return unresolved. Never synthesise a default here.
     """
     for cell in cfg.get("cells", []):
         if (

@@ -7,10 +7,10 @@
   "cases": [
     {
       "id": "gazette-illustration",
-      "inputs": { "plot_area_sqm": null, "permissible_far": null, "premium_far": null, "guidance_value_per_sqm": null },
-      "expected": { "notional_sital_area_sqm": null, "premium_charge": null, "charge_basis": null },
-      "candidate_from_plan": { "plot_area_sqm": 1000, "permissible_far": 2.5, "premium_far": 1.0, "notional_sital_area_sqm": 400, "note": "illustration predates the 28% floor — verify which basis binds" },
-      "source": "",
+      "inputs": { "plot_area_sqm": 1000, "permissible_far": 2.5, "premium_far": 1.0, "guidance_value_per_sqm": 50000 },
+      "expected": { "notional_sital_area_sqm": 400, "premium_charge": null, "charge_basis": null },
+      "source": "gazette UDD 78 MNJ 2024(E) worked illustration via the resolved premium reading (build plan): notional_sital_area = premium_far*plot / permissible = 1.0*1000/2.5 = 400 sqm (pure arithmetic).",
+      "candidate_from_plan": { "premium_charge_primary": 10000000, "premium_charge_floor": 14000000, "note": "primary 50%xGVx400 = Rs 1.00 cr; 28%-floor 0.28xGVx1000 = Rs 1.40 cr -> FLOOR BINDS at FAR 2.5. premium_charge + charge_basis stay PENDING until the 28%-floor interaction is confirmed against the primary gazette PDF (do not lock a false-precise charge)." },
       "status": "PENDING"
     },
     {
