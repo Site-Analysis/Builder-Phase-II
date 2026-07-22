@@ -28,8 +28,10 @@ range; a contested/stayed regime never silently relaxes the number.
 
 from __future__ import annotations
 
+import json
 import math
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from app.models.geo import (
@@ -115,6 +117,92 @@ def _seg_dist_m(pe: float, pn: float, ae: float, an: float, be: float, bn: float
     return math.hypot(pe - (ae + tt * dx), pn - (an + tt * dy))
 
 
+# ── runtime polygon-layer loader (GeoJSON ONLY — no parquet/WKB at runtime) ──
+# US-088 stage-2: the KA-sliced deal-killer layers produced by
+# scripts/prep_overlay_layers.py. Loaded once + bbox-indexed. A MISSING file returns None
+# from the probe -> the overlay stays `unresolved` (CARDINAL RULE: absence != clear).
+_DATA = Path(__file__).parent.parent / "data"
+_LAYER_CACHE: dict[str, list[tuple[tuple[float, float, float, float], list]] | None] = {}
+
+
+def _to_polygons(geom: dict[str, Any] | None) -> list[list[list[list[float]]]]:
+    """Normalize a GeoJSON geometry to a list of polygons, each = [exterior_ring, *holes]."""
+    if not geom:
+        return []
+    t = geom.get("type")
+    c = geom.get("coordinates")
+    if t == "Polygon":
+        return [c]
+    if t == "MultiPolygon":
+        return list(c)
+    return []
+
+
+def _load_polygon_layer(fname: str):
+    """Lazily load + bbox-index a KA-sliced GeoJSON polygon layer. Returns None if the file is
+    absent (gitignored + not yet prepped) — the caller MUST then return `unresolved`."""
+    if fname in _LAYER_CACHE:
+        return _LAYER_CACHE[fname]
+    path = _DATA / fname
+    if not path.exists():
+        _LAYER_CACHE[fname] = None
+        return None
+    fc = json.loads(path.read_text(encoding="utf-8"))
+    feats: list[tuple[tuple[float, float, float, float], list]] = []
+    for f in fc.get("features", []):
+        polys = _to_polygons(f.get("geometry"))
+        if not polys:
+            continue
+        xs = [pt[0] for poly in polys for ring in poly for pt in ring]
+        ys = [pt[1] for poly in polys for ring in poly for pt in ring]
+        feats.append(((min(xs), min(ys), max(xs), max(ys)), polys))
+    _LAYER_CACHE[fname] = feats
+    return feats
+
+
+def _point_in_ring(lon: float, lat: float, ring: list[list[float]]) -> bool:
+    """Ray-cast point-in-polygon on a [lon, lat] ring (degrees)."""
+    inside = False
+    n = len(ring)
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if ((yi > lat) != (yj > lat)) and (
+            lon < (xj - xi) * (lat - yi) / (yj - yi) + xi
+        ):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _probe_polygon_layer(
+    fname: str, pe: float, pn: float, lat: float, lon: float, *, pad: float = 0.02
+) -> dict[str, Any] | None:
+    """Nearest-edge distance (EPSG:32643 m) + inside flag for a KA polygon layer, or None if
+    the layer file is absent. `pad` (degrees) is the bbox prefilter halo — must exceed the
+    largest buffer we test (~2.2 km >> the ≤100 m overlay buffers)."""
+    feats = _load_polygon_layer(fname)
+    if feats is None:
+        return None
+    inside = False
+    best: float | None = None
+    for (minx, miny, maxx, maxy), polys in feats:
+        if lon < minx - pad or lon > maxx + pad or lat < miny - pad or lat > maxy + pad:
+            continue
+        for poly in polys:
+            if poly and _point_in_ring(lon, lat, poly[0]):
+                inside = True
+            for ring in poly:
+                for i in range(len(ring) - 1):
+                    ae, an = wgs84_to_utm43n(ring[i][1], ring[i][0])
+                    be, bn = wgs84_to_utm43n(ring[i + 1][1], ring[i + 1][0])
+                    d = _seg_dist_m(pe, pn, ae, an, be, bn)
+                    if best is None or d < best:
+                        best = d
+    return {"inside": inside, "distance_m": 0.0 if inside else best}
+
+
 # ── AAI airports (Karnataka + majors) — bundled coords for the OLS overlay ──
 _AIRPORTS: list[dict[str, Any]] = [
     {"name": "Kempegowda International (BLR)", "lat": 13.1979, "lon": 77.7063},
@@ -141,7 +229,8 @@ def _rajakaluve_regimes() -> list[dict[str, Any]]:
     return [
         {
             "buffer_m": 50.0, "reference_point": "centre",
-            "rule_citation": "RMP-2015 reg 4.12 (primary rajakaluve — 50 m from centreline)",
+            "rule_citation": "RMP-2015 reg 4.12.2(ii), p.40 (primary rajakaluve — 50 m, measured "
+            "from the centre; secondary 25 m, tertiary 15 m)",
             "effective_date": "2017-05-25", "litigation_status": "settled",
         },
         {
@@ -182,38 +271,107 @@ def _regime_summary(regimes: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-# PENDING overlays: no bundled authoritative clearing layer → unresolved on absence.
-# Each carries its regime(s) + reason + the OSM presence key (if a probe can still fire RED).
-_PENDING_SPECS: list[dict[str, Any]] = [
+# ── LIVE polygon overlays (US-088 stage-2) — KA-sliced layers via prep script ──
+# Each reads a *_ka.geojson. status R if the point is INSIDE a feature OR within the strictest
+# buffer; G otherwise (the layer covers KA, so it can now CLEAR). File ABSENT → `unresolved`
+# (cardinal rule). confidence stays `inferred` on OUR ladder — national datasets, not the
+# sanctioning authority's parcel record; do NOT promote.
+_POLYGON_LIVE: list[dict[str, Any]] = [
     {
-        "name": "lakes/waterbodies", "reference_point": "periphery",
+        "name": "wetland", "fname": "wetlands_ka.geojson",
+        # NO groundable blanket buffer: the Wetlands (Conservation & Management) Rules 2017 bar
+        # activities WITHIN a notified wetland + its "zone of influence" but set NO statutory
+        # metric distance (buffer is fixed case-by-case by the wetland authority / NGT). So this
+        # is an inside/outside overlay (buffer_m 0.0) — an invented 100 m would be fabrication.
         "regimes": [
-            {"buffer_m": 75.0, "reference_point": "periphery",
-             "rule_citation": "BBMP Lake Conservation Rules 2020 (75 m from FTL)",
-             "effective_date": "2020-01-01", "litigation_status": "settled"},
-            {"buffer_m": 30.0, "reference_point": "periphery",
-             "rule_citation": "RMP-2015 (30 m lake buffer) — superseded by NGT 75 m",
-             "effective_date": "2017-05-25", "litigation_status": "contested"},
-        ],
-        "source": "WRIS lakes / BBMP FTL layer — NOT bundled",
-        "reason": "authoritative FTL/lake boundary layer not bundled; OSM water is sparse and "
-        "SILENCE cannot clear a lake buffer (absence != clear).",
-        "next_action": "download WRIS/BBMP FTL polygons; until then verify against the KTCDA "
-        "lake register + survey the Full Tank Level on site.",
-    },
-    {
-        "name": "wetland", "reference_point": "periphery",
-        "regimes": [
-            {"buffer_m": 100.0, "reference_point": "periphery",
-             "rule_citation": "Wetland (Conservation & Management) Rules 2017 (no-development zone)",
+            {"buffer_m": 0.0, "reference_point": "periphery",
+             "rule_citation": "Wetlands (Conservation & Management) Rules 2017 — activity barred "
+             "WITHIN a notified wetland; NO statutory blanket buffer distance (site-specific)",
              "effective_date": "2017-09-26", "litigation_status": "settled"},
         ],
-        "source": "MoEFCC National Wetland Atlas 2024 — NOT bundled",
-        "reason": "wetland layer not bundled — THE cardinal-rule overlay: a missing wetland layer "
-        "must NEVER render as 'no wetland'.",
-        "next_action": "load the MoEFCC 2024 wetland layer; treat the site as within a possible "
-        "wetland buffer until cleared by that layer.",
+        "source": "Bharatmaps Parivesh / MoEFCC Wetland Rules 2017 (bharatlas, CC0)",
+        "inside_reason": "site inside a mapped wetland (Wetland Rules 2017 — activity barred).",
+        "next_action": "wetland boundaries are indicative (national layer, inferred tier) — "
+        "confirm the notified extent + any authority/NGT buffer with the KA State Wetland "
+        "Authority before any construction.",
     },
+    {
+        "name": "wetland-ramsar", "fname": "ramsar_wetlands_ka.geojson",
+        # Same as wetland: no groundable metric buffer. Higher severity (internationally
+        # designated), but the distance is NOT invented — inside/outside only.
+        "regimes": [
+            {"buffer_m": 0.0, "reference_point": "periphery",
+             "rule_citation": "Ramsar Convention site + Wetland Rules 2017 — internationally "
+             "designated, activity barred within; NO statutory blanket buffer distance "
+             "(HIGHER severity than a general wetland)",
+             "effective_date": "2017-09-26", "litigation_status": "settled"},
+        ],
+        "source": "Bharatmaps Parivesh Ramsar Wetlands (bharatlas, CC0)",
+        "inside_reason": "site inside a RAMSAR wetland — internationally protected, treat as a "
+        "hard deal-killer.",
+        "next_action": "Ramsar sites carry the strictest protection — a formal ecological "
+        "clearance is required; verify the notified boundary + buffer with MoEFCC.",
+    },
+    {
+        "name": "forest", "fname": "forests_ka.geojson",
+        "regimes": [
+            {"buffer_m": 0.0, "reference_point": "periphery",
+             "rule_citation": "Reserved/Protected Forest boundary (Survey of India) — no "
+             "construction inside; the ESZ buffer is a SEPARATE overlay",
+             "effective_date": None, "litigation_status": "settled"},
+        ],
+        "source": "Survey of India forest boundaries (bharatlas, CC0)",
+        "inside_reason": "site inside a Survey-of-India forest boundary (Forest Conservation "
+        "Act) — construction barred.",
+        "next_action": "forest boundary is indicative (SOI national layer) — confirm with the "
+        "KA Forest Dept; diversion needs FCA clearance.",
+    },
+    {
+        "name": "eco-sensitive-zone", "fname": "eco_sensitive_zones_ka.geojson",
+        "regimes": [
+            {"buffer_m": 0.0, "reference_point": "periphery",
+             "rule_citation": "Eco-Sensitive Zone (MoEFCC notification) — regulated activity "
+             "zone; the exact buffer is per-site notification (SEPARATE from reserved forest)",
+             "effective_date": None, "litigation_status": "contested"},
+        ],
+        "source": "Bharatmaps / MoEFCC Eco-Sensitive Zones (bharatlas, CC0)",
+        "inside_reason": "site inside a notified Eco-Sensitive Zone — activity is regulated "
+        "(the ESZ notification governs permitted uses).",
+        "next_action": "read the specific ESZ notification for the permitted-activity list + "
+        "the zonal master plan.",
+    },
+    {
+        "name": "lakes/waterbodies", "fname": "lakes_ka.geojson",
+        # Multi-regime, strictest governs (same shape as rajakaluve). NGT 75 m is the strictest
+        # in-force → governs; RMP 30 m + KTCDA 30 m are in force but looser; the KTCDA-2025
+        # size-based relaxation is a DRAFT (proposed) → surfaced in the range, never governs.
+        "regimes": [
+            {"buffer_m": 75.0, "reference_point": "periphery",
+             "rule_citation": "NGT — 75 m lake buffer (Forward Foundation / Mavallipura orders, "
+             "Bengaluru lakes) — strictest in force",
+             "effective_date": "2016-05-04", "litigation_status": "settled"},
+            {"buffer_m": 30.0, "reference_point": "periphery",
+             "rule_citation": "RMP-2015 reg 4.12.2(ii)(iii), p.40 — 30 m 'no development zone' "
+             "around a lake (as per revenue records)",
+             "effective_date": "2017-05-25", "litigation_status": "settled"},
+            {"buffer_m": 30.0, "reference_point": "periphery",
+             "rule_citation": "KTCDA Act 2014 — 30 m tank/lake buffer",
+             "effective_date": "2014-01-01", "litigation_status": "settled"},
+            {"buffer_m": 30.0, "reference_point": "periphery",
+             "rule_citation": "KTCDA Amendment 2025 — size-based 0–30 m relaxation (DRAFT — "
+             "confirm notified vs draft; NOT in force, does not govern)",
+             "effective_date": "2025-01-01", "litigation_status": "proposed"},
+        ],
+        "source": "CWC WRIS lakes (bharatlas, CC0)",
+        "inside_reason": "site inside / within the strictest in-force lake buffer (NGT 75 m).",
+        "next_action": "lake extent is the WRIS national layer (inferred) — survey the Full "
+        "Tank Level; a proposed KTCDA-2025 relaxation must not be relied on until notified.",
+    },
+]
+
+# PENDING overlays: still no bundled clearing layer → unresolved on absence. A trustworthy
+# PRESENCE observation may fire RED, but silence can never clear one.
+_PENDING_SPECS: list[dict[str, Any]] = [
     {
         "name": "flood", "reference_point": "centre",
         "regimes": [
@@ -226,18 +384,6 @@ _PENDING_SPECS: list[dict[str, Any]] = [
         "this engine cannot import cross-service; river/lake PROXIMITY is covered by the "
         "lakes/waterbodies overlay.",
         "next_action": "call the /flood endpoint for the elevation/rainfall flood score.",
-    },
-    {
-        "name": "forest", "reference_point": "periphery",
-        "regimes": [
-            {"buffer_m": 100.0, "reference_point": "periphery",
-             "rule_citation": "Eco-Sensitive Zone / deemed-forest buffer (site-specific, ESZ notif.)",
-             "effective_date": None, "litigation_status": "contested"},
-        ],
-        "source": "Survey of India / KFD forest boundaries — NOT bundled",
-        "reason": "forest/ESZ boundary layer not bundled; ESZ buffers are site-specific and cannot "
-        "be assumed clear.",
-        "next_action": "load SOI/KFD forest boundaries + the relevant ESZ notification.",
     },
     {
         "name": "HT-line", "reference_point": "centre",
@@ -369,6 +515,32 @@ def evaluate_overlays(
         next_action=None if ols["status"] == "G" else "obtain AAI height NOC (NOCAS).",
     ))
     live.append("airport-OLS")
+
+    # ── LIVE polygon layers (KA-sliced) — can now CLEAR; missing file → unresolved ──
+    for spec in _POLYGON_LIVE:
+        sreg = _regime_summary(spec["regimes"])
+        probe = _probe_polygon_layer(spec["fname"], pe, pn, lat, lon)
+        if probe is None:
+            # CARDINAL RULE: layer file absent → unresolved, NOT clear.
+            pending.append(spec["name"])
+            items.append(_item(
+                spec["name"], "unresolved", None, sreg, as_of,
+                OverlayProvenance(source=spec["source"], confidence="unresolved", vintage=None),
+                reason=f"{spec['fname']} not present — run scripts/prep_overlay_layers.py; "
+                "absence of the layer is NOT absence of hazard.",
+                next_action="prep the KA overlay layers on setup, then re-run.",
+            ))
+            continue
+        live.append(spec["name"])
+        prov = OverlayProvenance(source=spec["source"], confidence="inferred", vintage="2024")
+        d = probe["distance_m"]
+        hit = probe["inside"] or (d is not None and d <= sreg["buffer_m"])
+        items.append(_item(
+            spec["name"], "R" if hit else "G", None if d is None else round(d, 1), sreg, as_of,
+            prov,
+            reason=spec["inside_reason"] if hit else None,
+            next_action=spec["next_action"] if hit else None,
+        ))
 
     # ── PENDING: no bundled clearing layer → unresolved (presence-only R via observation) ──
     for spec in _PENDING_SPECS:

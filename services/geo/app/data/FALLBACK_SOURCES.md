@@ -49,6 +49,30 @@ validate it at setup:
 
 `wards_bengaluru_gba.geojson` (2.9 MB, ODbL) **is committable and stays tracked** — not ignored.
 
+## US-088 deal-killer overlay layers (`/geo/overlays`, `overlay_engine.py`)
+
+KA-sliced open-data polygon layers behind the overlay engine. All `[lon, lat]` EPSG:4326,
+licence **CC0**, vintage **2024**, confidence **`inferred`** on our ladder (national datasets,
+NOT the sanctioning authority's parcel record — do **not** promote). Derived at setup by
+`scripts/prep_overlay_layers.py` from the raw MoEFCC/SOI/WRIS sources (the only place
+parquet/WKB is read — the runtime is GeoJSON-only). A layer file that is absent makes its
+overlay return `unresolved` (loud), never clear.
+
+| File (`services/geo/app/data/`) | Upstream | KA feats | Size | Serves overlay | Committed? |
+|---|---|---|---|---|---|
+| `wetlands_ka.geojson` | Bharatmaps Parivesh / MoEFCC Wetland Rules 2017 | 21,147 | 63.5 MB | `wetland` (inside — no groundable metric buffer) | **gitignored** |
+| `lakes_ka.geojson` | CWC WRIS lakes | 21,702 | 26.9 MB | `lakes/waterbodies` (multi-regime: NGT 75 m governs; RMP reg 4.12.2(ii) p.40 / KTCDA-2014 = 30 m; KTCDA-2025 draft not in force) | **gitignored** |
+| `forests_ka.geojson` | Survey of India forests | 4,553 | 21.3 MB | `forest` (inside) | **gitignored** |
+| `eco_sensitive_zones_ka.geojson` | Bharatmaps / MoEFCC ESZ | 43 | 1.1 MB | `eco-sensitive-zone` (inside) | committed |
+| `ramsar_wetlands_ka.geojson` | Bharatmaps Parivesh Ramsar | 7 | 0.1 MB | `wetland-ramsar` (inside — higher severity, no metric buffer) | committed |
+
+The big three are **download/prep-on-setup, NOT committed** (like villages). Prep + validate:
+
+    pip install pyarrow shapely ijson         # dev-time only
+    python scripts/prep_overlay_layers.py     # slices ~/Downloads sources → *_ka.geojson
+
+Still PENDING (no bundled geometry) → `unresolved`: `flood` (cross-service), `HT-line`, `gas`.
+
 ## Adding a layer
 1. Download/digitize into the target path; confirm licence + snapshot date + coordinate order.
 2. Set `data_vintage` at the caller; GBA-corporation/ward layers must be **≥ 2025-05-15**.

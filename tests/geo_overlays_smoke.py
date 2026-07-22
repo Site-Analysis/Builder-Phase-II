@@ -34,6 +34,12 @@ from app.services.overlay_engine import (  # noqa: E402
 _ON_DRAIN = (12.839695, 77.533485)     # a rajakaluve vertex -> distance ~0 -> RED
 _CLEAR = (12.811695, 77.505485)        # ~4.3 km from nearest drain -> rajakaluve GREEN
 
+# US-088 stage-2 (ingested KA layers). Verified against wetlands_ka.geojson + a clear-of-all scan.
+_WET_INSIDE = (13.994899, 74.517427)   # inside a mapped KA wetland -> wetland RED
+_ALL_CLEAR = (12.4, 75.9)              # clear of wetland/ramsar/forest/ESZ/lakes -> those GREEN
+_INGESTED = ("wetland", "wetland-ramsar", "forest", "eco-sensitive-zone", "lakes/waterbodies")
+_STILL_PENDING = ("flood", "HT-line", "gas")
+
 
 def _overlay(res, name):
     return next(o for o in res.overlays if o.name == name)
@@ -57,18 +63,29 @@ def test_clear_parcel_overlay_is_green():
     assert raja.distance_m is not None and raja.distance_m > raja.buffer_m
 
 
-# ── (c) CARDINAL RULE: layer unavailable -> unresolved, NOT green ────────────
-def test_missing_layer_is_unresolved_not_green():
-    r = evaluate_overlays(*_CLEAR)
-    for name in ("wetland", "lakes/waterbodies", "flood", "forest", "HT-line", "gas"):
+# ── (c) CARDINAL RULE: layers with NO bundled geometry stay unresolved ───────
+def test_pending_layers_are_unresolved_not_green():
+    r = evaluate_overlays(*_ALL_CLEAR)
+    for name in _STILL_PENDING:  # flood/HT-line/gas — no geometry, cannot clear
         o = _overlay(r, name)
         assert o.status == "unresolved", f"{name} must be unresolved (absence != clear)"
-        assert o.status != "G"
         assert o.distance_m is None
         assert o.provenance.confidence == "unresolved"
-    # wetland is THE cardinal-rule overlay — never silently clear.
-    assert _overlay(r, "wetland").status == "unresolved"
     assert r.verdict.blocks_clean_go is True
+
+
+# ── (c') CARDINAL RULE survives ingestion: a MISSING layer file -> unresolved ─
+def test_missing_layer_file_is_unresolved_not_green(monkeypatch):
+    import app.services.overlay_engine as eng
+
+    # Force the wetland layer file to appear absent (as before it was prepped).
+    monkeypatch.setitem(eng._LAYER_CACHE, "wetlands_ka.geojson", None)
+    r = evaluate_overlays(*_ALL_CLEAR)  # a point that otherwise CLEARS wetland
+    w = _overlay(r, "wetland")
+    assert w.status == "unresolved", "missing wetland file must NEVER render as clear"
+    assert w.status != "G"
+    assert w.provenance.confidence == "unresolved"
+    assert "wetland" in r.verdict.unresolved_overlays
 
 
 # ── (d) distances in EPSG:32643 + KA-bounds swap canary ─────────────────────
@@ -112,19 +129,21 @@ def test_reference_point_per_regime():
 def test_verdict_booleans():
     r = evaluate_overlays(*_ON_DRAIN)
     assert r.verdict.hard_no_go is True              # rajakaluve RED
-    assert r.verdict.blocks_clean_go is True         # wetland etc. unresolved
-    assert set(r.live_overlays) == {"rajakaluve/drains", "airport-OLS"}
-    assert "wetland" in r.pending_overlays
+    assert r.verdict.blocks_clean_go is True         # flood/HT-line/gas unresolved
+    # ingested layers are now LIVE; only flood/HT-line/gas remain pending.
+    assert {"rajakaluve/drains", "airport-OLS", *_INGESTED} <= set(r.live_overlays)
+    assert set(r.pending_overlays) == set(_STILL_PENDING)
 
 
 # ── presence probe may fire RED, but silence can NEVER clear ─────────────────
 def test_presence_probe_fires_red_but_silence_never_clears():
-    # trustworthy presence within the wetland buffer -> RED
-    red = evaluate_overlays(*_CLEAR, observations={"wetland": 10.0})
-    assert _overlay(red, "wetland").status == "R"
+    # HT-line has NO bundled geometry (still PENDING) — the observation seam applies to it.
+    # Trustworthy presence within the CEA buffer -> RED.
+    red = evaluate_overlays(*_CLEAR, observations={"HT-line": 10.0})
+    assert _overlay(red, "HT-line").status == "R"
     # a "far" observation must NOT clear the overlay -> still unresolved
-    far = evaluate_overlays(*_CLEAR, observations={"wetland": 9999.0})
-    assert _overlay(far, "wetland").status == "unresolved"
+    far = evaluate_overlays(*_CLEAR, observations={"HT-line": 9999.0})
+    assert _overlay(far, "HT-line").status == "unresolved"
 
 
 # ── airport-OLS: supplied height piercing the cap -> RED, else height-limited ─
@@ -135,6 +154,50 @@ def test_airport_ols_height_gate():
     # same spot, no height supplied -> height-limited (A), not a hard NO-GO by itself
     amber = evaluate_overlays(13.185, 77.700)
     assert _overlay(amber, "airport-OLS").status in ("A", "R")
+
+
+# ── (ingest a) parcel INSIDE a known KA wetland -> RED ──────────────────────
+def test_wetland_inside_is_red():
+    w = _overlay(evaluate_overlays(*_WET_INSIDE), "wetland")
+    assert w.status == "R"
+    assert w.distance_m == 0.0
+    assert w.provenance.confidence == "inferred"   # national layer — NOT promoted
+    assert w.provenance.vintage == "2024"
+
+
+# ── (ingest b) parcel clear of all four -> those overlays GREEN (they can clear now) ─
+def test_ingested_layers_can_clear_to_green():
+    r = evaluate_overlays(*_ALL_CLEAR)
+    for name in _INGESTED:
+        o = _overlay(r, name)
+        assert o.status == "G", f"{name} should clear to GREEN at a clear parcel, got {o.status}"
+        assert o.provenance.confidence == "inferred"
+
+
+# ── (ingest e) ESZ and forest are SEPARATE overlays, not merged ─────────────
+def test_forest_and_esz_are_separate_overlays():
+    names = [o.name for o in evaluate_overlays(*_ALL_CLEAR).overlays]
+    assert "forest" in names and "eco-sensitive-zone" in names
+    assert names.count("forest") == 1 and names.count("eco-sensitive-zone") == 1
+
+
+# ── (ingest f) lakes = multi-regime, STRICTEST governs (NGT 75 m), range + litigation ─
+def test_lakes_multi_regime_strictest_governs():
+    lk = _overlay(evaluate_overlays(*_ALL_CLEAR), "lakes/waterbodies")
+    assert lk.buffer_m == 75.0                       # NGT 75 m — strictest in force governs
+    assert lk.buffer_range_m == [30.0, 75.0]         # RMP/KTCDA 30 .. NGT 75 exposed
+    assert lk.litigation_status == "contested"       # regimes disagree
+    assert lk.reference_point == "periphery"
+    assert "75" in (lk.rule_citation or "") or "NGT" in (lk.rule_citation or "")
+
+
+# ── FIX 2: wetland + ramsar carry NO invented buffer — inside/outside only ──
+def test_wetland_and_ramsar_have_no_asserted_buffer():
+    r = evaluate_overlays(*_ALL_CLEAR)
+    for name in ("wetland", "wetland-ramsar"):
+        o = _overlay(r, name)
+        assert o.buffer_m == 0.0, f"{name} must not assert a metric buffer (ungrounded = P0)"
+        assert "NO statutory blanket buffer" in (o.rule_citation or "")
 
 
 # ── endpoint: flag-gated (403 off / 200 on) + serialization + 422 on bad point ─
@@ -152,8 +215,12 @@ def test_endpoint_flag_gate_and_serialization(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["crs"] == "EPSG:32643"
+    # a still-pending layer stays unresolved through the wire (cardinal rule survives JSON).
+    flood = next(o for o in body["overlays"] if o["name"] == "flood")
+    assert flood["status"] == "unresolved"
+    # an ingested layer now serializes a concrete R/G status (never unresolved-by-default).
     wet = next(o for o in body["overlays"] if o["name"] == "wetland")
-    assert wet["status"] == "unresolved"          # not green through the wire
+    assert wet["status"] in ("R", "G")
     assert body["verdict"]["blocks_clean_go"] is True
     # swapped lat/lon -> 422 (KA canary reaches the client as a 422, not a 500)
     bad = client.get("/geo/overlays", params={"lat": 77.5, "lon": 12.8})
