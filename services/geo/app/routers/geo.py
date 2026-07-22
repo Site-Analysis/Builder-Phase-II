@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.models.geo import (
     AmenitiesResult,
     AuthorityResult,
+    OverlayResult,
     ParcelGeometry,
     Provenance,
     SoilResult,
@@ -31,6 +32,7 @@ _AMENITY_FLAG = "feature.geo.amenities"
 _KGIS_FLAG = "feature.geo.kgis-context"
 _PARCEL_FLAG = "feature.geo.parcel-geometry"
 _AUTHORITY_FLAG = "feature.geo.authority"
+_OVERLAYS_FLAG = "feature.geo.overlays"
 
 
 def _enabled_flags() -> set[str]:
@@ -181,3 +183,27 @@ async def get_authority(
         timeout=10, headers={"User-Agent": "SAT-SiteAnalysisTool/1.0"}
     ) as client:
         return await detect_authority(lat, lon, client)
+
+
+@router.get("/overlays", response_model=OverlayResult)
+def get_overlays(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    building_height_m: float | None = Query(None),
+) -> OverlayResult:
+    """US-088 — unified deal-killer overlay engine.
+
+    Every overlay (rajakaluve, airport-OLS, lakes, wetland, flood, forest, HT-line, gas) with
+    its distance (EPSG:32643), strictest dated buffer, R/A/G/unresolved status, citation and
+    provenance. CARDINAL RULE: an overlay with no bundled clearing layer returns `unresolved`,
+    never clear — absence of data is NOT absence of hazard. `verdict.hard_no_go` (any RED) and
+    `verdict.blocks_clean_go` (any unresolved) feed the US-092 GO/NO-GO engine. Gated by
+    `feature.geo.overlays`. KA-only (lat/lon swap + bounds asserted → 422 on a bad point).
+    """
+    _require_flag(_OVERLAYS_FLAG)
+    from app.services.overlay_engine import evaluate_overlays
+
+    try:
+        return evaluate_overlays(lat, lon, building_height_m=building_height_m)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

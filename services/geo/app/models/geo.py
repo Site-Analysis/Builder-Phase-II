@@ -26,6 +26,66 @@ class Provenance(BaseModel):
     next_action: str | None = None   # populated when unresolved / needs verification
 
 
+OverlayStatus = Literal["R", "A", "G", "unresolved"]
+OverlayReference = Literal["centre", "periphery"]
+
+
+class OverlayProvenance(BaseModel):
+    """Where an overlay answer came from + our confidence in it (US-088). `confidence` is
+    never an upstream label: a bundled authoritative layer is `authoritative`; anything with
+    no bundled clearing layer is `unresolved`."""
+
+    source: str
+    confidence: Literal["authoritative", "inferred", "unresolved"]
+    vintage: str | None = None
+
+
+class OverlayItem(BaseModel):
+    """One deal-killer overlay result (US-088).
+
+    `status`: R (inside strictest buffer / obstacle), A (inside a contested/less-strict band
+    or a height-limited OLS surface), G (clear — ONLY when a bundled authoritative layer can
+    clear it), unresolved (no bundled clearing layer — absence is NOT clear). `buffer_m` is
+    the STRICTEST in-force regime; `buffer_range_m` exposes the span when regimes disagree.
+    All distances in EPSG:32643 metres."""
+
+    name: str
+    status: OverlayStatus
+    distance_m: float | None = None
+    buffer_m: float | None = None
+    buffer_range_m: list[float] | None = None
+    reference_point: OverlayReference | None = None
+    rule_citation: str | None = None
+    effective_date: str | None = None
+    litigation_status: str | None = None
+    as_of: str
+    provenance: OverlayProvenance
+    reason: str | None = None
+    next_action: str | None = None
+    crs: str = "EPSG:32643"
+
+
+class OverlayVerdict(BaseModel):
+    """Booleans the future US-092 GO/NO-GO engine reads. Any RED → hard NO-GO. Any
+    unresolved → blocks a clean GO (forces at least CAUTION)."""
+
+    hard_no_go: bool
+    blocks_clean_go: bool
+    red_overlays: list[str]
+    unresolved_overlays: list[str]
+
+
+class OverlayResult(BaseModel):
+    lat: float
+    lon: float
+    crs: str = "EPSG:32643"
+    overlays: list[OverlayItem]
+    verdict: OverlayVerdict
+    live_overlays: list[str]
+    pending_overlays: list[str]
+    data_disclaimer: str = ""
+
+
 class NearbyFeature(BaseModel):
     type: str
     value: str

@@ -1143,6 +1143,120 @@ export function farAssemblyQualitative(
   return out;
 }
 
+// ─── Deal-killer overlays — GET /geo/overlays (US-088) ────────────────────────
+// Gated by feature.geo.overlays. CARDINAL RULE: `unresolved` is NOT clear — it renders
+// distinct from green. Any RED → hard NO-GO; any unresolved → blocks a clean GO.
+
+export type OverlayStatus = "R" | "A" | "G" | "unresolved";
+export interface OverlayProvenance {
+  source: string;
+  confidence: "authoritative" | "inferred" | "unresolved";
+  vintage: string | null;
+}
+export interface OverlayItem {
+  name: string;
+  status: OverlayStatus;
+  distance_m: number | null;
+  buffer_m: number | null;
+  buffer_range_m: number[] | null;
+  reference_point: "centre" | "periphery" | null;
+  rule_citation: string | null;
+  effective_date: string | null;
+  litigation_status: string | null;
+  as_of: string;
+  provenance: OverlayProvenance;
+  reason: string | null;
+  next_action: string | null;
+  crs: string;
+}
+export interface OverlayVerdict {
+  hard_no_go: boolean;
+  blocks_clean_go: boolean;
+  red_overlays: string[];
+  unresolved_overlays: string[];
+}
+export interface OverlayResult {
+  lat: number;
+  lon: number;
+  crs: string;
+  overlays: OverlayItem[];
+  verdict: OverlayVerdict;
+  live_overlays: string[];
+  pending_overlays: string[];
+  data_disclaimer: string;
+}
+
+export async function getOverlays(
+  lat: number, lon: number, buildingHeightM?: number,
+): Promise<OverlayResult> {
+  const q = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+  if (buildingHeightM != null) q.set("building_height_m", String(buildingHeightM));
+  return svcFetch<OverlayResult>(SVC.zone, `/geo/overlays?${q.toString()}`);
+}
+
+/** Map overlays to visibly-distinct rows. RED=bad, unresolved=warn (NEVER good — it is
+ *  explicitly NOT a clear), AMBER=warn, GREEN=good. The verdict banner leads. */
+export function overlaysQualitative(
+  r: OverlayResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+
+  // Verdict banner — the deal-killer summary first.
+  if (r.verdict.hard_no_go) {
+    out.push({
+      label: "⛔ NO-GO — deal-killer overlay",
+      value: `RED: ${r.verdict.red_overlays.join(", ")}. A red overlay is a hard NO-GO.`,
+      tone: "bad",
+    });
+  }
+  if (r.verdict.blocks_clean_go) {
+    out.push({
+      label: "⚠ Cannot clear — data unavailable",
+      value: `UNRESOLVED (not clear — absence of data is NOT absence of hazard): ${r.verdict.unresolved_overlays.join(", ")}. Blocks a clean GO until each layer is verified.`,
+      tone: "warn",
+    });
+  }
+  if (!r.verdict.hard_no_go && !r.verdict.blocks_clean_go) {
+    out.push({ label: "Overlays clear", value: "No red or unresolved overlay.", tone: "good" });
+  }
+
+  const km = (m: number | null) => (m == null ? "—" : m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
+  const bufStr = (o: OverlayItem) =>
+    o.buffer_range_m ? `${o.buffer_range_m[0]}–${o.buffer_range_m[1]} m (${o.buffer_m} m governs${o.litigation_status ? `, ${o.litigation_status}` : ""})`
+                     : o.buffer_m != null ? `${o.buffer_m} m` : "—";
+
+  for (const o of r.overlays) {
+    if (o.status === "unresolved") {
+      out.push({
+        label: `⚠ ${o.name} — UNRESOLVED`,
+        value: `${o.reason ?? "No clearing layer."} Next: ${o.next_action ?? "verify on site."} (buffer ${bufStr(o)} from ${o.reference_point ?? "?"})`,
+        tone: "warn",
+      });
+    } else if (o.status === "R") {
+      out.push({
+        label: `⛔ ${o.name} — INSIDE BUFFER`,
+        value: `${km(o.distance_m)} away · strictest buffer ${bufStr(o)} from ${o.reference_point ?? "?"} · ${o.rule_citation ?? ""} [EPSG:32643, as of ${o.as_of}]`,
+        tone: "bad",
+      });
+    } else if (o.status === "A") {
+      out.push({
+        label: `⚠ ${o.name} — restricted`,
+        value: `${km(o.distance_m)} away · ${o.rule_citation ?? ""} · buffer ${bufStr(o)}. ${o.reason ?? ""} ${o.next_action ?? ""}`.trim(),
+        tone: "warn",
+      });
+    } else {
+      out.push({
+        label: `${o.name} — clear`,
+        value: `${km(o.distance_m)} away (> ${o.buffer_m} m buffer, ${o.provenance.confidence}) · ${o.rule_citation ?? ""}`,
+        tone: "good",
+      });
+    }
+  }
+
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
+}
+
 // ─── Zoning — unified zone + planning synthesis ───────────────────────────────
 
 export async function getZoningAnalysis(

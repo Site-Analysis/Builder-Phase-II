@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.5.0"
+  version: "1.6.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
     OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS layers. Zoning is
@@ -158,8 +158,92 @@ paths:
         "403": { description: Feature flag disabled }
         "422": { description: Validation error }
 
+  /geo/overlays:
+    get:
+      operationId: getOverlays
+      summary: Unified deal-killer overlay engine (US-088)
+      description: >
+        Every deal-killer overlay (rajakaluve, airport-OLS, lakes/waterbodies, wetland, flood,
+        forest, HT-line, gas) for a point, with distance in EPSG:32643 (UTM 43N metres), the
+        STRICTEST applicable dated buffer regime (range exposed when regimes are in legal flux),
+        an R/A/G/unresolved status, reference_point (centre vs periphery), rule citation and
+        provenance. CARDINAL RULE — an overlay with no bundled authoritative clearing layer
+        returns `unresolved`, never clear: absence of data is NOT absence of hazard. `verdict`
+        exposes `hard_no_go` (any RED) and `blocks_clean_go` (any unresolved) for the US-092
+        GO/NO-GO engine. Gated by `feature.geo.overlays`. Karnataka-only — lat/lon order and
+        bounds are asserted (422 on a swapped/out-of-bounds point).
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, format: float } }
+        - { name: lon, in: query, required: true, schema: { type: number, format: float } }
+        - { name: building_height_m, in: query, required: false, schema: { type: number, format: float } }
+      responses:
+        "200":
+          description: Overlay evaluation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OverlayResult" }
+        "403": { description: Feature flag disabled }
+        "422": { description: Feature disabled point out of Karnataka bounds / swapped lat-lon }
+
 components:
   schemas:
+    OverlayProvenance:
+      type: object
+      required: [source, confidence]
+      properties:
+        source: { type: string }
+        confidence: { type: string, enum: ["authoritative", "inferred", "unresolved"] }
+        vintage: { type: string, nullable: true }
+    OverlayItem:
+      type: object
+      required: [name, status, as_of, provenance]
+      properties:
+        name: { type: string }
+        status:
+          type: string
+          enum: ["R", "A", "G", "unresolved"]
+          description: >
+            R inside strictest buffer / obstacle; A contested-or-less-strict band or
+            height-limited OLS surface; G clear (ONLY when a bundled authoritative layer can
+            clear it); unresolved no bundled clearing layer — absence is NOT clear.
+        distance_m: { type: number, nullable: true, description: "EPSG:32643 metres" }
+        buffer_m: { type: number, nullable: true, description: "strictest in-force regime" }
+        buffer_range_m:
+          type: array
+          nullable: true
+          items: { type: number }
+          description: "[min, max] across regimes when they disagree"
+        reference_point: { type: string, nullable: true, enum: ["centre", "periphery"] }
+        rule_citation: { type: string, nullable: true }
+        effective_date: { type: string, nullable: true }
+        litigation_status: { type: string, nullable: true }
+        as_of: { type: string }
+        provenance: { $ref: "#/components/schemas/OverlayProvenance" }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+        crs: { type: string, default: "EPSG:32643" }
+    OverlayVerdict:
+      type: object
+      required: [hard_no_go, blocks_clean_go, red_overlays, unresolved_overlays]
+      properties:
+        hard_no_go: { type: boolean, description: "any RED overlay" }
+        blocks_clean_go: { type: boolean, description: "any unresolved overlay — forces CAUTION" }
+        red_overlays: { type: array, items: { type: string } }
+        unresolved_overlays: { type: array, items: { type: string } }
+    OverlayResult:
+      type: object
+      required: [lat, lon, overlays, verdict, live_overlays, pending_overlays]
+      properties:
+        lat: { type: number, format: float }
+        lon: { type: number, format: float }
+        crs: { type: string, default: "EPSG:32643" }
+        overlays:
+          type: array
+          items: { $ref: "#/components/schemas/OverlayItem" }
+        verdict: { $ref: "#/components/schemas/OverlayVerdict" }
+        live_overlays: { type: array, items: { type: string } }
+        pending_overlays: { type: array, items: { type: string } }
+        data_disclaimer: { type: string }
     Severity:
       type: string
       enum: ["low", "moderate", "high", "none"]

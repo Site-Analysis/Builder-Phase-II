@@ -19,7 +19,8 @@ export type FeatureFlag =
   | "feature.rainfall.seasonality"
   | "feature.rainfall.site-analysis"
   | "feature.planning.road-width-resolver"
-  | "feature.planning.far-assembly";
+  | "feature.planning.far-assembly"
+  | "feature.geo.overlays";
 
 const enabled: Set<string> = new Set(
   (process.env.FLAGS ?? "").split(",").map((f) => f.trim()).filter(Boolean)

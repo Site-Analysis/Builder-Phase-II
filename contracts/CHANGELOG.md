@@ -1,5 +1,28 @@
 # Contract Changelog
 
+## 2.16.0 — 2026-07-22
+
+### Added — geo.yaml (v1.5.0 → v1.6.0, unified deal-killer overlay engine, US-088)
+- New `GET /geo/overlays` → `OverlayResult`. Consolidates the rajakaluve/waterbody/flood/forest/
+  airport-OLS/HT-line overlay logic previously scattered across geo/flood/infrastructure/planning
+  into ONE dated-config registry (other services keep their endpoints; this is the single
+  deal-killer view the future US-092 GO/NO-GO engine reads).
+- **CARDINAL RULE encoded in the contract**: an overlay with no bundled AUTHORITATIVE clearing
+  layer returns `status: unresolved`, NEVER `G`/clear — absence of data is not absence of hazard.
+  Only `rajakaluve/drains` and `airport-OLS` (bundled geometry/coords) can return `G`. `lakes`,
+  `wetland`, `flood`, `forest`, `HT-line`, `gas` are PENDING → `unresolved` (loud) until their
+  layers are bundled; a trustworthy PRESENCE probe may still fire `R`, but silence never clears.
+- **Buffers are dated config, not constants**: each overlay carries the STRICTEST in-force regime
+  (`buffer_m`) plus `buffer_range_m` when regimes disagree, `reference_point` (centre vs
+  periphery — regimes differ), `rule_citation`, `effective_date`, `litigation_status`. A
+  proposed/stayed regime (e.g. rajakaluve 2025 draft 30 m) is surfaced in the range but never
+  governs.
+- All distances in **EPSG:32643** (UTM 43N metres, hand-rolled TM projection — never degrees);
+  Karnataka lat/lon order + bounds asserted (422 on swap/out-of-bounds). `verdict.hard_no_go`
+  (any RED) and `verdict.blocks_clean_go` (any unresolved) exposed as booleans.
+- New schemas `OverlayProvenance`, `OverlayItem`, `OverlayVerdict`, `OverlayResult`. Gated by
+  new flag `feature.geo.overlays`. Additive; no existing geo field changed.
+
 ## 2.15.0 — 2026-07-21
 
 ### Added — planning.yaml (v1.1.0 → v1.2.0, permissible-vs-achievable FAR, US-084)
