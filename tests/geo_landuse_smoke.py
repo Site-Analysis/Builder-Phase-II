@@ -180,7 +180,8 @@ def test_analyze_zone_osm_fallback(monkeypatch):
 
     res = asyncio.run(geo_service.GeoService().analyze_zone(12.97, 77.59))
     assert res.zone_authority == "OSM-inferred"
-    assert res.source_confidence == "community"
+    # OSM/Bhuvan land cover is INFERRED, never authoritative (unified vocab, US-088 P0).
+    assert res.source_confidence == "inferred"
 
 
 # ── Endpoint gate ────────────────────────────────────────────────────────────

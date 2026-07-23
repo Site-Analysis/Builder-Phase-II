@@ -14,8 +14,10 @@ from app.models.geo import (
     OverlayResult,
     ParcelGeometry,
     Provenance,
+    RingResult,
     SoilResult,
     WaterConstraintResult,
+    ZoneResolution,
     ZoneResult,
 )
 from app.services import kgis_service
@@ -33,6 +35,7 @@ _KGIS_FLAG = "feature.geo.kgis-context"
 _PARCEL_FLAG = "feature.geo.parcel-geometry"
 _AUTHORITY_FLAG = "feature.geo.authority"
 _OVERLAYS_FLAG = "feature.geo.overlays"
+_ZONE_RESOLVER_FLAG = "feature.geo.zone-resolver"
 
 
 def _enabled_flags() -> set[str]:
@@ -207,3 +210,65 @@ def get_overlays(
         return evaluate_overlays(lat, lon, building_height_m=building_height_m)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/ring", response_model=RingResult)
+def get_ring(
+    lat: float = Query(...),
+    lon: float = Query(...),
+) -> RingResult:
+    """US-082 Part 1 — RMP-2015 planning ring (I/II/III = TDR Zones A/B/C).
+
+    Point-in-polygon against OSM-derived Core/Outer Ring Road + LPA-proxy polygons; ALWAYS
+    `inferred`. A point beyond the LPA proxy, or one whose deciding polygon is unavailable, is
+    `unresolved` — never defaulted to Ring III. Feeds Additional-FAR by ring (reg 3.4.v). Gated by
+    `feature.geo.zone-resolver`. KA-only (lat/lon swap + bounds asserted → 422).
+    """
+    _require_flag(_ZONE_RESOLVER_FLAG)
+    from app.services.ring_service import classify_ring
+
+    try:
+        return RingResult(**classify_ring(lat, lon))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/zone-resolve", response_model=ZoneResolution)
+async def get_zone_resolution(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    user_zone: str | None = Query(None),
+    user_sub_zone: str | None = Query(None),
+    user_attested: bool = Query(False),
+    user_confirmed_date: str | None = Query(None),
+    include_osm_hint: bool = Query(True),
+) -> ZoneResolution:
+    """US-082 Part 2 — tiered zone resolver: RMP seam (authoritative) > user-confirmed
+    (authoritative-on-attestation, kept distinct) > OSM/Bhuvan (inferred HINT) > unresolved.
+
+    The OSM proposal is read from `analyze_zone` (the P0-fixed geo zone) unless `include_osm_hint`
+    is false or a user/RMP tier is supplied. A user-confirmed zone LIFTS `far_zone_confidence` to
+    authoritative but is tagged `source="user-confirmed"`, visibly distinct from an RMP read.
+    Gated by `feature.geo.zone-resolver`.
+    """
+    _require_flag(_ZONE_RESOLVER_FLAG)
+    from app.services.zone_resolver import resolve_zone
+
+    inp: dict = {}
+    if user_zone:
+        inp.update(user_zone=user_zone, user_sub_zone=user_sub_zone,
+                   user_attested=user_attested, user_confirmed_date=user_confirmed_date)
+    # Fetch the OSM/Bhuvan (or RMP-seam) proposal. Never fatal — a network miss just means no hint.
+    if include_osm_hint or not user_zone:
+        try:
+            zr = await _service.analyze_zone(
+                lat, lon, kgis_enabled=_KGIS_FLAG in _enabled_flags()
+            )
+            if zr.zone_authority == "BDA-RMP-2015":
+                inp.update(rmp_zone=zr.zone_class, rmp_vintage="RMP-2015")
+            else:
+                inp.update(osm_zone=zr.zone_class, osm_vintage=zr.lulc_vintage,
+                           osm_data_source=zr.data_source)
+        except HTTPException:
+            pass  # OSM upstream down -> resolve on whatever tier remains (user / unresolved)
+    return ZoneResolution(**resolve_zone(inp))

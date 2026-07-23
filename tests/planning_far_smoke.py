@@ -178,6 +178,25 @@ def test_unresolved_zone_no_default():
     assert r["status"] == "unresolved" and r["permissible_far"] is None and r["next_action"]
 
 
+# ── US-082 (b): ring strings from the geo ring-resolver drive Additional-FAR ──
+def test_ring_from_resolver_drives_additional_far():
+    """The geo /geo/ring endpoint emits ring 'I'/'II'/'III'; those exact strings must drive
+    Additional-FAR-by-ring (reg 3.4.v) here. I -> uplift applied; III -> 0.0 baseline label."""
+    r1 = _assemble(zone="Residential", sub_zone="Main", plot_area_sqm=1500, measured_width_m=20.0,
+                   ring="I", additional_far_eligible=True, zone_confidence="authoritative")
+    lbl1 = next(e for e in r1["entitlements"] if "Additional-FAR" in e["name"])
+    assert lbl1["status"] == "applied" and lbl1["additional_far"] == 0.25
+    r3 = _assemble(zone="Residential", sub_zone="Main", plot_area_sqm=1500, measured_width_m=20.0,
+                   ring="III", additional_far_eligible=True, zone_confidence="authoritative")
+    lbl3 = next(e for e in r3["entitlements"] if "Additional-FAR" in e["name"])
+    assert lbl3["status"] == "applied" and lbl3["additional_far"] == 0.0  # Ring III baseline
+    # PENDING Ring-II >4000 cell stays PENDING (not filled by this feature)
+    r2 = _assemble(zone="Residential", sub_zone="Main", plot_area_sqm=6000, measured_width_m=32.0,
+                   ring="II", additional_far_eligible=True, zone_confidence="authoritative")
+    lbl2 = next(e for e in r2["entitlements"] if "Additional-FAR" in e["name"])
+    assert lbl2["status"] == "pending" and lbl2["additional_far"] is None
+
+
 # ── (h) worked example reproduces ───────────────────────────────────────────
 def test_worked_example_reproduces():
     data = json.loads((_FIX / "us084_far.json").read_text(encoding="utf-8"))

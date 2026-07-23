@@ -86,6 +86,49 @@ class OverlayResult(BaseModel):
     data_disclaimer: str = ""
 
 
+class RingResult(BaseModel):
+    """RMP-2015 planning ring (US-082 Part 1). Ring I/II/III = TDR Zones A/B/C. `confidence` is
+    ALWAYS `inferred` — the rings are OSM-derived, never authoritative. `ring` is null with
+    status `unresolved` when the deciding polygon is unavailable or the point is beyond the LPA
+    proxy — NEVER defaulted to Ring III."""
+
+    status: Literal["resolved", "unresolved"]
+    ring: Literal["I", "II", "III"] | None = None
+    tdr_zone: Literal["A", "B", "C"] | None = None
+    confidence: Literal["inferred"] = "inferred"
+    data_source: str
+    data_vintage: str | None = None
+    reg_basis: str
+    reason: str | None = None
+    next_action: str | None = None
+    notes: list[str] = []
+
+
+class ZoneResolution(BaseModel):
+    """Tiered zone resolution (US-082 Part 2). Best-available tier wins: rmp (authoritative) >
+    user-confirmed (authoritative-on-attestation, kept distinct) > osm (inferred HINT) >
+    unresolved. `far_zone_confidence` is what planning must carry into FarAssemblyRequest so an
+    inferred zone can never mint an authoritative FAR (the US-088 P0 contract)."""
+
+    status: Literal["resolved", "unresolved"]
+    zone: str | None = None
+    sub_zone: str | None = None
+    confidence: SourceConfidence
+    source: str | None = None  # "BDA-RMP-2015" | "user-confirmed" | "OSM/Bhuvan (inferred)"
+    data_source: str | None = None
+    data_vintage: str | None = None
+    unverified: bool = False
+    attested: bool = False
+    proposed_zone: str | None = None      # the OSM hint even when a better tier won / none did
+    proposed_sub_zone: str | None = None
+    reason: str | None = None
+    next_action: str | None = None
+    notes: list[str] = []
+    far_zone_confidence: Literal["authoritative", "inferred"] = "inferred"
+    sub_zone_status: Literal["resolved", "unresolved"] = "unresolved"
+    sub_zone_reason: str | None = None
+
+
 class NearbyFeature(BaseModel):
     type: str
     value: str

@@ -1,5 +1,24 @@
 # Contract Changelog
 
+## 2.18.0 — 2026-07-23
+
+### Added — geo.yaml (v1.7.0 → v1.8.0), US-082 ring classification + tiered zone resolver
+- **`GET /geo/ring`** (`RingResult`) — RMP-2015 planning ring I/II/III (= TDR Zones A/B/C) by
+  point-in-polygon against OSM-derived Core/Outer Ring Road + a municipal-boundary LPA proxy
+  (EPSG:32643). Confidence is ALWAYS `inferred` (OSM-derived, never authoritative). A point beyond
+  the LPA proxy, or one whose deciding polygon could not be closed reliably at prep time, is
+  `unresolved` — NEVER defaulted to Ring III and never approximated with a circle. Feeds
+  Additional-FAR by ring (reg 3.4.v). Karnataka-only (lat/lon swap + bounds → 422).
+- **`GET /geo/zone-resolve`** (`ZoneResolution`) — tiered zone resolver: RMP seam (authoritative) >
+  user-confirmed (authoritative-on-attestation, tagged `source="user-confirmed"`, kept VISIBLY
+  DISTINCT from an RMP read) > OSM/Bhuvan (inferred HINT with an "unverified — confirm before
+  relying" note) > unresolved. `far_zone_confidence` propagates the ceiling into the FAR assembly
+  so an inferred zone can never mint an authoritative FAR (the US-088 P0 contract). An absent
+  sub_zone stays `unresolved` — never defaulted to Main.
+- Both gated by the new flag **`feature.geo.zone-resolver`** (default-off). Ring geometry is
+  produced dev-time by `scripts/prep_ring_polygons.py` (OSM Overpass); the runtime is GeoJSON-only
+  and returns `unresolved` when the polygons are not bundled. Additive — no field removed.
+
 ## 2.17.0 — 2026-07-22
 
 ### Changed — geo.yaml (v1.6.0 → v1.7.0) + planning.yaml (v1.2.0 → v1.3.0), US-088 dry-run P0 fix

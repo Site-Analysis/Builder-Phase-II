@@ -808,7 +808,7 @@ export async function getZoneAnalysis(lat: number, lon: number): Promise<ModuleR
     chart_data: nearbyFeatures.map((f) => ({ label: f.value, value: f.distance_m })),
     qualitative: [
       ...lulcQual,
-      { label: "Data Confidence", value: sourceConf === "authoritative" ? "Authoritative (ISRO NRSC + OSM)" : "Community (OSM only)", tone: sourceConf === "authoritative" ? "good" : "warn" },
+      { label: "Data Confidence", value: sourceConf === "authoritative" ? "Authoritative (BDA RMP-2015)" : "Inferred (OSM/Bhuvan) — UNVERIFIED, confirm the RMP zone (see /geo/zone-resolve)", tone: sourceConf === "authoritative" ? "good" : "warn" },
       { label: "Zone Code", value: String(d.zone_code ?? "Verify locally"), tone: "neutral" },
       {
         label: "⚠ Zone Disclaimer",
@@ -1141,6 +1141,145 @@ export function farAssemblyQualitative(
 
   out.push({ label: "⚠ Disclaimer", value: r.disclaimer, tone: "warn" });
   return out;
+}
+
+// ─── Ring + tiered zone resolver — GET /geo/ring, /geo/zone-resolve (US-082) ──
+// Gated by feature.geo.zone-resolver. Ring is ALWAYS inferred (OSM-derived). The zone resolver
+// tiers RMP (authoritative) > user-confirmed (authoritative-on-attestation, kept DISTINCT) >
+// OSM (inferred HINT, unverified) > unresolved. On user confirmation the FAR confidence lifts.
+
+export interface RingResult {
+  status: "resolved" | "unresolved";
+  ring: "I" | "II" | "III" | null;
+  tdr_zone: "A" | "B" | "C" | null;
+  confidence: "inferred";
+  data_source: string;
+  data_vintage: string | null;
+  reg_basis: string;
+  reason: string | null;
+  next_action: string | null;
+  notes: string[];
+}
+
+export interface ZoneResolution {
+  status: "resolved" | "unresolved";
+  zone: string | null;
+  sub_zone: string | null;
+  confidence: "authoritative" | "derived" | "inferred" | "unresolved";
+  source: string | null; // "BDA-RMP-2015" | "user-confirmed" | "OSM/Bhuvan (inferred)"
+  data_source: string | null;
+  data_vintage: string | null;
+  unverified: boolean;
+  attested: boolean;
+  proposed_zone: string | null;
+  proposed_sub_zone: string | null;
+  reason: string | null;
+  next_action: string | null;
+  notes: string[];
+  far_zone_confidence: "authoritative" | "inferred";
+  sub_zone_status: "resolved" | "unresolved";
+  sub_zone_reason: string | null;
+}
+
+export async function getRing(lat: number, lon: number): Promise<RingResult> {
+  return svcFetch<RingResult>(SVC.zone, `/geo/ring?lat=${lat}&lon=${lon}`);
+}
+
+export interface ResolveZoneInput {
+  lat: number;
+  lon: number;
+  user_zone?: string;
+  user_sub_zone?: string;
+  user_attested?: boolean;
+  user_confirmed_date?: string;
+  include_osm_hint?: boolean;
+}
+
+export async function resolveZone(input: ResolveZoneInput): Promise<ZoneResolution> {
+  const q = new URLSearchParams({ lat: String(input.lat), lon: String(input.lon) });
+  if (input.user_zone) q.set("user_zone", input.user_zone);
+  if (input.user_sub_zone) q.set("user_sub_zone", input.user_sub_zone);
+  if (input.user_attested != null) q.set("user_attested", String(input.user_attested));
+  if (input.user_confirmed_date) q.set("user_confirmed_date", input.user_confirmed_date);
+  if (input.include_osm_hint != null) q.set("include_osm_hint", String(input.include_osm_hint));
+  return svcFetch<ZoneResolution>(SVC.zone, `/geo/zone-resolve?${q.toString()}`);
+}
+
+/** The three zone provenance badges the UI must render VISIBLY DISTINCT — an RMP read, a
+ *  user-attested zone, and an unverified OSM hint must never look identical. */
+export type ZoneBadge = "rmp-authoritative" | "user-confirmed" | "osm-unverified" | "unresolved";
+
+export function zoneBadge(z: ZoneResolution): ZoneBadge {
+  if (z.status === "unresolved") return "unresolved";
+  if (z.source === "BDA-RMP-2015") return "rmp-authoritative";
+  if (z.source === "user-confirmed") return "user-confirmed";
+  return "osm-unverified";
+}
+
+/** Deep-links for the confirm-your-zone interaction: the official land-use + khata + DC-conversion
+ *  routes a builder uses to verify (or convert) the parcel's zone. */
+export function zoneVerificationLinks(): Array<{ label: string; href: string; note: string }> {
+  return [
+    { label: "BDA / GBA land-use (RMP-2015 district map)", href: "https://bdabangalore.org/",
+      note: "Confirm the official RMP land-use zone + sub-zone for the parcel." },
+    { label: "Khata — e-Aasthi (urban, BBMP/GBA)", href: "https://eaasthi.karnataka.gov.in/",
+      note: "Verify the property record / khata for urban parcels." },
+    { label: "Khata — e-Swathu (rural / gram panchayat)", href: "https://eswathu.karnataka.gov.in/",
+      note: "Verify the property record for rural / GP parcels." },
+    { label: "DC land conversion (Bhoomi / revenue)", href: "https://landrecords.karnataka.gov.in/",
+      note: "For agricultural land, confirm / apply for NA (non-agricultural) conversion." },
+  ];
+}
+
+/** The display model for the confirm-your-zone card: the badge, whether it is unverified, the
+ *  headline confidence, the OSM hint to confirm/correct, and the FAR confidence it will drive.
+ *  Pure — the React component renders this; no backend behaviour changes. */
+export function zoneConfirmationView(z: ZoneResolution): {
+  badge: ZoneBadge;
+  tone: QualitativeTone;
+  headline: string;
+  unverified: boolean;
+  proposedZone: string | null;
+  farConfidence: "authoritative" | "inferred";
+  subZoneNeeded: boolean;
+  action: string | null;
+  links: Array<{ label: string; href: string; note: string }>;
+} {
+  const badge = zoneBadge(z);
+  const tone: QualitativeTone =
+    badge === "rmp-authoritative" ? "good"
+    : badge === "user-confirmed" ? "good"
+    : badge === "osm-unverified" ? "warn"
+    : "bad";
+  const headline =
+    badge === "rmp-authoritative" ? `${z.zone ?? "—"} — authoritative (BDA RMP-2015)`
+    : badge === "user-confirmed" ? `${z.zone ?? "—"} — user-confirmed (attested; not an RMP read)`
+    : badge === "osm-unverified" ? `${z.zone ?? "—"} — UNVERIFIED OSM hint, confirm before relying`
+    : "Zone unresolved — confirm before any FAR";
+  return {
+    badge,
+    tone,
+    headline,
+    unverified: z.unverified,
+    proposedZone: z.proposed_zone,
+    farConfidence: z.far_zone_confidence,
+    subZoneNeeded: z.sub_zone_status === "unresolved",
+    action: z.next_action,
+    links: zoneVerificationLinks(),
+  };
+}
+
+/** Close the loop into FAR: an inferred/unverified zone caps FAR confidence at inferred; only an
+ *  RMP or attested user zone lifts it to authoritative (the US-088 anti-laundering contract). */
+export function farInputFromZone(
+  z: ZoneResolution, ring: RingResult | null,
+): Pick<FarAssemblyInput, "zone" | "sub_zone" | "zone_confidence" | "ring"> {
+  return {
+    zone: z.zone ?? undefined,
+    sub_zone: z.sub_zone ?? undefined,
+    zone_confidence: z.far_zone_confidence,
+    ring: ring?.ring ?? null,
+  };
 }
 
 // ─── Deal-killer overlays — GET /geo/overlays (US-088) ────────────────────────

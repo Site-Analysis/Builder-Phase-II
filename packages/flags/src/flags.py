@@ -41,6 +41,7 @@ class FeatureFlag(StrEnum):
     GEO_PARCEL_GEOMETRY = "feature.geo.parcel-geometry"
     GEO_AUTHORITY = "feature.geo.authority"
     GEO_OVERLAYS = "feature.geo.overlays"
+    GEO_ZONE_RESOLVER = "feature.geo.zone-resolver"
 
 
 _enabled: set[str] = {f.strip() for f in os.getenv("FLAGS", "").split(",") if f.strip()}
