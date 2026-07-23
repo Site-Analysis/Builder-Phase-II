@@ -58,7 +58,11 @@ class FloodRiskService:
             min_m=round(max(0.0, elevation_m - 5.0), 1),
             max_m=round(elevation_m + 5.0, 1),
             range_m=10.0,
-            slope_degrees=0.0,  # single-point SRTM cannot yield slope
+            # US-089 bug fix: was hardcoded 0.0 (read as "flat" — a silent false-negative). Slope
+            # is undefined at a single point; compute it from a DEM window via POST /flood/terrain.
+            slope_degrees=None,
+            slope_note="slope is not computable from a single point — POST a parcel polygon to "
+            "/flood/terrain for a GLO-30 DEM-window slope (this value is no longer a fake 0.0).",
             low_lying_area_pct=round(min(100.0, max(0.0, (200.0 - elevation_m) / 2.0)), 1),
             terrain_classification=(
                 "flat" if elevation_m < 100 else "hilly" if elevation_m < 600 else "mountainous"

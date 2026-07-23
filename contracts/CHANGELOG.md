@@ -1,5 +1,25 @@
 # Contract Changelog
 
+## 2.19.0 — 2026-07-23
+
+### Added — flood.yaml (v1.7.0 → v1.8.0), US-089 terrain + NDEM flood overlay
+- **`POST /flood/terrain`** (`TerrainResult`) — slope % / HAND / cut-fill from a Copernicus GLO-30
+  DEM window over the parcel polygon (reprojected to EPSG:32643 — metric CRS, never degree-spaced),
+  plus a MANUAL geotech bearing-capacity tier. NODATA is masked; a window >20% nodata returns
+  `unresolved`, never a phantom 0.0. Cut and fill are reported SEPARATELY. Bearing capacity is
+  authoritative only when a geotechnical value is supplied — never inferred from soil type
+  (SoilGrids). FABDEM (non-commercial) is not used. Gated by the new flag `feature.flood.terrain`
+  (default-off).
+- **`ElevationAnalysis.slope_degrees` bug fix** — was a hardcoded `0.0` that read as "flat" (a
+  silent false-negative); now `nullable` (+ `slope_note`) — null at a single point, with slope
+  deferred to `/flood/terrain`. Removed from the `required` list.
+- **NDEM flood overlay LIVE** (geo `/geo/overlays`, no contract change) — `scripts/prep_overlay_layers.py`
+  now slices the NDEM 1998-2022 inundation layer to `flood_inundation_ka.geojson`. A parcel
+  intersecting an observed polygon is RED; ABSENCE is AMBER (not GREEN) — "no observed inundation
+  in the 1998-2022 record" is weaker than "clear". A missing layer file stays `unresolved`
+  (cardinal rule). This clears flood from `blocks_clean_go` when the layer is present; HT-line + gas
+  remain unresolved, so `blocks_clean_go` stays true.
+
 ## 2.18.0 — 2026-07-23
 
 ### Added — geo.yaml (v1.7.0 → v1.8.0), US-082 ring classification + tiered zone resolver

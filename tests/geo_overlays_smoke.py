@@ -88,6 +88,68 @@ def test_missing_layer_file_is_unresolved_not_green(monkeypatch):
     assert "wetland" in r.verdict.unresolved_overlays
 
 
+# ── US-089 Part 1: NDEM flood overlay LIVE (synthetic layer injection) ───────
+_FLOOD_FNAME = "flood_inundation_ka.geojson"
+
+
+def _inject_flood_polygon(monkeypatch, *, around=(75.90, 12.40), half=0.01):
+    """Inject a synthetic flood-inundation polygon into the loader cache (proves the intersect
+    logic without shipping the 87 MB NDEM slice). `around` is (lon, lat)."""
+    import app.services.overlay_engine as eng
+
+    lon, lat = around
+    ring = [[lon - half, lat - half], [lon + half, lat - half], [lon + half, lat + half],
+            [lon - half, lat + half], [lon - half, lat - half]]
+    bbox = (lon - half, lat - half, lon + half, lat + half)
+    monkeypatch.setitem(eng._LAYER_CACHE, _FLOOD_FNAME, [(bbox, [[ring]])])
+
+
+def test_flood_inside_polygon_is_red(monkeypatch):
+    """(i) parcel intersecting an observed inundation polygon -> RED."""
+    _inject_flood_polygon(monkeypatch, around=(75.90, 12.40))
+    r = evaluate_overlays(12.40, 75.90)  # lat, lon — inside the injected polygon
+    f = _overlay(r, "flood")
+    assert f.status == "R"
+    assert f.provenance.confidence == "inferred" and f.provenance.vintage == "1998-2022"
+    assert "flooded" in (f.reason or "").lower() or "inundation" in (f.reason or "").lower()
+    assert r.verdict.hard_no_go is True and "flood" in r.verdict.red_overlays
+
+
+def test_flood_absence_is_amber_not_green_not_unresolved(monkeypatch):
+    """Absence semantics: file present, parcel NOT intersecting -> AMBER (A), never G, never
+    unresolved. 'No observed inundation' is weaker than 'clear' (absence != safe)."""
+    _inject_flood_polygon(monkeypatch, around=(75.90, 12.40))
+    r = evaluate_overlays(*_CLEAR)  # far from the injected polygon
+    f = _overlay(r, "flood")
+    assert f.status == "A", "absence of observed inundation must be AMBER, not G/unresolved"
+    assert f.status not in ("G", "unresolved")
+    assert "not a flood clearance" in (f.reason or "").lower() or "not \"clear\"" in (f.reason or "").lower() or "caution" in (f.reason or "").lower()
+
+
+def test_flood_layer_missing_is_unresolved_not_green(monkeypatch):
+    """(j) CARDINAL RULE survives for flood: file absent -> unresolved, never green."""
+    import app.services.overlay_engine as eng
+
+    monkeypatch.setitem(eng._LAYER_CACHE, _FLOOD_FNAME, None)
+    r = evaluate_overlays(*_CLEAR)
+    f = _overlay(r, "flood")
+    assert f.status == "unresolved" and f.status != "G"
+    assert f.provenance.confidence == "unresolved"
+    assert "flood" in r.verdict.unresolved_overlays
+
+
+def test_blocks_clean_go_after_flood_live(monkeypatch):
+    """(k) with flood LIVE + AMBER (not unresolved) at a clean parcel, flood no longer blocks a
+    clean GO — but HT-line + gas remain unresolved, so blocks_clean_go is STILL True. Honest
+    finding: the flood ingest clears ONE of the three, not all."""
+    _inject_flood_polygon(monkeypatch, around=(77.00, 15.00))  # far from _ALL_CLEAR
+    r = evaluate_overlays(*_ALL_CLEAR)
+    assert _overlay(r, "flood").status in ("A", "G")     # not unresolved
+    assert "flood" not in r.verdict.unresolved_overlays  # flood cleared from the blockers
+    assert set(r.verdict.unresolved_overlays) >= {"HT-line", "gas"}  # these still force it
+    assert r.verdict.blocks_clean_go is True             # still True — HT/gas remain
+
+
 # ── (d) distances in EPSG:32643 + KA-bounds swap canary ─────────────────────
 def test_distance_is_epsg32643_and_swap_canary():
     r = evaluate_overlays(*_ON_DRAIN)
@@ -117,11 +179,11 @@ def test_strictest_buffer_and_litigation_range():
 # ── (f) reference_point correct per regime (centre vs periphery) ────────────
 def test_reference_point_per_regime():
     r = evaluate_overlays(*_CLEAR)
-    # edge/FTL-referenced overlays -> periphery
-    for name in ("lakes/waterbodies", "wetland", "forest"):
+    # edge/FTL/extent-referenced overlays -> periphery (flood is a polygon-extent intersect)
+    for name in ("lakes/waterbodies", "wetland", "forest", "flood"):
         assert _overlay(r, name).reference_point == "periphery"
     # centreline/pipeline-referenced overlays -> centre
-    for name in ("HT-line", "gas", "flood"):
+    for name in ("HT-line", "gas"):
         assert _overlay(r, name).reference_point == "centre"
 
 

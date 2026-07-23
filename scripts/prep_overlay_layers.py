@@ -85,6 +85,16 @@ _FOREST_LAYER = {
         "source": "Survey of India forest boundaries",
     },
 }
+# US-089 Part 1 — NDEM historical flood inundation. 87 MB India-wide → STREAM only, same as
+# forests. Props kept minimal + tolerant (NDEM schema varies; the overlay only needs geometry).
+_STREAM_LAYERS = {
+    "flood_inundation_ka": {
+        "src": "NDEM_All_India_Flood_Innundation_1998_to_2022.geojson",
+        "props": ["State", "YEAR", "year", "flood", "Flood_Year"],  # tolerant — absent → None
+        "source": "NDEM flood inundation 1998-2022 (NRSC/ISRO)",
+        "vintage": "1998-2022",
+    },
+}
 
 
 def _rep_point_in_ka(geom: Any) -> tuple[float, float] | None:
@@ -174,13 +184,13 @@ def _prep_forests(name: str, cfg: dict[str, Any], src_dir: Path) -> dict[str, in
         sys.exit(f"MISSING source: {src}")
     before = 0
     keep: list[dict[str, Any]] = []
-    for f in _stream_features(src):   # never loads the 257 MB file whole
+    for f in _stream_features(src):   # never loads the whole file (257 MB forests / 87 MB NDEM)
         before += 1
         if _rep_point_in_ka(f.get("geometry")) is None:
             continue
         props = {k: (f.get("properties") or {}).get(k) for k in cfg["props"]}
         keep.append({"type": "Feature", "geometry": f["geometry"], "properties": props})
-    _write(name, keep, cfg["source"])
+    _write(name, keep, cfg["source"], vintage=cfg.get("vintage", "2024"))
     return {"before": before, "prefiltered": before, "after": len(keep)}
 
 
@@ -195,12 +205,12 @@ def _json_default(o: Any) -> Any:
     raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
 
-def _write(name: str, feats: list[dict[str, Any]], source: str) -> None:
+def _write(name: str, feats: list[dict[str, Any]], source: str, *, vintage: str = "2024") -> None:
     out = _OUT / f"{name}.geojson"
     fc = {
         "type": "FeatureCollection",
         "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}},
-        "_provenance": {"source": source, "licence": "CC0", "vintage": "2024",
+        "_provenance": {"source": source, "licence": "CC0", "vintage": vintage,
                         "access": "bharatlas", "slice": "Karnataka bbox 11.5-18.5N, 74.0-78.6E",
                         "confidence": "inferred"},
         "features": feats,
@@ -229,6 +239,7 @@ _DISPATCH = {
     **{k: ("parquet", v) for k, v in _PARQUET_LAYERS.items()},
     **{k: ("whole", v) for k, v in _GEOJSON_WHOLE.items()},
     **{k: ("forests", v) for k, v in _FOREST_LAYER.items()},
+    **{k: ("forests", v) for k, v in _STREAM_LAYERS.items()},  # NDEM flood — same streaming path
 }
 
 

@@ -341,6 +341,32 @@ _POLYGON_LIVE: list[dict[str, Any]] = [
         "the zonal master plan.",
     },
     {
+        "name": "flood", "fname": "flood_inundation_ka.geojson",
+        # US-089 Part 1 — NDEM satellite-observed inundation 1998-2022. EVIDENCE OF PAST FLOODING,
+        # not a predictive flood zone. Pure intersect (no buffer). ABSENCE SEMANTICS (honest): a
+        # parcel NOT intersecting is NOT "clear" — it means "no observed inundation in THIS record"
+        # (a 25-yr satellite record misses unobserved/localised/future events). So absence → AMBER
+        # (A), never G. File absent → unresolved (cardinal rule).
+        "regimes": [
+            {"buffer_m": 0.0, "reference_point": "periphery",
+             "rule_citation": "NDEM flood inundation 1998-2022 (NRSC/ISRO) — satellite-observed "
+             "historical inundation extent; evidence of past flooding, NOT a predictive flood zone",
+             "effective_date": "1998-01-01", "litigation_status": "settled"},
+        ],
+        "source": "NDEM flood inundation 1998-2022 (NRSC/ISRO, bharatlas, CC0)",
+        "vintage": "1998-2022",
+        "absence_status": "A",
+        "absence_reason": "no observed inundation in the NDEM 1998-2022 record at this parcel — "
+        "this is NOT a flood clearance: the record is a 25-yr satellite observation that can miss "
+        "unobserved, localised, drainage-failure or future flooding. Treat as caution, not clear.",
+        "absence_next_action": "cross-check the /flood elevation+rainfall score and a local drainage "
+        "survey; historical non-observation does not certify the site as flood-safe.",
+        "inside_reason": "parcel intersects a satellite-observed flood inundation polygon "
+        "(NDEM 1998-2022) — the site FLOODED in the observed record.",
+        "next_action": "treat as a flood-prone site: commission a hydrological study; elevate "
+        "plinth; confirm the inundation year/return-period with NRSC Bhuvan.",
+    },
+    {
         "name": "lakes/waterbodies", "fname": "lakes_ka.geojson",
         # Multi-regime, strictest governs (same shape as rajakaluve). NGT 75 m is the strictest
         # in-force → governs; RMP 30 m + KTCDA 30 m are in force but looser; the KTCDA-2025
@@ -372,19 +398,6 @@ _POLYGON_LIVE: list[dict[str, Any]] = [
 # PENDING overlays: still no bundled clearing layer → unresolved on absence. A trustworthy
 # PRESENCE observation may fire RED, but silence can never clear one.
 _PENDING_SPECS: list[dict[str, Any]] = [
-    {
-        "name": "flood", "reference_point": "centre",
-        "regimes": [
-            {"buffer_m": 0.0, "reference_point": "centre",
-             "rule_citation": "Flood-risk (elevation + rainfall + hydrology) — /flood service",
-             "effective_date": None, "litigation_status": "settled"},
-        ],
-        "source": "flood-risk service (elevation/rainfall) — cross-service, not consolidatable",
-        "reason": "flood risk requires the elevation+rainfall model in the /flood service, which "
-        "this engine cannot import cross-service; river/lake PROXIMITY is covered by the "
-        "lakes/waterbodies overlay.",
-        "next_action": "call the /flood endpoint for the elevation/rainfall flood score.",
-    },
     {
         "name": "HT-line", "reference_point": "centre",
         "regimes": [
@@ -532,14 +545,18 @@ def evaluate_overlays(
             ))
             continue
         live.append(spec["name"])
-        prov = OverlayProvenance(source=spec["source"], confidence="inferred", vintage="2024")
+        prov = OverlayProvenance(source=spec["source"], confidence="inferred",
+                                 vintage=spec.get("vintage", "2024"))
         d = probe["distance_m"]
         hit = probe["inside"] or (d is not None and d <= sreg["buffer_m"])
+        # Absence status is per-spec: most layers CLEAR to G, but flood absence is only AMBER —
+        # "no observed inundation" is weaker than "clear" (absence != safe).
+        absence_status = spec.get("absence_status", "G")
         items.append(_item(
-            spec["name"], "R" if hit else "G", None if d is None else round(d, 1), sreg, as_of,
-            prov,
-            reason=spec["inside_reason"] if hit else None,
-            next_action=spec["next_action"] if hit else None,
+            spec["name"], "R" if hit else absence_status,
+            None if d is None else round(d, 1), sreg, as_of, prov,
+            reason=spec["inside_reason"] if hit else spec.get("absence_reason"),
+            next_action=spec["next_action"] if hit else spec.get("absence_next_action"),
         ))
 
     # ── PENDING: no bundled clearing layer → unresolved (presence-only R via observation) ──

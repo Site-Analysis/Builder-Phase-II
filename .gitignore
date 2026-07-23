@@ -58,3 +58,6 @@ docs/spikes/
 /services/geo/app/data/wetlands_ka.geojson
 /services/geo/app/data/lakes_ka.geojson
 /services/geo/app/data/forests_ka.geojson
+# US-089 Part 1 — NDEM flood inundation KA slice (87 MB India-wide source; KA slice is large,
+# derived, prep-on-setup). NEVER committed.
+/services/geo/app/data/flood_inundation_ka.geojson

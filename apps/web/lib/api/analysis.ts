@@ -1282,6 +1282,76 @@ export function farInputFromZone(
   };
 }
 
+// ─── Terrain — POST /flood/terrain (US-089 slope/HAND/cut-fill/geotech) ───────
+// Gated by feature.flood.terrain. Slope is DEM-derived (GLO-30, inferred); nodata>20% ->
+// unresolved (never a fake 0.0). Bearing capacity is authoritative ONLY from a manual geotech
+// value, never inferred from soil type.
+
+export interface SlopeResult {
+  status: "resolved" | "unresolved";
+  confidence: "authoritative" | "inferred" | "unresolved";
+  slope_pct_mean: number | null; slope_pct_max: number | null; slope_deg_mean: number | null;
+  nodata_pct: number | null; dem_source: string | null; crs: string | null;
+  reason: string | null; next_action: string | null;
+}
+export interface CutFillResult {
+  status: "resolved" | "unresolved"; confidence: string;
+  target_pad_m: number | null; target_source: string | null;
+  cut_m3: number | null; fill_m3: number | null; net_m3: number | null;
+  cell_area_m2: number | null; reason: string | null; next_action: string | null;
+}
+export interface BearingCapacityResult {
+  status: "resolved" | "unresolved";
+  confidence: "authoritative" | "inferred" | "unresolved";
+  value_kpa: number | null; method: string | null; source: string | null;
+  reason: string | null; next_action: string | null;
+}
+export interface TerrainResult {
+  status: "resolved" | "unresolved";
+  slope: SlopeResult;
+  hand: { status: string; confidence: string; hand_m_mean: number | null; hand_m_max: number | null; drainage_elev_m: number | null; method_note: string | null; reason: string | null; next_action: string | null };
+  cut_fill: CutFillResult;
+  bearing_capacity: BearingCapacityResult;
+  dem_source: string;
+  notes: string[];
+  data_disclaimer: string;
+}
+export interface TerrainInput {
+  parcel_geojson: Record<string, unknown>;   // GeoJSON Polygon (WGS84)
+  target_pad_m?: number;
+  bearing_capacity_kpa?: number;
+  geotech_method?: string;
+  geotech_source?: string;
+}
+
+export async function getTerrain(input: TerrainInput): Promise<TerrainResult> {
+  return svcFetch<TerrainResult>(SVC.flood, "/flood/terrain", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Terrain display rows — slope/HAND/cut-fill/bearing, each showing resolved vs unresolved
+ *  honestly (an unresolved slope is a warning, NOT a 0.0). */
+export function terrainQualitative(r: TerrainResult): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  const s = r.slope;
+  out.push(s.status === "resolved"
+    ? { label: "Slope (GLO-30 DEM)", value: `${s.slope_pct_mean}% mean / ${s.slope_pct_max}% max (${s.slope_deg_mean}°). Inferred — verify vs surveyed contours.`, tone: "warn" }
+    : { label: "⚠ Slope Unresolved", value: `${s.reason ?? ""} Next: ${s.next_action ?? "supply a surveyed slope."}`, tone: "bad" });
+  if (r.hand.status === "resolved")
+    out.push({ label: "HAND (parcel-window approx)", value: `${r.hand.hand_m_mean} m mean above drainage. ${r.hand.method_note ?? ""}`, tone: "neutral" });
+  const cf = r.cut_fill;
+  if (cf.status === "resolved")
+    out.push({ label: "Cut / Fill", value: `cut ${cf.cut_m3} m³, fill ${cf.fill_m3} m³ (net ${cf.net_m3} m³) vs ${cf.target_source}.`, tone: "neutral" });
+  const b = r.bearing_capacity;
+  out.push(b.status === "resolved"
+    ? { label: "Bearing Capacity (geotech)", value: `${b.value_kpa} kPa — ${b.method} (${b.source}). Authoritative.`, tone: "good" }
+    : { label: "⚠ Bearing Capacity Unresolved", value: `${b.reason ?? ""} Next: ${b.next_action ?? "supply a geotechnical report."}`, tone: "warn" });
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
+}
+
 // ─── Deal-killer overlays — GET /geo/overlays (US-088) ────────────────────────
 // Gated by feature.geo.overlays. CARDINAL RULE: `unresolved` is NOT clear — it renders
 // distinct from green. Any RED → hard NO-GO; any unresolved → blocks a clean GO.

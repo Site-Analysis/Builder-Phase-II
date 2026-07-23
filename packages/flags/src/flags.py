@@ -18,6 +18,7 @@ from enum import StrEnum
 class FeatureFlag(StrEnum):
     TEMPERATURE_THERMAL_PROFILE = "feature.temperature.thermal-profile"
     FLOOD_RISK_ANALYSIS = "feature.flood.risk-analysis"
+    FLOOD_TERRAIN = "feature.flood.terrain"
     SUNPATH_DIAGRAM = "feature.sunpath.diagram"
     SUNPATH_SOLAR_DAY = "feature.sunpath.solar-day"
     WIND_ANALYSIS = "feature.wind.analysis"
