@@ -38,7 +38,11 @@ _CLEAR = (12.811695, 77.505485)        # ~4.3 km from nearest drain -> rajakaluv
 _WET_INSIDE = (13.994899, 74.517427)   # inside a mapped KA wetland -> wetland RED
 _ALL_CLEAR = (12.4, 75.9)              # clear of wetland/ramsar/forest/ESZ/lakes -> those GREEN
 _INGESTED = ("wetland", "wetland-ramsar", "forest", "eco-sensitive-zone", "lakes/waterbodies")
-_STILL_PENDING = ("flood", "HT-line", "gas")
+# US-087 reclassification: gas + HT-distribution moved to the NOC checklist (unobtainable geometry
+# by nature) — they are NO LONGER scored overlays. Only flood (scored, file absent here) remains
+# an unresolved scored overlay in the test env.
+_STILL_PENDING = ("flood",)
+_CHECKLIST_NAMES = ("gas pipeline clearance", "HT distribution-feeder clearance (BESCOM)")
 
 
 def _overlay(res, name):
@@ -66,7 +70,7 @@ def test_clear_parcel_overlay_is_green():
 # ── (c) CARDINAL RULE: layers with NO bundled geometry stay unresolved ───────
 def test_pending_layers_are_unresolved_not_green():
     r = evaluate_overlays(*_ALL_CLEAR)
-    for name in _STILL_PENDING:  # flood/HT-line/gas — no geometry, cannot clear
+    for name in _STILL_PENDING:  # flood — scored, file absent here -> cannot clear
         o = _overlay(r, name)
         assert o.status == "unresolved", f"{name} must be unresolved (absence != clear)"
         assert o.distance_m is None
@@ -138,16 +142,47 @@ def test_flood_layer_missing_is_unresolved_not_green(monkeypatch):
     assert "flood" in r.verdict.unresolved_overlays
 
 
-def test_blocks_clean_go_after_flood_live(monkeypatch):
-    """(k) with flood LIVE + AMBER (not unresolved) at a clean parcel, flood no longer blocks a
-    clean GO — but HT-line + gas remain unresolved, so blocks_clean_go is STILL True. Honest
-    finding: the flood ingest clears ONE of the three, not all."""
-    _inject_flood_polygon(monkeypatch, around=(77.00, 15.00))  # far from _ALL_CLEAR
+# ── US-087 (a): gas + HT-distribution are NOC CHECKLIST, not scored overlays ─
+def test_gas_and_ht_are_checklist_not_scored_overlays():
     r = evaluate_overlays(*_ALL_CLEAR)
-    assert _overlay(r, "flood").status in ("A", "G")     # not unresolved
-    assert "flood" not in r.verdict.unresolved_overlays  # flood cleared from the blockers
-    assert set(r.verdict.unresolved_overlays) >= {"HT-line", "gas"}  # these still force it
-    assert r.verdict.blocks_clean_go is True             # still True — HT/gas remain
+    overlay_names = {o.name for o in r.overlays}
+    # NOT scored overlays anymore
+    assert "gas" not in overlay_names and "HT-line" not in overlay_names
+    # present as checklist items, each citing its rule + the reclassification reason
+    checklist_names = {c.name for c in r.noc_checklist}
+    assert set(_CHECKLIST_NAMES) <= checklist_names
+    for c in r.noc_checklist:
+        assert c.rule_citation and c.reclass_reason and c.authority
+        assert c.mandatory is True
+    # they do NOT appear in the verdict blockers
+    assert "gas" not in r.verdict.unresolved_overlays
+    assert "HT-line" not in r.verdict.unresolved_overlays
+
+
+# ── US-087 (b): a SCORED overlay with a missing layer STILL blocks (cardinal rule intact) ─
+def test_scored_overlay_missing_layer_still_blocks(monkeypatch):
+    """Reclassification must NOT weaken the cardinal rule for scored items: flood (scored) with its
+    layer absent is unresolved AND blocks a clean GO."""
+    import app.services.overlay_engine as eng
+
+    monkeypatch.setitem(eng._LAYER_CACHE, _FLOOD_FNAME, None)  # flood layer absent
+    r = evaluate_overlays(*_ALL_CLEAR)
+    assert _overlay(r, "flood").status == "unresolved"
+    assert "flood" in r.verdict.unresolved_overlays
+    assert r.verdict.blocks_clean_go is True
+
+
+# ── US-087 (c): clean parcel + flood data PRESENT -> blocks_clean_go can be FALSE ─
+def test_blocks_clean_go_can_be_false_with_flood_present(monkeypatch):
+    """THE POINT of the reclassification: with gas/HT off the scored list and the flood layer
+    present (parcel clear of it), NO scored overlay is unresolved -> blocks_clean_go is FALSE."""
+    # _CLEAR is within the Bengaluru rajakaluve coverage (rajakaluve resolves to G there); a point
+    # OUTSIDE coverage would leave rajakaluve unresolved (correctly). Flood injected far away -> A.
+    _inject_flood_polygon(monkeypatch, around=(77.00, 15.00))
+    r = evaluate_overlays(*_CLEAR)
+    assert _overlay(r, "flood").status in ("A", "G")       # flood resolved (not unresolved)
+    assert r.verdict.unresolved_overlays == []             # no scored overlay unresolved
+    assert r.verdict.blocks_clean_go is False              # <-- finally achievable
 
 
 # ── (d) distances in EPSG:32643 + KA-bounds swap canary ─────────────────────
@@ -182,30 +217,29 @@ def test_reference_point_per_regime():
     # edge/FTL/extent-referenced overlays -> periphery (flood is a polygon-extent intersect)
     for name in ("lakes/waterbodies", "wetland", "forest", "flood"):
         assert _overlay(r, name).reference_point == "periphery"
-    # centreline/pipeline-referenced overlays -> centre
-    for name in ("HT-line", "gas"):
-        assert _overlay(r, name).reference_point == "centre"
+    # airport-OLS is the remaining centre-referenced scored overlay (gas/HT moved to checklist)
+    assert _overlay(r, "airport-OLS").reference_point == "centre"
 
 
 # ── (g) verdict booleans: RED -> NO-GO; unresolved -> blocks GO ─────────────
 def test_verdict_booleans():
     r = evaluate_overlays(*_ON_DRAIN)
     assert r.verdict.hard_no_go is True              # rajakaluve RED
-    assert r.verdict.blocks_clean_go is True         # flood/HT-line/gas unresolved
-    # ingested layers are now LIVE; only flood/HT-line/gas remain pending.
+    assert r.verdict.blocks_clean_go is True         # flood (scored, file absent) unresolved
+    # ingested layers are now LIVE; only flood (scored, file absent here) remains pending.
     assert {"rajakaluve/drains", "airport-OLS", *_INGESTED} <= set(r.live_overlays)
     assert set(r.pending_overlays) == set(_STILL_PENDING)
 
 
-# ── presence probe may fire RED, but silence can NEVER clear ─────────────────
-def test_presence_probe_fires_red_but_silence_never_clears():
-    # HT-line has NO bundled geometry (still PENDING) — the observation seam applies to it.
-    # Trustworthy presence within the CEA buffer -> RED.
-    red = evaluate_overlays(*_CLEAR, observations={"HT-line": 10.0})
-    assert _overlay(red, "HT-line").status == "R"
-    # a "far" observation must NOT clear the overlay -> still unresolved
-    far = evaluate_overlays(*_CLEAR, observations={"HT-line": 9999.0})
-    assert _overlay(far, "HT-line").status == "unresolved"
+# ── presence-observation seam is dormant (no PENDING overlays after reclassification) ──
+def test_observation_seam_dormant_no_phantom_overlay():
+    # After US-087, gas/HT are checklist items — there are no PENDING scored overlays. An
+    # observation for a non-scored name must NOT fabricate an overlay or alter the verdict.
+    base = evaluate_overlays(*_CLEAR)
+    obs = evaluate_overlays(*_CLEAR, observations={"HT-line": 10.0})
+    assert {o.name for o in obs.overlays} == {o.name for o in base.overlays}
+    assert "HT-line" not in {o.name for o in obs.overlays}
+    assert obs.verdict.unresolved_overlays == base.verdict.unresolved_overlays
 
 
 # ── airport-OLS: supplied height piercing the cap -> RED, else height-limited ─

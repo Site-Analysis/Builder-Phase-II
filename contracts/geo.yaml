@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.8.0"
+  version: "1.9.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
     OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS layers. Zoning is
@@ -296,7 +296,27 @@ components:
         verdict: { $ref: "#/components/schemas/OverlayVerdict" }
         live_overlays: { type: array, items: { type: string } }
         pending_overlays: { type: array, items: { type: string } }
+        noc_checklist:
+          type: array
+          description: >
+            US-087 — mandatory obligations with NO obtainable public geometry BY NATURE (gas,
+            HT-distribution). NOT scored R/A/G, NOT in `overlays`, do NOT affect `verdict`.
+          items: { $ref: "#/components/schemas/OverlayNocChecklistItem" }
         data_disclaimer: { type: string }
+    OverlayNocChecklistItem:
+      type: object
+      required: [name, authority, requirement, rule_citation, reclass_reason]
+      properties:
+        name: { type: string }
+        authority: { type: string }
+        requirement: { type: string }
+        rule_citation: { type: string }
+        typical_validity: { type: string, nullable: true }
+        deep_link: { type: string, nullable: true }
+        reclass_reason:
+          type: string
+          description: WHY it is unobtainable — so this is never mistaken for weakening the rule
+        mandatory: { type: boolean, default: true }
     RingResult:
       type: object
       required: [status, confidence, data_source, reg_basis]

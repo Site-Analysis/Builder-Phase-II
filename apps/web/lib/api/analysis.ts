@@ -1384,6 +1384,17 @@ export interface OverlayVerdict {
   red_overlays: string[];
   unresolved_overlays: string[];
 }
+export interface OverlayNocChecklistItem {
+  name: string;
+  authority: string;
+  requirement: string;
+  rule_citation: string;
+  typical_validity: string | null;
+  deep_link: string | null;
+  reclass_reason: string;
+  mandatory: boolean;
+}
+
 export interface OverlayResult {
   lat: number;
   lon: number;
@@ -1392,6 +1403,9 @@ export interface OverlayResult {
   verdict: OverlayVerdict;
   live_overlays: string[];
   pending_overlays: string[];
+  // US-087: obligations with no obtainable public geometry (gas, HT-distribution) — surfaced but
+  // NOT scored and NOT verdict blockers.
+  noc_checklist: OverlayNocChecklistItem[];
   data_disclaimer: string;
 }
 
@@ -1847,6 +1861,67 @@ export async function getInfraAnalysis(lat: number, lon: number): Promise<Module
     loading: false,
     error: null,
   };
+}
+
+// ─── Utilities + NOC checklist — POST /infrastructure/utilities (US-087) ──────
+// Gated by feature.infrastructure.utilities. Water main presence is authoritative-only ('unknown'
+// without a BWSSB layer); availability is an inferred OSM proxy; NOC items are mandatory
+// obligations, not scored. infra_readiness feeds the US-092 verdict.
+
+export interface UtilityMain {
+  name: string;
+  present: "present" | "absent" | "unknown";
+  confidence: "authoritative" | "inferred" | "unresolved";
+  distance_m: number | null; diameter_mm: number | null;
+  data_source: string | null; reason: string | null; next_action: string | null;
+}
+export interface UtilityAvailability {
+  name: string; score: number; confidence: "authoritative" | "inferred" | "unresolved";
+  nearest_m: number | null; detected: boolean; note: string | null;
+}
+export interface InfraNocChecklistItem {
+  authority: string; requirement: string; rule_citation: string;
+  typical_validity: string | null; deep_link: string | null;
+  applies_when: string | null; mandatory: boolean;
+}
+export interface InfraReadiness {
+  water_status: "present" | "absent" | "unknown";
+  water_confidence: "authoritative" | "inferred" | "unresolved";
+  telecom_score: number; power_score: number | null; road_score: number | null;
+  noc_pending: number; overall: "ready" | "partial" | "unknown"; notes: string[];
+}
+export interface UtilitiesResult {
+  water_main: UtilityMain; sewer_main: UtilityMain;
+  water_availability: UtilityAvailability; telecom_availability: UtilityAvailability;
+  storm_water_note: string; noc_checklist: InfraNocChecklistItem[];
+  infra_readiness: InfraReadiness; data_source: string; data_disclaimer: string;
+}
+
+export async function getUtilities(lat: number, lon: number, radiusM = 3000): Promise<UtilitiesResult> {
+  return svcFetch<UtilitiesResult>(SVC.infrastructure, "/infrastructure/utilities", {
+    method: "POST",
+    body: JSON.stringify({ latitude: lat, longitude: lon, radius_m: radiusM }),
+  });
+}
+
+/** Utilities rows — main presence shown honestly (unknown != absent), NOC checklist surfaced. */
+export function utilitiesQualitative(r: UtilitiesResult): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  for (const m of [r.water_main, r.sewer_main]) {
+    out.push(m.present === "present"
+      ? { label: `${m.name}`, value: `present (${m.confidence})${m.diameter_mm ? `, Ø${m.diameter_mm}mm` : ""}.`, tone: "good" }
+      : { label: `⚠ ${m.name}`, value: `${m.present.toUpperCase()} — ${m.reason ?? ""} ${m.next_action ?? ""}`, tone: "warn" });
+  }
+  out.push({ label: "Water availability (OSM proxy)", value: `${r.water_availability.score}/100 (inferred — not a connection).`, tone: "neutral" });
+  out.push({ label: "Telecom availability (OSM proxy)", value: `${r.telecom_availability.score}/100 (inferred).`, tone: "neutral" });
+  const rd = r.infra_readiness;
+  out.push({ label: "Infra readiness (US-092)", value: `${rd.overall.toUpperCase()} — water ${rd.water_status}, telecom ${rd.telecom_score}/100, ${rd.noc_pending} NOC obligations pending.`, tone: rd.overall === "ready" ? "good" : rd.overall === "unknown" ? "warn" : "neutral" });
+  for (const c of r.noc_checklist) {
+    out.push({ label: `NOC — ${c.authority}`, value: `${c.requirement}. ${c.rule_citation}.${c.typical_validity ? ` Validity: ${c.typical_validity}.` : ""}${c.applies_when ? ` Applies: ${c.applies_when}.` : ""}`, tone: "warn" });
+  }
+  out.push({ label: "Storm water", value: r.storm_water_note, tone: "neutral" });
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
 }
 
 // ─── Soil Profile — GET /geo/soil ─────────────────────────────────────────────

@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Infrastructure Service
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     Site connectivity analysis from OpenStreetMap. Scores road access, public transit
     proximity, and power infrastructure within a radius. Water/sewage/telecom are
@@ -55,8 +55,102 @@ paths:
         "422":
           description: Validation error
 
+  /infrastructure/utilities:
+    post:
+      operationId: analyzeUtilities
+      summary: Utilities availability + NOC checklist + infra_readiness (US-087)
+      description: >
+        Water/telecom AVAILABILITY as an inferred OSM proximity proxy (never a connection claim);
+        BWSSB water/sewer trunk-main presence at AUTHORITATIVE confidence only (an official
+        BWSSB/KGIS mains layer) — otherwise `unknown` + "verify with BWSSB" (OSM cannot assert a
+        main exists). A structured NOC checklist of mandatory obligations (BWSSB, BESCOM/CEA-2010,
+        KSPCB CTE/CTO, Fire per RMP reg 3.12, AAI NOCAS, PNGRB gas, telecom RoW), each with its
+        authority + rule citation + typical validity + deep link. Emits `infra_readiness` for the
+        US-092 GO/NO-GO engine. Gated by `feature.infrastructure.utilities`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InfraRequest"
+      responses:
+        "200":
+          description: Utilities + NOC checklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UtilitiesResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
 components:
   schemas:
+    UtilityConfidence:
+      type: string
+      enum: ["authoritative", "inferred", "unresolved"]
+    Presence:
+      type: string
+      enum: ["present", "absent", "unknown"]
+    UtilityMain:
+      type: object
+      required: [name, present, confidence]
+      properties:
+        name: { type: string }
+        present: { $ref: "#/components/schemas/Presence" }
+        confidence: { $ref: "#/components/schemas/UtilityConfidence" }
+        distance_m: { type: number, format: float, nullable: true }
+        diameter_mm: { type: number, format: float, nullable: true }
+        data_source: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    UtilityAvailability:
+      type: object
+      required: [name, score, confidence]
+      properties:
+        name: { type: string }
+        score: { type: number, format: float }
+        confidence: { $ref: "#/components/schemas/UtilityConfidence" }
+        nearest_m: { type: number, format: float, nullable: true }
+        detected: { type: boolean }
+        note: { type: string, nullable: true }
+    NocChecklistItem:
+      type: object
+      required: [authority, requirement, rule_citation]
+      properties:
+        authority: { type: string }
+        requirement: { type: string }
+        rule_citation: { type: string }
+        typical_validity: { type: string, nullable: true }
+        deep_link: { type: string, nullable: true }
+        applies_when: { type: string, nullable: true }
+        mandatory: { type: boolean, default: true }
+    InfraReadiness:
+      type: object
+      required: [water_status, water_confidence, telecom_score, noc_pending, overall]
+      properties:
+        water_status: { $ref: "#/components/schemas/Presence" }
+        water_confidence: { $ref: "#/components/schemas/UtilityConfidence" }
+        telecom_score: { type: number, format: float }
+        power_score: { type: number, format: float, nullable: true }
+        road_score: { type: number, format: float, nullable: true }
+        noc_pending: { type: integer }
+        overall: { type: string, enum: ["ready", "partial", "unknown"] }
+        notes: { type: array, items: { type: string } }
+    UtilitiesResult:
+      type: object
+      required: [water_main, sewer_main, water_availability, telecom_availability, storm_water_note, noc_checklist, infra_readiness, data_source]
+      properties:
+        water_main: { $ref: "#/components/schemas/UtilityMain" }
+        sewer_main: { $ref: "#/components/schemas/UtilityMain" }
+        water_availability: { $ref: "#/components/schemas/UtilityAvailability" }
+        telecom_availability: { $ref: "#/components/schemas/UtilityAvailability" }
+        storm_water_note: { type: string }
+        noc_checklist: { type: array, items: { $ref: "#/components/schemas/NocChecklistItem" } }
+        infra_readiness: { $ref: "#/components/schemas/InfraReadiness" }
+        data_source: { type: string }
+        data_disclaimer: { type: string }
     Severity:
       type: string
       enum: ["low", "moderate", "high", "none"]

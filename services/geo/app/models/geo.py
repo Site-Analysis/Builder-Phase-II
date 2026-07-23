@@ -75,6 +75,24 @@ class OverlayVerdict(BaseModel):
     unresolved_overlays: list[str]
 
 
+class NocChecklistItem(BaseModel):
+    """A mandatory obligation that has NO obtainable public geometry BY NATURE (not by
+    circumstance) — so it is surfaced as a checklist item with its rule citation, but is NOT
+    scored R/A/G and does NOT block a clean GO (US-087 reclassification). `reclass_reason` records
+    WHY it is unobtainable so this can never be mistaken for weakening the underlying rule. If a
+    geometry layer ever arrives (e.g. HT transmission via VEDAS/OSM) that item flips back to a
+    scored overlay."""
+
+    name: str
+    authority: str
+    requirement: str
+    rule_citation: str
+    typical_validity: str | None = None
+    deep_link: str | None = None
+    reclass_reason: str
+    mandatory: bool = True
+
+
 class OverlayResult(BaseModel):
     lat: float
     lon: float
@@ -83,6 +101,9 @@ class OverlayResult(BaseModel):
     verdict: OverlayVerdict
     live_overlays: list[str]
     pending_overlays: list[str]
+    # US-087: obligations with no obtainable public geometry (gas, HT-distribution). NOT scored,
+    # NOT in `overlays`, do NOT affect verdict — surfaced so the builder still sees them.
+    noc_checklist: list[NocChecklistItem] = []
     data_disclaimer: str = ""
 
 

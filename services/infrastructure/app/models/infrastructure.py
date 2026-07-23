@@ -56,6 +56,78 @@ class InfraSubScores(BaseModel):
     telecom: float  # always 0 — OSM telecom coverage <20% in India, not scored
 
 
+Confidence = Literal["authoritative", "inferred", "unresolved"]
+Presence = Literal["present", "absent", "unknown"]
+
+
+class UtilityMain(BaseModel):
+    """A trunk main (BWSSB water / sewer). `present="present"` is ONLY allowed at `authoritative`
+    confidence (an official BWSSB/KGIS mains layer) — OSM/inference can never assert a main exists,
+    so without an authoritative layer this is `present="unknown"` + "verify with BWSSB" (US-087)."""
+
+    name: str
+    present: Presence = "unknown"
+    confidence: Confidence = "unresolved"
+    distance_m: float | None = None
+    diameter_mm: float | None = None
+    data_source: str | None = None
+    reason: str | None = None
+    next_action: str | None = None
+
+
+class UtilityAvailability(BaseModel):
+    """A SCORED availability signal from an inferred proxy (OSM). Never asserts a connection."""
+
+    name: str
+    score: float                      # 0-100 inferred availability
+    confidence: Confidence = "inferred"
+    nearest_m: float | None = None
+    detected: bool = False
+    note: str | None = None
+
+
+class NocChecklistItem(BaseModel):
+    authority: str
+    requirement: str
+    rule_citation: str
+    typical_validity: str | None = None
+    deep_link: str | None = None
+    applies_when: str | None = None   # e.g. "building height >= 24 m" for Fire NOC
+    mandatory: bool = True
+
+
+class InfraReadiness(BaseModel):
+    """Compact signal the US-092 GO/NO-GO engine consumes. Water is `known`/`unknown` (never
+    fabricated); telecom + power are inferred scores; `noc_pending` counts mandatory obligations."""
+
+    water_status: Presence
+    water_confidence: Confidence
+    telecom_score: float
+    power_score: float | None = None
+    road_score: float | None = None
+    noc_pending: int
+    overall: Literal["ready", "partial", "unknown"]
+    notes: list[str] = []
+
+
+class UtilitiesResult(BaseModel):
+    water_main: UtilityMain
+    sewer_main: UtilityMain
+    water_availability: UtilityAvailability
+    telecom_availability: UtilityAvailability
+    storm_water_note: str
+    noc_checklist: list[NocChecklistItem]
+    infra_readiness: InfraReadiness
+    data_source: str
+    data_disclaimer: str = (
+        "Water/sewer trunk-main PRESENCE requires an authoritative BWSSB/KGIS mains layer — absent "
+        "that, presence is 'unknown' (OSM cannot assert a main exists). Telecom availability is an "
+        "inferred OSM proxy. Storm-water/rajakaluve proximity: see the geo /geo/overlays engine. "
+        "The NOC checklist items are mandatory obligations, not scored constraints — confirm each "
+        "with its authority."
+    )
+
+
 class InfraResult(BaseModel):
     road_access: RoadAccess | None = None
     transit: list[TransitStop] = []

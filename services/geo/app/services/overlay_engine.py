@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models.geo import (
+    NocChecklistItem,
     OverlayItem,
     OverlayProvenance,
     OverlayResult,
@@ -395,34 +396,69 @@ _POLYGON_LIVE: list[dict[str, Any]] = [
     },
 ]
 
-# PENDING overlays: still no bundled clearing layer → unresolved on absence. A trustworthy
-# PRESENCE observation may fire RED, but silence can never clear one.
-_PENDING_SPECS: list[dict[str, Any]] = [
+# US-087 RECLASSIFICATION — the SCORED vs NOC-CHECKLIST split.
+#
+#   SCORED OVERLAY   — data exists or COULD exist (a clearing/hazard layer is bundlable). Absence
+#                      or a missing layer file -> `unresolved`, and unresolved BLOCKS a clean GO
+#                      (cardinal rule). These are: rajakaluve, airport-OLS, and the _POLYGON_LIVE
+#                      layers (lakes, wetland, ramsar, forest, ESZ, flood).
+#   NOC CHECKLIST    — NO obtainable public geometry BY NATURE (not by circumstance). A mandatory
+#                      obligation surfaced with its rule citation, but NOT scored R/A/G and NOT a
+#                      verdict blocker. `reclass_reason` records WHY it is unobtainable so this is
+#                      never mistaken for weakening the rule.
+#
+# _PENDING_SPECS is now EMPTY: the two former pending overlays (gas, HT-distribution) had no
+# obtainable geometry by nature -> they moved to _NOC_CHECKLIST below. The presence-observation
+# seam is retained (a future bundled layer can re-populate this list as a scored overlay).
+_PENDING_SPECS: list[dict[str, Any]] = []
+
+# Obligations reclassified OUT of scoring (gas, HT-distribution). Each cites its rule + WHY it is
+# unobtainable. These NEVER touch `overlays`/verdict.
+_NOC_CHECKLIST: list[dict[str, Any]] = [
     {
-        "name": "HT-line", "reference_point": "centre",
-        "regimes": [
-            {"buffer_m": 15.0, "reference_point": "centre",
-             "rule_citation": "CEA (Measures relating to Safety & Electric Supply) Regs 2010 — "
-             "horizontal ROW clearance (voltage-dependent; 220 kV ≈ 15 m)",
-             "effective_date": "2010-01-01", "litigation_status": "settled"},
-        ],
-        "source": "HT transmission geometry (bharatlas/OSM power=line) — NOT bundled",
-        "reason": "HT-line geometry not bundled; a nearby line is a hard clearance constraint and "
-        "OSM silence cannot clear it. Rule-only until geometry loads.",
-        "next_action": "load HT transmission lines; apply the CEA voltage-specific vertical + "
-        "horizontal clearance on survey.",
+        "name": "gas pipeline clearance",
+        "authority": "PNGRB / city gas distributor (e.g. GAIL Gas, AG&P Pratham)",
+        "requirement": "maintain the minimum building setback from any natural-gas pipeline / city "
+        "gas network alignment",
+        "rule_citation": "PNGRB (Technical Standards & Specifications incl. Safety) T4S — min 15 m "
+        "from a natural-gas pipeline",
+        "typical_validity": "per project (confirm at design)",
+        "deep_link": "https://www.pngrb.gov.in/",
+        "reclass_reason": "NO public gas-pipeline alignment dataset exists (security-restricted) — "
+        "unobtainable by nature, not circumstance. Cannot be scored from data; the rule stands and "
+        "must be confirmed with the distributor.",
     },
     {
-        "name": "gas", "reference_point": "centre",
+        "name": "HT distribution-feeder clearance (BESCOM)",
+        "authority": "BESCOM (distribution licensee)",
+        "requirement": "maintain the CEA horizontal/vertical clearance from HT distribution feeders "
+        "adjoining the plot",
+        "rule_citation": "CEA (Measures relating to Safety & Electric Supply) Regs 2010 — ROW/"
+        "clearance 18/27/35/52 m for 66/132/220/400 kV (voltage-dependent), plus vertical clearance",
+        "typical_validity": "confirm at sanction; feeder routes change",
+        "deep_link": "https://bescom.karnataka.gov.in/",
+        "reclass_reason": "BESCOM feeder geometry is NON-PUBLIC — unobtainable by nature. Shown as "
+        "RULES only. NOTE: if HT TRANSMISSION-line geometry is bundled (VEDAS/OSM power=line), that "
+        "portion flips BACK to a scored overlay (see _SCORED_WHEN_BUNDLED).",
+    },
+]
+
+# SEAM — HT transmission lines become a SCORED overlay the moment a geometry layer is bundled.
+# Until then the file is absent and this contributes NOTHING to `overlays`/verdict (it is covered
+# by the HT checklist item above). This is deliberately NOT treated like a scored-layer's missing
+# file (which would block): HT geometry is not merely un-prepped, it is not yet a dataset we hold.
+_SCORED_WHEN_BUNDLED: list[dict[str, Any]] = [
+    {
+        "name": "HT-transmission", "fname": "ht_transmission_ka.geojson",
         "regimes": [
-            {"buffer_m": 15.0, "reference_point": "centre",
-             "rule_citation": "PNGRB T4S — min 15 m from a natural-gas pipeline",
-             "effective_date": None, "litigation_status": "settled"},
+            {"buffer_m": 35.0, "reference_point": "centre",
+             "rule_citation": "CEA (Safety & Electric Supply) Regs 2010 — horizontal ROW clearance "
+             "(voltage-dependent; 220 kV ≈ 35 m). Strictest applied until per-line voltage known.",
+             "effective_date": "2010-01-01", "litigation_status": "settled"},
         ],
-        "source": "gas pipeline geometry — no public dataset (rule-only)",
-        "reason": "no public gas-pipeline geometry exists; this is a rule-only constraint and "
-        "cannot be cleared from data.",
-        "next_action": "confirm with GAIL/city gas distributor before design.",
+        "source": "HT transmission lines (VEDAS/OSM power=line) — bundled layer flips this to scored",
+        "inside_reason": "site within the CEA HT-transmission ROW clearance — a hard constraint.",
+        "next_action": "apply the CEA voltage-specific vertical + horizontal clearance on survey.",
     },
 ]
 
@@ -559,7 +595,25 @@ def evaluate_overlays(
             next_action=spec["next_action"] if hit else spec.get("absence_next_action"),
         ))
 
-    # ── PENDING: no bundled clearing layer → unresolved (presence-only R via observation) ──
+    # ── SEAM: HT-transmission is SCORED only if its geometry layer is bundled ──
+    # File absent → contributes NOTHING (covered by the HT NOC checklist item; NOT a blocking
+    # unresolved). File present → a normal scored polygon overlay (R inside ROW / G clear).
+    for spec in _SCORED_WHEN_BUNDLED:
+        sreg = _regime_summary(spec["regimes"])
+        probe = _probe_polygon_layer(spec["fname"], pe, pn, lat, lon)
+        if probe is None:
+            continue  # layer not yet bundled → checklist covers it, no verdict impact
+        live.append(spec["name"])
+        d = probe["distance_m"]
+        hit = probe["inside"] or (d is not None and d <= sreg["buffer_m"])
+        items.append(_item(
+            spec["name"], "R" if hit else "G", None if d is None else round(d, 1), sreg, as_of,
+            OverlayProvenance(source=spec["source"], confidence="inferred", vintage="2024"),
+            reason=spec["inside_reason"] if hit else None,
+            next_action=spec["next_action"] if hit else None,
+        ))
+
+    # ── PENDING (now empty): presence-observation seam for any future rule-only overlay ──
     for spec in _PENDING_SPECS:
         pending.append(spec["name"])
         sreg = _regime_summary(spec["regimes"])
@@ -579,6 +633,7 @@ def evaluate_overlays(
                 reason=spec["reason"], next_action=spec["next_action"],
             ))
 
+    # verdict reads ONLY scored overlays (items). The NOC checklist never blocks a clean GO.
     red = [i.name for i in items if i.status == "R"]
     unres = [i.name for i in items if i.status == "unresolved"]
     verdict = OverlayVerdict(
@@ -587,9 +642,11 @@ def evaluate_overlays(
         red_overlays=red,
         unresolved_overlays=unres,
     )
+    noc_checklist = [NocChecklistItem(**c) for c in _NOC_CHECKLIST]
     return OverlayResult(
         lat=lat, lon=lon, overlays=items, verdict=verdict,
-        live_overlays=live, pending_overlays=pending, data_disclaimer=_DISCLAIMER,
+        live_overlays=live, pending_overlays=pending,
+        noc_checklist=noc_checklist, data_disclaimer=_DISCLAIMER,
     )
 
 

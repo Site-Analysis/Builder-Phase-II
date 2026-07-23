@@ -1,5 +1,26 @@
 # Contract Changelog
 
+## 2.20.0 — 2026-07-23
+
+### Added — infrastructure.yaml (v1.0.0 → v1.1.0) + geo.yaml (v1.8.0 → v1.9.0), US-087 utilities + overlay reclassification
+- **`POST /infrastructure/utilities`** (`UtilitiesResult`) — water/telecom AVAILABILITY as an
+  inferred OSM proximity proxy (never a connection claim); BWSSB water/sewer trunk-main presence at
+  AUTHORITATIVE confidence ONLY (official BWSSB/KGIS mains layer), otherwise `unknown` + "verify
+  with BWSSB" (OSM cannot assert a main exists); a structured NOC checklist (BWSSB, BESCOM/CEA-2010
+  ROW, KSPCB CTE 15 yr / CTO, Fire per RMP reg 3.12 for ≥24 m, AAI NOCAS, PNGRB gas, telecom RoW),
+  each with authority + rule citation + typical validity + deep link; and an `infra_readiness`
+  signal (water known/unknown, telecom score, noc_pending, overall) for the US-092 GO/NO-GO engine.
+  Gated by the new flag `feature.infrastructure.utilities` (default-off).
+- **Overlay RECLASSIFICATION** (`OverlayResult.noc_checklist` + `OverlayNocChecklistItem`) —
+  overlays are now split into SCORED (data exists or could exist; absence → `unresolved` → BLOCKS a
+  clean GO — rajakaluve, lakes, wetland, ramsar, forest, ESZ, airport-OLS, flood) vs NOC CHECKLIST
+  (no obtainable public geometry BY NATURE — **gas** [no public alignment dataset] and
+  **HT-distribution feeders** [BESCOM geometry non-public]). Checklist items are surfaced with their
+  rule citation + a `reclass_reason` (WHY unobtainable), are NOT scored R/A/G, and do NOT affect the
+  verdict. `verdict.blocks_clean_go` now reflects ONLY scored overlays, so a clean parcel with the
+  flood layer present can return `blocks_clean_go=false`. A SEAM is kept: if HT-transmission geometry
+  is ever bundled (VEDAS/OSM), it flips back to a scored overlay. Additive — no field removed.
+
 ## 2.19.0 — 2026-07-23
 
 ### Added — flood.yaml (v1.7.0 → v1.8.0), US-089 terrain + NDEM flood overlay
