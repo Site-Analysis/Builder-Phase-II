@@ -1,5 +1,26 @@
 # Contract Changelog
 
+## 2.17.0 — 2026-07-22
+
+### Changed — geo.yaml (v1.6.0 → v1.7.0) + planning.yaml (v1.2.0 → v1.3.0), US-088 dry-run P0 fix
+- **geo `SourceConfidence` enum unified** `["authoritative", "community"]` →
+  `["authoritative", "derived", "inferred", "unresolved"]` — the ONE ladder used across overlays
+  + parcel provenance + planning FAR. An OSM/Bhuvan-derived zone is now `inferred` (never
+  `authoritative`); a `ZoneResult` with `source_confidence="authoritative"` and a non-RMP
+  `zone_authority` now FAILS validation (only `BDA-RMP-2015` may mint authoritative). Fixes the
+  P0 where a wrong OSM zone shipped wearing a trusted "authoritative" label.
+- **planning `FarAssemblyRequest.zone`** relaxed from the `ZoneClass` enum to `string`: it now
+  accepts the geo `zone_class` vocabulary. `far_assembly` maps it (`zone_map.map_geo_zone`); a
+  non-developable zone (Water Body / Green Belt / Agricultural / Restricted / Unknown) returns a
+  clean `unresolved` "no FAR table applies — not developable under RMP" result instead of a **422
+  crash**, and is never coerced to a nearest developable zone.
+- **planning FAR: missing `sub_zone` no longer silently defaults to the first table.** A zone with
+  multiple RMP sub-zones (Residential Main/Mixed, Commercial Central/Business/Mutation, Industrial
+  General/Hi-Tech) now returns `unresolved` with a next_action naming the choices — a silent Main
+  default was a confidently-wrong FAR (plot-size vs road-width keying). FAR output also carries an
+  explicit note when it rests on an inferred zone (confidence propagation already caps such a FAR
+  at ≤ derived; the note makes the dependency visible). Additive; no field removed.
+
 ## 2.16.0 — 2026-07-22
 
 ### Added — geo.yaml (v1.5.0 → v1.6.0, unified deal-killer overlay engine, US-088)

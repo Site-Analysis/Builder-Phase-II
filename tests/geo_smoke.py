@@ -234,3 +234,38 @@ def test_authority_no_context_no_fallback_unresolved(monkeypatch):
     assert body["confidence"] == "low"
     assert body["provenance"]["tier"] == "unresolved"
     assert body["provenance"]["mode"] == "unresolved"
+
+
+# ── US-088 dry-run FIX A: OSM-inferred zone can NEVER be authoritative ────────
+
+def test_zone_result_rejects_authoritative_osm_zone():
+    """P0 GUARD: constructing a ZoneResult with source_confidence='authoritative' but a
+    non-RMP zone_authority (OSM-inferred) must FAIL LOUD."""
+    import pytest as _pytest
+    from app.models.geo import ZoneResult
+
+    with _pytest.raises(Exception):  # pydantic ValidationError wraps the ValueError
+        ZoneResult(
+            zone_class="Residential", primary_landuse="residential",
+            source_confidence="authoritative", zone_authority="OSM-inferred",
+            score=50, severity="low", data_source="OpenStreetMap (Overpass API)",
+        )
+
+
+def test_zone_result_allows_authoritative_only_for_rmp():
+    """Only a real RMP/KGIS land-use source (BDA-RMP-2015) may mint 'authoritative'."""
+    from app.models.geo import ZoneResult
+
+    ok = ZoneResult(
+        zone_class="Residential", primary_landuse="residential",
+        source_confidence="authoritative", zone_authority="BDA-RMP-2015",
+        score=50, severity="low", data_source="KGIS BDA Revised Master Plan 2015 land-use",
+    )
+    assert ok.source_confidence == "authoritative"
+    # an OSM zone defaults to inferred and validates fine
+    osm = ZoneResult(
+        zone_class="Residential", primary_landuse="residential",
+        zone_authority="OSM-inferred", score=50, severity="low",
+        data_source="OpenStreetMap (Overpass API)",
+    )
+    assert osm.source_confidence == "inferred"

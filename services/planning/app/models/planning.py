@@ -32,7 +32,10 @@ class RoadWidthRequest(BaseModel):
     """Best-available road-width inputs. All optional; the best tier present wins (surveyed >
     MapTiler measurement > probe-confirmed KGIS > lane estimate)."""
 
-    zone: ZoneClass = "Residential"
+    # `str`, not the planning Literal: accepts the geo `zone_class` vocabulary (Water Body,
+    # Green Belt, Agricultural, …). far_assembly maps it via zone_map.map_geo_zone and returns a
+    # clean "not developable" result for non-developable zones instead of a 422 (US-088 G2).
+    zone: str = "Residential"
     sub_zone: str | None = None
     plot_area_sqm: float | None = Field(default=None, ge=1)
     surveyed_width_m: float | None = Field(default=None, gt=0)      # tier 1 -> authoritative

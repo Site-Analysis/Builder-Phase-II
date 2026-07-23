@@ -210,3 +210,83 @@ def test_endpoint_flag_on_two_lines(monkeypatch):
     assert body["achievable_with_entitlements"]["value"] == 2.75
     assert body["achievable_base"]["value"] <= body["achievable_with_entitlements"]["value"] <= body["permissible_far"]["value"]
     assert "sanction" in body["disclaimer"]
+
+
+# ── US-088 dry-run FIX B/C: geo->planning bridge honesty ─────────────────────
+
+def _confs(r):
+    """All FAR-line confidences present in a result (single or matrix)."""
+    out = []
+    for k in ("permissible_far", "achievable_base", "achievable_with_entitlements"):
+        v = r.get(k)
+        if v and v.get("confidence"):
+            out.append(v["confidence"])
+    if r.get("achievable_matrix"):
+        for row in r["achievable_matrix"]["rows"]:
+            for k in ("achievable_base", "achievable_with_entitlements"):
+                if row.get(k) and row[k].get("confidence"):
+                    out.append(row[k]["confidence"])
+    return out
+
+
+def test_inferred_zone_never_yields_authoritative_far():
+    """FIX B: an inferred zone caps EVERY FAR line at <= derived — never authoritative."""
+    r = _assemble(zone="Residential", sub_zone="Main", plot_area_sqm=1500,
+                  surveyed_width_m=15.0, survey_date="2025-01-01", zone_confidence="inferred")
+    assert r["status"] == "resolved"
+    confs = _confs(r)
+    assert confs, "expected at least one resolved FAR line"
+    assert "authoritative" not in confs, f"inferred zone leaked an authoritative FAR: {confs}"
+    assert all(c in ("derived", "inferred", "unresolved") for c in confs)
+
+
+def test_far_output_surfaces_inferred_zone_caveat():
+    """FIX B: the builder must SEE that the FAR rests on a guessed zone."""
+    r = _assemble(zone="Residential", sub_zone="Main", plot_area_sqm=1500,
+                  measured_width_m=15.0, zone_confidence="inferred")
+    blob = " ".join(r.get("notes", []) + (r["permissible_far"] or {}).get("notes", []))
+    assert "INFERRED zone" in blob and "RMP planning-district" in blob
+
+
+def test_unmappable_zones_are_not_developable_not_422():
+    """G2: each non-developable geo zone -> clean unresolved, never a crash/coercion."""
+    for z in ("Water Body", "Green Belt", "Agricultural", "Restricted", "Unknown"):
+        r = _assemble(zone=z, plot_area_sqm=1000, measured_width_m=15.0)
+        assert r["status"] == "unresolved", f"{z} should be not-developable"
+        assert r["permissible_far"] is None and r["achievable_base"] is None
+        assert "not developable" in (r["reason"] or "").lower() or "NA" in (r["reason"] or "")
+
+
+def test_garbage_zone_string_is_unresolved_not_coerced():
+    """G2: `zone` is now a free str (validation moved from schema into zone_map). An
+    unrecognised/garbage value must return a clean unresolved with a reason — never coerced to a
+    nearest developable zone, never an unhandled error."""
+    for z in ("Reisdential", "banana", "R-1 / mixed?", "   "):
+        r = _assemble(zone=z, plot_area_sqm=1000, measured_width_m=15.0)
+        assert r["status"] == "unresolved", f"garbage zone {z!r} should be unresolved"
+        assert r["permissible_far"] is None and r["achievable_base"] is None
+        reason = (r["reason"] or "").lower()
+        assert "no rmp far-table mapping" in reason or "not developable" in reason
+        assert r.get("next_action")
+
+
+def test_missing_sub_zone_is_unresolved_not_silent_main():
+    """G3: a multi-sub-zone zone with no sub_zone -> unresolved, NOT a silent Main default."""
+    r = _assemble(zone="Residential", plot_area_sqm=1500, measured_width_m=15.0,
+                  zone_confidence="inferred")
+    assert r["status"] == "unresolved"
+    assert "sub_zone is required" in (r["reason"] or "")
+    # a supplied sub_zone resolves the same inputs -> proves the guard, not a break.
+    ok = _assemble(zone="Residential", sub_zone="Main", plot_area_sqm=1500,
+                   measured_width_m=15.0, zone_confidence="inferred")
+    assert ok["status"] == "resolved"
+
+
+@skip_no_app
+def test_endpoint_water_body_is_clean_not_422(monkeypatch):
+    """G2 through the wire: geo 'Water Body' no longer 422s the FAR endpoint."""
+    monkeypatch.setenv("FLAGS", _FLAG)
+    resp = CLIENT.post("/planning/far", json={
+        "zone": "Water Body", "plot_area_sqm": 1000, "measured_width_m": 15.0})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "unresolved"

@@ -34,6 +34,7 @@ from typing import Any
 
 from app.config.rmp_loader import governing_setbacks, lookup_far
 from app.services import road_width_resolver as rwr
+from app.services.zone_map import map_geo_zone
 
 _RANK = {"authoritative": 3, "derived": 2, "inferred": 1, "unresolved": 0}
 _SANCTION = "subject to authority sanction — achievable FAR is what the authority approves"
@@ -158,14 +159,42 @@ def _far_value(value: float | None, confidence: str, *, source: str | None, vint
     }
 
 
+def _sub_zones_for(cfg: dict, zone: str) -> list[str]:
+    """The distinct sub_zone names the RMP config carries for a planning zone."""
+    return sorted({t.get("sub_zone") for t in cfg.get("far_tables", [])
+                   if t.get("zone") == zone and t.get("sub_zone")})
+
+
 def assemble_far(inp: dict, *, cfg: dict) -> dict[str, Any]:
     """Compose permissible + two-line achievable. See module docstring for the invariants."""
-    zone = inp.get("zone")
+    raw_zone = inp.get("zone")
     sub_zone = inp.get("sub_zone")
     plot_area = inp.get("plot_area_sqm")
-    if not zone or plot_area is None:
+    if not raw_zone or plot_area is None:
         return _unresolved("zone and plot_area_sqm are required to resolve FAR",
                            "supply the zone (authoritative if possible) and plot area")
+
+    # G2: map the geo zone_class vocabulary -> planning FAR zone. A non-developable zone
+    # (Water Body / Green Belt / Agricultural / …) returns a clean "no FAR table applies"
+    # result — never a 422 and never coerced to a nearest developable zone.
+    zone, developable, map_reason = map_geo_zone(raw_zone)
+    if not developable:
+        return _unresolved(map_reason or f"{raw_zone}: not developable under RMP",
+                           "confirm the RMP land-use zone with the authority; if the land is "
+                           "agricultural, complete NA conversion first")
+
+    # G3: a zone with multiple RMP sub-zones (Residential Main/Mixed, Commercial Central/
+    # Business/Mutation, Industrial General/Hi-Tech) keys a DIFFERENT FAR table per sub-zone.
+    # A missing sub_zone must NOT silently default to the first table (a confidently wrong
+    # number) — require it.
+    subs = _sub_zones_for(cfg, zone)
+    if sub_zone is None and len(subs) > 1:
+        return _unresolved(
+            f"{zone}: sub_zone is required — it selects the FAR table ({', '.join(subs)}), "
+            "and each keys FAR differently (plot-size vs road-width). Not defaulting to one.",
+            f"confirm the sub-zone: {', '.join(subs)} (e.g. Residential Main vs Mixed, "
+            "Commercial Central vs Business)")
+
     zone_conf = inp.get("zone_confidence") or "inferred"
 
     rw = rwr.resolve_road_width(inp, cfg=cfg, zone=zone, sub_zone=sub_zone)
@@ -201,6 +230,15 @@ def assemble_far(inp: dict, *, cfg: dict) -> dict[str, Any]:
     perm_far = _far_after(base_far, ent)
     perm_conf = _weakest(zone_conf, base_conf, "derived" if ent["has_pending"] else "authoritative")
     perm_notes = [f"ground coverage cap {int(gc * 100)}% ({citation})"]
+    zone_caveat = None
+    if zone_conf != "authoritative":
+        zone_caveat = (
+            f"FAR rests on an INFERRED zone (zone_confidence={zone_conf}) — '{raw_zone}' is "
+            "OSM/Bhuvan-derived, NOT the RMP land-use. Every FAR line below is capped at that "
+            "confidence; confirm the zone against the RMP planning-district map / with the "
+            "authority before relying on this FAR."
+        )
+        perm_notes.append(zone_caveat)
     perm_notes += [f"{lbl['name']}: {lbl['status']} — {lbl['condition']}" for lbl in ent_labels]
     if ent["has_pending"]:
         perm_notes.append("permissible upper bound INCOMPLETE — a required modifier is PENDING.")
@@ -298,6 +336,8 @@ def assemble_far(inp: dict, *, cfg: dict) -> dict[str, Any]:
         _check(achievable_base, achievable_with)
 
     result_notes = []
+    if zone_caveat:
+        result_notes.append(zone_caveat)
     if setback_note:
         result_notes.append(setback_note)
     if ent["has_pending"]:

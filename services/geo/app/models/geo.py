@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class Provenance(BaseModel):
@@ -124,7 +124,13 @@ ZoneClass = Literal[
     "Unknown",
 ]
 Severity = Literal["low", "moderate", "high", "none"]
-SourceConfidence = Literal["authoritative", "community"]
+# ONE confidence ladder across the whole service (matches overlays + parcel provenance +
+# far_assembly). An OSM/Bhuvan-derived zone is ALWAYS `inferred`; only a real RMP/KGIS
+# land-use source may mint `authoritative`. The old {authoritative, community} vocabulary is
+# deleted — two confidence languages in one service is how a mislabel got in (US-088 dry-run P0).
+SourceConfidence = Literal["authoritative", "derived", "inferred", "unresolved"]
+# Only these zone_authority values are allowed to carry source_confidence="authoritative".
+AUTHORITATIVE_ZONE_SOURCES = frozenset({"BDA-RMP-2015"})
 BearingCapacityClass = Literal["Good (>150 kN/m²)", "Moderate (100–150 kN/m²)", "Poor (<100 kN/m²)"]
 
 
@@ -142,7 +148,7 @@ class ZoneResult(BaseModel):
     lulc_vintage: str | None = None  # e.g. "2022-23" or "2019-20"
     na_order_required: bool = False
     forest_clearance_required: bool = False
-    source_confidence: SourceConfidence = "community"
+    source_confidence: SourceConfidence = "inferred"
     # Provenance of zone_class: "BDA-RMP-2015" (authoritative master-plan land-use)
     # or "OSM-inferred" (preliminary). SAT-20.
     zone_authority: str | None = None
@@ -156,6 +162,19 @@ class ZoneResult(BaseModel):
         "Verify with BDA Zoning Map or BBMP before any development decisions. "
         "na_order_required flag is indicative — verify current land use status with revenue records."
     )
+
+    @model_validator(mode="after")
+    def _osm_zone_cannot_be_authoritative(self) -> ZoneResult:
+        """P0 GUARD: an OSM/Bhuvan-inferred zone may NEVER be labelled authoritative. Only a
+        real RMP/KGIS land-use source (AUTHORITATIVE_ZONE_SOURCES) may mint `authoritative`.
+        Fails loud rather than ship a wrong zone wearing a trusted label (US-088 dry-run P0)."""
+        if self.source_confidence == "authoritative" and self.zone_authority not in AUTHORITATIVE_ZONE_SOURCES:
+            raise ValueError(
+                f"zone source_confidence='authoritative' but zone_authority='{self.zone_authority}' "
+                f"is not an authoritative land-use source {sorted(AUTHORITATIVE_ZONE_SOURCES)} — "
+                "OSM/Bhuvan-derived zoning is 'inferred', never authoritative"
+            )
+        return self
 
 
 class SoilResult(BaseModel):

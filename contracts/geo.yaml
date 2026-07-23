@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.6.0"
+  version: "1.7.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
     OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS layers. Zoning is
@@ -249,7 +249,10 @@ components:
       enum: ["low", "moderate", "high", "none"]
     SourceConfidence:
       type: string
-      enum: ["authoritative", "community"]
+      # Unified confidence ladder (matches Provenance.tier + planning FAR). OSM/Bhuvan-derived
+      # zoning is ALWAYS "inferred"; only a real RMP/KGIS land-use source may be "authoritative".
+      # The old {authoritative, community} vocabulary is removed (US-088 dry-run P0 fix).
+      enum: ["authoritative", "derived", "inferred", "unresolved"]
     ZoneClass:
       type: string
       enum: ["Residential", "Commercial", "Industrial", "Agricultural", "Green Belt", "Water Body", "Institutional", "Mixed Use", "Restricted", "Unknown"]

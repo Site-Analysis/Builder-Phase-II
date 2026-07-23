@@ -193,7 +193,10 @@ out center;
         score, severity = SCORE_MAP.get(zone_class, (50, "moderate"))
 
         na_required, forest_required = lulc_flags(lulc_code)
-        source_confidence = "authoritative" if lulc_label is not None else "community"
+        # OSM + Bhuvan LULC are both INFERRED land-cover proxies, NOT the RMP land-use zone —
+        # they can never be authoritative, however confident the tag looks (US-088 dry-run P0).
+        # Only the RMP override below (BDA-RMP-2015) may mint "authoritative".
+        source_confidence = "inferred"
 
         # Dual-source insight: OSM says Residential but Bhuvan says Agricultural →
         # NA order is very likely required. Both readings surfaced to the user.
