@@ -1,5 +1,20 @@
 # Contract Changelog
 
+## 2.21.0 — 2026-07-24
+
+### Changed — infrastructure.yaml (v1.1.0 → v1.2.0) + planning.yaml (v1.3.0 → v1.4.0), US-086 connectivity consolidation
+- **`POST /infrastructure/connectivity`** (`ConnectivityResult`) — infrastructure is now the single
+  connectivity owner. Airport distance is STRAIGHT-LINE in EPSG:32643 from the bundled AAI ARP;
+  metro/rail/highway resolve only from real sources and return `unresolved` when the source is not
+  fetchable (never a fabricated distance); every distance is labelled straight-line vs network.
+  Access-road width comes from the planning `road_width_resolver` (reused, not reimplemented).
+  Emits `connectivity_signal` + access flags (narrow-approach, no-metro-within-5km, highway-adjacent)
+  for the US-092 GO/NO-GO engine. Gated by the existing `feature.infrastructure.connectivity`.
+- **planning `AirportRestriction` — height-cap only** — `distance_km`, `lat`, `lon` REMOVED (and
+  dropped from `required`). Planning keeps the ICAO/OLS surface + max-height for the envelope; the
+  airport DISTANCE reporting moved to `/infrastructure/connectivity`. Breaking for consumers reading
+  `distance_km` from planning — read it from connectivity instead.
+
 ## 2.20.0 — 2026-07-23
 
 ### Added — infrastructure.yaml (v1.0.0 → v1.1.0) + geo.yaml (v1.8.0 → v1.9.0), US-087 utilities + overlay reclassification

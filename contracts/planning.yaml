@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Planning Service
-  version: "1.3.0"
+  version: "1.4.0"
   description: >
     Site build-capacity analysis for Indian urban plots. Computes applicable FAR,
     ground coverage, setbacks, and height limits from NBC 2016 Table 15, BDA CDP 2031,
@@ -158,15 +158,14 @@ components:
 
     AirportRestriction:
       type: object
-      required: [nearest_airport, iata_code, distance_km, restriction_surface, dgca_noc_required]
+      # US-086: HEIGHT-CAP ONLY. distance_km / lat / lon removed — airport DISTANCE reporting moved
+      # to the infrastructure /connectivity endpoint (one connectivity owner).
+      required: [nearest_airport, iata_code, restriction_surface, dgca_noc_required]
       properties:
         nearest_airport:
           type: string
         iata_code:
           type: string
-        distance_km:
-          type: number
-          format: float
         max_height_m:
           type: number
           format: float
@@ -175,14 +174,6 @@ components:
           type: string
         dgca_noc_required:
           type: boolean
-        lat:
-          type: number
-          format: float
-          nullable: true
-        lon:
-          type: number
-          format: float
-          nullable: true
 
     PlanningResult:
       type: object

@@ -128,6 +128,75 @@ class UtilitiesResult(BaseModel):
     )
 
 
+class ConnectivityRequest(BaseModel):
+    latitude: float
+    longitude: float
+    radius_m: float = Field(2000, ge=0)
+    # optional road-width tiers passed through to the planning road_width_resolver
+    surveyed_width_m: float | None = None
+    measured_width_m: float | None = None
+    lane_count: int | None = None
+
+
+class TransportDistance(BaseModel):
+    """One transport mode's distance. `distance_type` labels straight-line vs network — never
+    conflated. Unresolved (distance_m None) when the source is not fetchable — never fabricated."""
+
+    mode: str
+    status: Literal["resolved", "unresolved"]
+    name: str | None = None
+    ref: str | None = None
+    distance_m: float | None = None
+    distance_type: Literal["straight-line", "network"] | None = None
+    confidence: Confidence
+    crs: str = "EPSG:32643"
+    data_source: str | None = None
+    reason: str | None = None
+    next_action: str | None = None
+
+
+class RoadWidthConn(BaseModel):
+    """Access-road width from the planning road_width_resolver (NOT recomputed here)."""
+
+    status: Literal["resolved", "unresolved"]
+    value_m: float | None = None
+    band: dict | None = None
+    confidence: str
+    source: str = "planning road_width_resolver"
+    reason: str | None = None
+    next_action: str | None = None
+
+
+class ConnectivitySignal(BaseModel):
+    """Compact signal for the US-092 GO/NO-GO engine (same shape family as infra_readiness)."""
+
+    airport_km: float | None = None
+    airport_distance_type: str | None = None
+    metro_status: Literal["resolved", "unresolved"]
+    road_width_confidence: str | None = None
+    access_flags: list[str] = []
+    overall: Literal["good", "partial", "unknown"]
+    notes: list[str] = []
+
+
+class ConnectivityResult(BaseModel):
+    airport: TransportDistance
+    metro: TransportDistance
+    rail: TransportDistance
+    highway: TransportDistance
+    road_width: RoadWidthConn
+    connectivity_score: float
+    access_flags: list[str] = []
+    connectivity_signal: ConnectivitySignal
+    data_source: str
+    data_disclaimer: str = (
+        "Airport distance is STRAIGHT-LINE from the AAI ARP (not a road-network distance). "
+        "Metro/rail/highway resolve only from real sources — 'unresolved' means the source was not "
+        "fetchable, NOT that the feature is absent/far. Access-road width comes from the planning "
+        "road_width_resolver tier chain. Airport HEIGHT limits are in the planning envelope."
+    )
+
+
 class InfraResult(BaseModel):
     road_access: RoadAccess | None = None
     transit: list[TransitStop] = []

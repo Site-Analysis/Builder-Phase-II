@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Infrastructure Service
-  version: "1.1.0"
+  version: "1.2.0"
   description: >
     Site connectivity analysis from OpenStreetMap. Scores road access, public transit
     proximity, and power infrastructure within a radius. Water/sewage/telecom are
@@ -85,8 +85,99 @@ paths:
         "422":
           description: Validation error
 
+  /infrastructure/connectivity:
+    post:
+      operationId: analyzeConnectivity
+      summary: Connectivity — airport/metro/rail/highway distance + access road (US-086)
+      description: >
+        The connectivity OWNER (airport distance consolidated OUT of planning, which keeps only the
+        ICAO height cap). Airport distance is STRAIGHT-LINE in EPSG:32643 from the bundled AAI ARP;
+        metro/rail/highway resolve only from real sources and return `unresolved` when a source is
+        not fetchable (never a fabricated distance); every distance is labelled straight-line vs
+        network. Access-road width comes from the planning road_width_resolver (reused, not
+        reimplemented). Emits `connectivity_signal` + access flags for the US-092 GO/NO-GO engine.
+        Gated by `feature.infrastructure.connectivity`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectivityRequest"
+      responses:
+        "200":
+          description: Connectivity result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectivityResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
 components:
   schemas:
+    ConnectivityRequest:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, format: float }
+        longitude: { type: number, format: float }
+        radius_m: { type: number, format: float, default: 2000 }
+        surveyed_width_m: { type: number, format: float, nullable: true }
+        measured_width_m: { type: number, format: float, nullable: true }
+        lane_count: { type: integer, nullable: true }
+    TransportDistance:
+      type: object
+      required: [mode, status, confidence]
+      properties:
+        mode: { type: string }
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        name: { type: string, nullable: true }
+        ref: { type: string, nullable: true }
+        distance_m: { type: number, format: float, nullable: true }
+        distance_type: { type: string, nullable: true, enum: ["straight-line", "network"] }
+        confidence: { $ref: "#/components/schemas/UtilityConfidence" }
+        crs: { type: string, default: "EPSG:32643" }
+        data_source: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    RoadWidthConn:
+      type: object
+      required: [status, confidence]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        value_m: { type: number, format: float, nullable: true }
+        band: { type: object, nullable: true }
+        confidence: { type: string }
+        source: { type: string }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    ConnectivitySignal:
+      type: object
+      required: [metro_status, overall]
+      properties:
+        airport_km: { type: number, format: float, nullable: true }
+        airport_distance_type: { type: string, nullable: true }
+        metro_status: { type: string, enum: ["resolved", "unresolved"] }
+        road_width_confidence: { type: string, nullable: true }
+        access_flags: { type: array, items: { type: string } }
+        overall: { type: string, enum: ["good", "partial", "unknown"] }
+        notes: { type: array, items: { type: string } }
+    ConnectivityResult:
+      type: object
+      required: [airport, metro, rail, highway, road_width, connectivity_score, connectivity_signal, data_source]
+      properties:
+        airport: { $ref: "#/components/schemas/TransportDistance" }
+        metro: { $ref: "#/components/schemas/TransportDistance" }
+        rail: { $ref: "#/components/schemas/TransportDistance" }
+        highway: { $ref: "#/components/schemas/TransportDistance" }
+        road_width: { $ref: "#/components/schemas/RoadWidthConn" }
+        connectivity_score: { type: number, format: float }
+        access_flags: { type: array, items: { type: string } }
+        connectivity_signal: { $ref: "#/components/schemas/ConnectivitySignal" }
+        data_source: { type: string }
+        data_disclaimer: { type: string }
     UtilityConfidence:
       type: string
       enum: ["authoritative", "inferred", "unresolved"]

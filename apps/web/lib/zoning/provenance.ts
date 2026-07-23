@@ -111,7 +111,7 @@ export function buildProvenance(z: ZoningData): { rows: ProvenanceRow[]; dataCon
     {
       key: "airport",
       label: "Airport / DGCA height",
-      value: `${z.airportName} · ${z.airportDistanceKm.toFixed(1)} km`,
+      value: `${z.airportName}${z.airportDistanceKm != null ? ` · ${z.airportDistanceKm.toFixed(1)} km` : " · distance via connectivity"}`,
       source: "AAI airport coords + ICAO Annex 14 model",
       vintage: "Static model",
       spatialAccuracy: "Coords ±tens of m; OLS band coarse",

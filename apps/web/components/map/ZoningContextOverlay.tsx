@@ -104,7 +104,7 @@ export function ZoningContextOverlay({ center, zoningResult, amenitiesResult, sh
           positions={[center, airport]}
           pathOptions={{ color: AMBER, weight: 2, dashArray: "6 5", opacity: 0.75 }}
         >
-          <Tooltip sticky>{`${z.airportName} · ${z.airportDistanceKm.toFixed(1)} km${z.dgcaNocRequired ? " · DGCA NOC required" : ""}`}</Tooltip>
+          <Tooltip sticky>{`${z.airportName}${z.airportDistanceKm != null ? ` · ${z.airportDistanceKm.toFixed(1)} km` : ""}${z.dgcaNocRequired ? " · DGCA NOC required" : ""}`}</Tooltip>
         </Polyline>
       )}
 
@@ -148,7 +148,7 @@ export function ZoningContextOverlay({ center, zoningResult, amenitiesResult, sh
       {/* Airport marker at the far end of the waypoint */}
       {airport && (
         <Marker position={airport} icon={AIRPORT_ICON}>
-          <Tooltip direction="top" offset={[0, -10]}>{`${z.airportName} · ${z.airportDistanceKm.toFixed(1)} km · ${z.airportSurface}`}</Tooltip>
+          <Tooltip direction="top" offset={[0, -10]}>{`${z.airportName}${z.airportDistanceKm != null ? ` · ${z.airportDistanceKm.toFixed(1)} km` : ""} · ${z.airportSurface}`}</Tooltip>
         </Marker>
       )}
     </>

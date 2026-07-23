@@ -895,7 +895,7 @@ export async function getPlanningAnalysis(
     qualitative: [
       ...roadWidthQual,
       { label: "FAR Source", value: String(d.far_source ?? "NBC 2016"), tone: "neutral" },
-      { label: "Airport", value: `${ar.nearest_airport ?? "—"} (${num(ar.distance_km).toFixed(1)}km)`, tone: ar.dgca_noc_required ? "bad" : "good" },
+      { label: "Airport (height cap)", value: `${ar.nearest_airport ?? "—"} — ${ar.restriction_surface ?? "OLS"}; distance via connectivity`, tone: ar.dgca_noc_required ? "bad" : "good" },
       { label: "DGCA NOC", value: ar.dgca_noc_required ? "Required — file with AAI before design" : "Not required", tone: ar.dgca_noc_required ? "bad" : "good" },
       { label: "⚠ Disclaimer", value: "FAR is computed from NBC 2016 Table 15 + BDA CDP 2031 rules. These are not a substitute for the official building permit from BDA/BBMP. Always verify with a licensed architect and local authority before investment.", tone: "warn" },
     ],
@@ -1679,7 +1679,7 @@ export async function getZoningAnalysis(
     setbackRearM: p.setback_rear_m != null ? num(p.setback_rear_m) : null,
     setbackSideM: p.setback_side_m != null ? num(p.setback_side_m) : null,
     airportName: String(ar.nearest_airport ?? "—"),
-    airportDistanceKm: num(ar.distance_km),
+    airportDistanceKm: ar.distance_km != null ? num(ar.distance_km) : null,  // moved to connectivity
     airportSurface: String(ar.restriction_surface ?? "—"),
     airportLat: ar.lat != null ? num(ar.lat) : null,
     airportLon: ar.lon != null ? num(ar.lon) : null,
@@ -1861,6 +1861,59 @@ export async function getInfraAnalysis(lat: number, lon: number): Promise<Module
     loading: false,
     error: null,
   };
+}
+
+// ─── Connectivity — POST /infrastructure/connectivity (US-086) ────────────────
+// Gated by feature.infrastructure.connectivity. Infrastructure OWNS airport/metro/rail/highway
+// distance + access-road width. Distances labelled straight-line vs network; un-fetchable sources
+// return unresolved (never fabricated). Emits connectivity_signal for US-092.
+
+export interface TransportDistance {
+  mode: string; status: "resolved" | "unresolved";
+  name: string | null; ref: string | null;
+  distance_m: number | null; distance_type: "straight-line" | "network" | null;
+  confidence: "authoritative" | "inferred" | "unresolved"; crs: string;
+  data_source: string | null; reason: string | null; next_action: string | null;
+}
+export interface ConnectivitySignal {
+  airport_km: number | null; airport_distance_type: string | null;
+  metro_status: "resolved" | "unresolved"; road_width_confidence: string | null;
+  access_flags: string[]; overall: "good" | "partial" | "unknown"; notes: string[];
+}
+export interface ConnectivityResult {
+  airport: TransportDistance; metro: TransportDistance; rail: TransportDistance;
+  highway: TransportDistance;
+  road_width: { status: string; value_m: number | null; band: Record<string, number> | null; confidence: string; source: string; reason: string | null; next_action: string | null };
+  connectivity_score: number; access_flags: string[];
+  connectivity_signal: ConnectivitySignal; data_source: string; data_disclaimer: string;
+}
+
+export async function getConnectivity(
+  lat: number, lon: number,
+  roadWidth?: { surveyed_width_m?: number; measured_width_m?: number; lane_count?: number },
+): Promise<ConnectivityResult> {
+  return svcFetch<ConnectivityResult>(SVC.infrastructure, "/infrastructure/connectivity", {
+    method: "POST",
+    body: JSON.stringify({ latitude: lat, longitude: lon, ...roadWidth }),
+  });
+}
+
+/** Connectivity rows — distances labelled straight-line/network; unresolved shown as a warning,
+ *  never a fake distance. */
+export function connectivityQualitative(r: ConnectivityResult): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  for (const m of [r.airport, r.metro, r.rail, r.highway]) {
+    out.push(m.status === "resolved"
+      ? { label: `${m.mode} — ${m.name ?? ""}`, value: `${((m.distance_m ?? 0) / 1000).toFixed(2)} km (${m.distance_type}, ${m.confidence}).`, tone: "neutral" }
+      : { label: `⚠ ${m.mode} unresolved`, value: `${m.reason ?? ""} ${m.next_action ?? ""}`, tone: "warn" });
+  }
+  const rw = r.road_width;
+  out.push(rw.status === "resolved"
+    ? { label: "Access road width", value: `${rw.value_m ?? "—"} m (${rw.confidence}, ${rw.source}).`, tone: "neutral" }
+    : { label: "⚠ Access road width unresolved", value: `${rw.reason ?? ""} ${rw.next_action ?? ""}`, tone: "warn" });
+  out.push({ label: "Connectivity score", value: `${r.connectivity_score}/100 · flags: ${r.access_flags.join(", ") || "none"} · ${r.connectivity_signal.overall.toUpperCase()}`, tone: r.connectivity_signal.overall === "good" ? "good" : "neutral" });
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
 }
 
 // ─── Utilities + NOC checklist — POST /infrastructure/utilities (US-087) ──────

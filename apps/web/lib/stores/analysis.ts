@@ -136,7 +136,9 @@ export interface ZoningData {
   setbackSideM: number | null;
   // Context (airport + metro + nearby features by distance)
   airportName: string;
-  airportDistanceKm: number;
+  // US-086: airport DISTANCE moved to the infrastructure connectivity endpoint; planning now only
+  // carries the height cap. null here means "see connectivity" (never 0 = fabricated proximity).
+  airportDistanceKm: number | null;
   airportSurface: string;
   airportLat: number | null;
   airportLon: number | null;

@@ -179,14 +179,15 @@ class FarAssemblyResult(BaseModel):
 
 
 class AirportRestriction(BaseModel):
+    """HEIGHT-CAP ONLY (US-086 consolidation). Planning keeps the ICAO/OLS surface + max-height it
+    needs for the building envelope; the airport DISTANCE reporting moved to the infrastructure
+    connectivity endpoint (one service owns connectivity). `distance_km`/lat/lon were removed here."""
+
     nearest_airport: str
     iata_code: str
-    distance_km: float
     max_height_m: float | None = None
     restriction_surface: str
     dgca_noc_required: bool
-    lat: float | None = None
-    lon: float | None = None
 
 
 class PlanningResult(BaseModel):

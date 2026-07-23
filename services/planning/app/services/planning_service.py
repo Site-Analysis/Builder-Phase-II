@@ -303,15 +303,14 @@ class PlanningService:
             metro_distance_m=metro_dist,
             metro_lat=metro_lat,
             metro_lon=metro_lon,
+            # HEIGHT-CAP ONLY — nearest_dist_m is used internally for the ICAO surface/height cap;
+            # the airport DISTANCE reporting moved to infrastructure /connectivity (US-086).
             airport_restriction=AirportRestriction(
                 nearest_airport=nearest["name"],
                 iata_code=nearest["iata"],
-                distance_km=round(nearest_dist_m / 1000, 2),
                 max_height_m=round(icao_h, 1) if icao_h is not None else None,
                 restriction_surface=surface,
                 dgca_noc_required=noc_req,
-                lat=round(float(nearest["lat"]), 6),
-                lon=round(float(nearest["lon"]), 6),
             ),
             score=score,
             severity=severity,  # type: ignore[arg-type]
