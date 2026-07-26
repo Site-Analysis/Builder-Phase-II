@@ -41,6 +41,75 @@ class CourtCase(BaseModel):
     filing_date: str | None = None
 
 
+OwnConfidence = Literal["authoritative", "inferred", "unresolved"]
+FlagStatus = Literal["resolved", "unresolved", "checklist"]
+
+
+class OwnershipRequest(LandRecordsRequest):
+    """US-091 ownership snapshot inputs. The KGIS cadastral L5 field + Dishaank classification are
+    passed in from the geo parcel resolution (cross-service seam) — absent them, the derived flags
+    are UNRESOLVED (never 'clean'). No RTC/owner data is ever fetched."""
+
+    parcel_resolved: bool = False       # did geo /geo/parcel return a real KGIS polygon?
+    cadastral_l5: str | None = None     # KGIS Cadastral L5 land-classification field, if resolved
+    dishaank_class: str | None = None   # Dishaank visual classification, if obtainable
+
+
+class KharabFlag(BaseModel):
+    """Kharab from the KGIS Cadastral L5 field. Kharab-B = government land (NON-SALEABLE).
+    `status=unresolved` when the parcel did not resolve — absence is NOT 'no kharab'."""
+
+    status: FlagStatus
+    is_kharab: bool | None = None
+    kharab_type: str | None = None       # "Kharab-A" | "Kharab-B"
+    non_saleable: bool | None = None
+    area_affected: str | None = None
+    source: str
+    note: str
+    next_action: str | None = None
+
+
+class RestrictedFlag(BaseModel):
+    """Gomala / restricted tenure. From Dishaank classification if obtainable, else a CHECKLIST
+    item (never a silent pass). `status=unresolved` when the parcel did not resolve."""
+
+    status: FlagStatus
+    is_restricted: bool | None = None
+    restriction_type: str | None = None  # "Gomala" | "Grant land" | "Inam" | ...
+    source: str
+    note: str
+    next_action: str | None = None
+
+
+class OwnershipFeasibility(BaseModel):
+    """Flag-driven signal for the US-092 GO/NO-GO engine — replaces the old fixed score of 50.
+    Title verification is ALWAYS manual-required (no bulk/public ownership API exists)."""
+
+    kharab_flag: bool | None = None       # None = unresolved
+    restricted_flag: bool | None = None
+    title_verification: Literal["manual-required"] = "manual-required"
+    confidence: OwnConfidence
+    next_action: str
+
+
+class OwnershipSnapshot(BaseModel):
+    kharab: KharabFlag
+    restricted: RestrictedFlag
+    ownership_feasibility: OwnershipFeasibility
+    deep_links: list[DeepLink] = Field(default_factory=list)
+    handoff_note: str = (
+        "SCREENING SIGNAL ONLY — full title verification requires an advocate's opinion + a Kaveri "
+        "encumbrance-certificate search. No owner name, RTC, or title is fetched or inferred here."
+    )
+    data_source: str
+    data_disclaimer: str = (
+        "No bulk/public ownership API exists (Bhoomi RTC, e-Aasthi/e-Swathu, Kaveri EC are "
+        "CAPTCHA/OTP-gated; DigiLocker is per-citizen consent). Ownership is NOT retrieved. Kharab/"
+        "restricted flags are derived ONLY when the KGIS parcel resolved; otherwise UNRESOLVED — "
+        "absence of an RTC read is NEVER 'clear title'."
+    )
+
+
 class LandRecordsResult(BaseModel):
     bhoomi: BhoomiRecord
     court_cases: list[CourtCase] = Field(default_factory=list)

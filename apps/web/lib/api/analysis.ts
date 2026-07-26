@@ -2230,6 +2230,67 @@ export async function getAmenitiesAnalysis(lat: number, lon: number, radiusM = 2
   };
 }
 
+// ─── Ownership snapshot — POST /land-records/ownership (US-091) ────────────────
+// Gated by feature.land.ownership. SCREENING ONLY — no owner is fetched/inferred. Kharab/restricted
+// flags derived only when the parcel resolved; else unresolved (never 'clean'). ownership_feasibility
+// feeds US-092.
+
+export interface OwnershipFlag {
+  status: "resolved" | "unresolved" | "checklist";
+  is_kharab?: boolean | null; kharab_type?: string | null; non_saleable?: boolean | null;
+  area_affected?: string | null; is_restricted?: boolean | null; restriction_type?: string | null;
+  source: string; note: string; next_action: string | null;
+}
+export interface OwnershipFeasibility {
+  kharab_flag: boolean | null; restricted_flag: boolean | null;
+  title_verification: "manual-required";
+  confidence: "authoritative" | "inferred" | "unresolved"; next_action: string;
+}
+export interface OwnershipSnapshot {
+  kharab: OwnershipFlag; restricted: OwnershipFlag;
+  ownership_feasibility: OwnershipFeasibility;
+  deep_links: { label: string; url: string; description: string }[];
+  handoff_note: string; data_source: string; data_disclaimer: string;
+}
+export interface OwnershipInput {
+  district: string; taluk: string; hobli: string; village: string; survey_number: string;
+  parcel_resolved?: boolean; cadastral_l5?: string; dishaank_class?: string;
+}
+
+export async function getOwnership(input: OwnershipInput): Promise<OwnershipSnapshot> {
+  return svcFetch<OwnershipSnapshot>(SVC.land, "/land-records/ownership", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Ownership rows — Kharab-B non-saleable is a hard warning; unresolved shown as such (never
+ *  'clean'); deep-links + hand-off note surfaced. No owner name is ever displayed. */
+export function ownershipQualitative(r: OwnershipSnapshot): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  const k = r.kharab;
+  out.push(k.status === "unresolved"
+    ? { label: "⚠ Kharab unresolved", value: `${k.note} ${k.next_action ?? ""}`, tone: "warn" }
+    : k.non_saleable
+      ? { label: "⛔ Kharab-B (NON-SALEABLE)", value: `${k.note} ${k.next_action ?? ""}`, tone: "bad" }
+      : k.is_kharab
+        ? { label: "⚠ Kharab-A", value: `${k.note} ${k.next_action ?? ""}`, tone: "warn" }
+        : { label: "Kharab", value: k.note, tone: "good" });
+  const rs = r.restricted;
+  out.push(rs.status === "resolved" && rs.is_restricted
+    ? { label: "⚠ Restricted tenure", value: `${rs.restriction_type ?? ""} — ${rs.note}`, tone: "bad" }
+    : rs.status === "checklist"
+      ? { label: "☑ Restricted: confirm", value: rs.note, tone: "warn" }
+      : rs.status === "unresolved"
+        ? { label: "⚠ Restricted unresolved", value: rs.note, tone: "warn" }
+        : { label: "Restricted tenure", value: rs.note, tone: "good" });
+  const f = r.ownership_feasibility;
+  out.push({ label: "Ownership feasibility (US-092)", value: `title: ${f.title_verification}; confidence ${f.confidence}. ${f.next_action}`, tone: f.confidence === "unresolved" ? "warn" : "neutral" });
+  out.push({ label: "Hand-off", value: r.handoff_note, tone: "warn" });
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
+}
+
 // ─── Site score — computed from resolved module results ───────────────────────
 // No dedicated endpoint exists; the composite is derived client-side.
 

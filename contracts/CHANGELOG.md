@@ -1,5 +1,20 @@
 # Contract Changelog
 
+## 2.22.0 — 2026-07-24
+
+### Added — land-records.yaml (v1.0.0 → v1.1.0), US-091 ownership snapshot
+- **`POST /land-records/ownership`** (`OwnershipSnapshot`) — a SCREENING signal only. There is no
+  bulk/public ownership API (Bhoomi RTC, e-Aasthi/e-Swathu, Kaveri EC are CAPTCHA/OTP-gated;
+  DigiLocker is per-citizen consent), so NO owner is fetched or inferred. Derives Kharab (KGIS
+  Cadastral L5; **Kharab-B = government land, NON-SALEABLE**) and Gomala/restricted (Dishaank) flags
+  ONLY when the parcel resolved — otherwise `unresolved` (absence of an RTC read is NEVER 'clear
+  title'); an un-supplied Dishaank class becomes a CHECKLIST item, never a silent pass. Emits
+  deep-links (Bhoomi Service2 / e-Aasthi / e-Swathu / Kaveri EC / Dishaank, each with the exact
+  inputs to type) and replaces the old fixed score of 50 with an `ownership_feasibility` signal
+  {kharab_flag, restricted_flag, title_verification="manual-required", confidence, next_action} for
+  the US-092 GO/NO-GO engine. Every output carries the hand-off note (advocate + EC search required).
+  Gated by the new flag `feature.land.ownership` (default-off).
+
 ## 2.21.0 — 2026-07-24
 
 ### Changed — infrastructure.yaml (v1.1.0 → v1.2.0) + planning.yaml (v1.3.0 → v1.4.0), US-086 connectivity consolidation
