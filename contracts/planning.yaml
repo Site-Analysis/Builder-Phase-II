@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Planning Service
-  version: "1.4.0"
+  version: "1.5.0"
   description: >
     Site build-capacity analysis for Indian urban plots. Computes applicable FAR,
     ground coverage, setbacks, and height limits from NBC 2016 Table 15, BDA CDP 2031,
@@ -119,8 +119,146 @@ paths:
         "422":
           description: Validation error
 
+  /planning/obligations:
+    post:
+      operationId: developmentObligations
+      summary: Mixed-use % + parking (ECS) + TIA obligations for a plot (US-083)
+      description: >
+        Computes what RMP-2015 gives, each figure cited: parking ECS from built-up area
+        (achievable_far × plot) via Table 23 (Ch.8, p.48); the zone's permitted non-residential
+        mixed-use % (reg 4.1.2/4.2.2/7.3); access adequacy by REUSING the road_width_resolver.
+        Obligations the RMP does NOT quantify — the TIA trigger threshold (absent from RMP-2015),
+        and uses/zones with no RMP rate — are returned as CHECKLIST items labelled `unverified`,
+        never a fabricated number. Gated by `feature.planning.mixed-use`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MixedUseParkingRequest"
+      responses:
+        "200":
+          description: Development obligations (computed + checklist)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevelopmentObligationsResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+        "503":
+          description: RMP config unavailable
+
 components:
   schemas:
+    UseType:
+      type: string
+      enum: [residential_multi_dwelling, retail, office, restaurant, hotel, hospital,
+             nursing_home, educational, industrial, other_public_semipublic,
+             commercial_mutation_corridor, integrated_township]
+
+    MixedUseParkingRequest:
+      description: RoadWidthRequest (road-width tiers, reused for access adequacy) + built-up context.
+      allOf:
+        - $ref: "#/components/schemas/RoadWidthRequest"
+        - type: object
+          properties:
+            use_type:
+              $ref: "#/components/schemas/UseType"
+            achievable_far:
+              type: number
+              format: float
+              nullable: true
+            built_up_area_sqm:
+              type: number
+              format: float
+              nullable: true
+            avg_dwelling_size_sqm:
+              type: number
+              format: float
+              nullable: true
+
+    ParkingECS:
+      type: object
+      required: [status, use, confidence, citation]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        use: { type: string }
+        ecs_total: { type: integer, nullable: true }
+        ecs_main: { type: number, format: float, nullable: true }
+        ecs_visitor: { type: number, format: float, nullable: true }
+        basis: { type: string, nullable: true }
+        confidence: { type: string, enum: ["authoritative", "derived", "unresolved"] }
+        citation: { type: string }
+        built_up_area_sqm: { type: number, format: float, nullable: true }
+        notes: { type: array, items: { type: string } }
+        next_action: { type: string, nullable: true }
+
+    MixedUseShare:
+      type: object
+      required: [status, non_residential_max_pct, confidence]
+      properties:
+        status: { type: string, enum: ["resolved"] }
+        zone: { type: string, nullable: true }
+        sub_zone: { type: string, nullable: true }
+        non_residential_max_pct: { type: number, format: float }
+        non_residential_max_sqm: { type: number, format: float, nullable: true }
+        residential_pct: { type: number, format: float, nullable: true }
+        split: { type: object, additionalProperties: { type: number, format: float }, nullable: true }
+        basis: { type: string, nullable: true }
+        confidence: { type: string, enum: ["authoritative"] }
+        citation: { type: string, nullable: true }
+
+    AccessAdequacy:
+      type: object
+      required: [status, confidence, min_required_m, min_citation]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        width_m: { type: number, format: float, nullable: true }
+        band: { $ref: "#/components/schemas/RoadWidthBand" }
+        confidence: { type: string, enum: ["authoritative", "inferred", "unresolved"] }
+        adequate: { type: boolean, nullable: true }
+        min_required_m: { type: number, format: float }
+        min_citation: { type: string }
+        floor_area_cap: { $ref: "#/components/schemas/RoadWidthFloorCap" }
+        reg_basis: { type: array, items: { type: string } }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+
+    ObligationChecklistItem:
+      type: object
+      required: [item, status, reason, citation_gap, next_action]
+      properties:
+        item: { type: string }
+        status: { type: string, enum: ["unverified"] }
+        reason: { type: string }
+        citation_gap: { type: string }
+        next_action: { type: string }
+
+    DevelopmentObligationsResult:
+      type: object
+      required: [status, access_adequacy, computed_count, checklist_count, data_source, disclaimer]
+      properties:
+        status: { type: string, enum: ["resolved"] }
+        built_up_area_sqm: { type: number, format: float, nullable: true }
+        parking:
+          oneOf:
+            - $ref: "#/components/schemas/ParkingECS"
+            - type: "null"
+        mixed_use:
+          oneOf:
+            - $ref: "#/components/schemas/MixedUseShare"
+            - type: "null"
+        access_adequacy: { $ref: "#/components/schemas/AccessAdequacy" }
+        checklist:
+          type: array
+          items: { $ref: "#/components/schemas/ObligationChecklistItem" }
+        computed_count: { type: integer }
+        checklist_count: { type: integer }
+        data_source: { type: string }
+        disclaimer: { type: string }
+
     ZoneClass:
       type: string
       enum: ["Residential", "Commercial", "Industrial", "Mixed Use", "Institutional"]

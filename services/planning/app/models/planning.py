@@ -178,6 +178,92 @@ class FarAssemblyResult(BaseModel):
     disclaimer: str
 
 
+UseType = Literal[
+    "residential_multi_dwelling", "retail", "office", "restaurant", "hotel", "hospital",
+    "nursing_home", "educational", "industrial", "other_public_semipublic",
+    "commercial_mutation_corridor", "integrated_township",
+]
+
+
+class MixedUseParkingRequest(RoadWidthRequest):
+    """US-083 inputs: road-width tiers (RoadWidthRequest, reused for access adequacy) + the built-up
+    context that drives parking ECS + mixed-use %. Provide built_up_area_sqm OR (achievable_far +
+    plot_area_sqm)."""
+
+    use_type: UseType = "residential_multi_dwelling"
+    achievable_far: float | None = Field(default=None, gt=0)     # from /planning/far
+    built_up_area_sqm: float | None = Field(default=None, gt=0)  # overrides achievable_far x plot
+    avg_dwelling_size_sqm: float | None = Field(default=None, gt=0)  # exact per-DU residential ECS
+
+
+class ParkingECS(BaseModel):
+    status: Literal["resolved", "unresolved"]
+    use: str
+    ecs_total: int | None = None
+    ecs_main: float | None = None
+    ecs_visitor: float | None = None
+    basis: str | None = None
+    confidence: Literal["authoritative", "derived", "unresolved"]
+    citation: str
+    built_up_area_sqm: float | None = None
+    notes: list[str] = []
+    next_action: str | None = None
+
+
+class MixedUseShare(BaseModel):
+    status: Literal["resolved"]
+    zone: str | None = None
+    sub_zone: str | None = None
+    non_residential_max_pct: float
+    non_residential_max_sqm: float | None = None
+    residential_pct: float | None = None
+    split: dict[str, float] | None = None
+    basis: str | None = None
+    confidence: Literal["authoritative"]
+    citation: str | None = None
+
+
+class AccessAdequacy(BaseModel):
+    status: Literal["resolved", "unresolved"]
+    width_m: float | None = None
+    band: RoadWidthBand | None = None
+    confidence: WidthConfidence
+    adequate: bool | None = None       # None = unresolved width -> cannot judge
+    min_required_m: float
+    min_citation: str
+    floor_area_cap: RoadWidthFloorCap | None = None
+    reg_basis: list[str] = []
+    reason: str | None = None
+    next_action: str | None = None
+
+
+class ObligationChecklistItem(BaseModel):
+    """An obligation the RMP does NOT quantify — surfaced explicitly, NEVER a fabricated number."""
+
+    item: str
+    status: Literal["unverified"]
+    reason: str
+    citation_gap: str
+    next_action: str
+
+
+class DevelopmentObligationsResult(BaseModel):
+    """US-083: mixed-use % + parking ECS + access adequacy (computed + cited) and a checklist of the
+    obligations RMP-2015 does not quantify (TIA thresholds, uncovered uses/zones). Computed items
+    carry their citation; checklist items are labelled unverified and carry no number."""
+
+    status: Literal["resolved"]
+    built_up_area_sqm: float | None = None
+    parking: ParkingECS | None = None
+    mixed_use: MixedUseShare | None = None
+    access_adequacy: AccessAdequacy
+    checklist: list[ObligationChecklistItem] = []
+    computed_count: int
+    checklist_count: int
+    data_source: str
+    disclaimer: str
+
+
 class AirportRestriction(BaseModel):
     """HEIGHT-CAP ONLY (US-086 consolidation). Planning keeps the ICAO/OLS surface + max-height it
     needs for the building envelope; the airport DISTANCE reporting moved to the infrastructure

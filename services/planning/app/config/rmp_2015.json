@@ -216,5 +216,36 @@
       "transcription_origin": { "source": "revised-setback-gazette-copy.pdf (UDD 235 MNJ 2025(E), 11.11.2025) — raster scan, 0 text streams", "confidence": "inferred" },
       "transcription_blocker": "Header says 'DRAFT REGULATIONS' AND the PDF is a scan with no text layer. In-force status UNCONFIRMED + values UNREAD -> does not govern; a draft never supersedes the notified base. Needs a searchable/notified copy + OCR."
     }
-  ]
+  ],
+  "parking_norms": {
+    "confidence": "authoritative",
+    "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 23, Ch.8 (Parking), p.48", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+    "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf text + 2.3x pixel-verified (p.48)", "confidence": "authoritative" },
+    "unit_dimensions_m": { "car": "2.5 x 5.5", "lorry": "3.5 x 7.5" },
+    "note": "One car space per the floor-area / dwelling-unit basis below. Stilt-floor and MLCP parking are exempt from FAR (reg 8.1, p.49). 'Additional parking for part area when the part exceeds 50% of the prescribed limit' (Table 23 note).",
+    "uses": [
+      { "use": "residential_multi_dwelling", "key": "per_dwelling_unit", "du_band_sqm": { "min": 50, "max": 150 }, "ecs_per_unit": 1, "visitor_pct": 0.10, "per_area_proxy_sqm": 100, "table_row": 13, "proxy_confidence": "derived", "note": "Row 13: 1 ECS per DU of 50-150 sqm (A); DU < 50 sqm -> 1 ECS per 2 DU (B); +10% visitor (C). The ~1 ECS/100 sqm floor-area figure is a DERIVED proxy of the per-DU rule (DU midpoint ~100 sqm); the 10% visitor share is authoritative." },
+      { "use": "retail", "key": "per_floor_area_sqm", "per_sqm": 50, "table_row": 2, "label": "Retail business (shops, complexes, malls)" },
+      { "use": "office", "key": "per_floor_area_sqm", "per_sqm": 50, "table_row": 8, "label": "Office (Govt/Semi-Govt/Pvt)" },
+      { "use": "restaurant", "key": "per_floor_area_sqm", "per_sqm": 75, "table_row": 5, "label": "Restaurant (food & drink)" },
+      { "use": "hotel", "key": "per_floor_area_sqm", "per_sqm": 80, "table_row": 6, "label": "Lodging / hotels / tourist homes" },
+      { "use": "hospital", "key": "per_floor_area_sqm", "per_sqm": 100, "table_row": 12, "label": "Hospitals" },
+      { "use": "nursing_home", "key": "per_floor_area_sqm", "per_sqm": 50, "table_row": 11, "label": "Nursing homes" },
+      { "use": "educational", "key": "per_floor_area_sqm", "per_sqm": 150, "table_row": 17, "label": "Educational buildings" },
+      { "use": "industrial", "key": "per_floor_area_sqm", "per_sqm": 100, "table_row": 10, "label": "Industrial buildings", "note": "plus 1 lorry space (3.5 x 7.5 m) for every 1000 sqm or part thereof" },
+      { "use": "other_public_semipublic", "key": "per_floor_area_sqm", "per_sqm": 100, "table_row": 18, "label": "Other Public & Semi-Public buildings" }
+    ],
+    "visitor_default_pct": 0.10
+  },
+  "mixed_use_shares": {
+    "confidence": "authoritative",
+    "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "reg 4.1.2 p.27 / reg 4.2.2 p.28 / reg 7.3 p.47", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+    "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf text + pixel-verified (p.27/28/47)", "confidence": "authoritative" },
+    "note": "Zone-permitted NON-RESIDENTIAL (ancillary/mixed) share of built-up area, where the RMP states one. Zones NOT listed here (a dedicated 'Mixed Use' land-use zone, commercial-with-residential) have NO fixed RMP split -> checklist, never a fabricated %.",
+    "zones": [
+      { "zone": "Residential", "sub_zone": "Main", "non_residential_max_pct": 0.20, "basis": "ancillary use allowable up to 20% of total built-up area (or 50 sqm, whichever higher)", "citation": "reg 4.1.2, p.27" },
+      { "zone": "Residential", "sub_zone": "Mixed", "non_residential_max_pct": 0.30, "basis": "ancillary land use permissible up to 30% of total built-up area", "citation": "reg 4.2.2, p.28" },
+      { "zone": "Integrated Township", "sub_zone": null, "residential_pct": 0.40, "non_residential_max_pct": 0.60, "split": { "hi_tech": 0.55, "commercial": 0.05 }, "basis": "Residential 40% / Non-Residential 60% (Hi-Tech 55% + Commercial 5%)", "citation": "reg 7.3, p.47" }
+    ]
+  }
 }

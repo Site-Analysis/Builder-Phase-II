@@ -1073,6 +1073,94 @@ export async function assembleFar(input: FarAssemblyInput): Promise<FarAssemblyR
   });
 }
 
+// ─── Development obligations — POST /planning/obligations (US-083) ──────────────────────────────
+// Mixed-use % + parking ECS + access adequacy (COMPUTED + cited) and a checklist of what RMP-2015
+// does not quantify (TIA thresholds, uncovered uses). Computed and checklist are rendered distinctly.
+
+export type ObligationUse =
+  | "residential_multi_dwelling" | "retail" | "office" | "restaurant" | "hotel" | "hospital"
+  | "nursing_home" | "educational" | "industrial" | "other_public_semipublic"
+  | "commercial_mutation_corridor" | "integrated_township";
+
+export interface ObligationsInput extends RoadWidthInput {
+  use_type?: ObligationUse;
+  achievable_far?: number;
+  built_up_area_sqm?: number;
+  avg_dwelling_size_sqm?: number;
+}
+export interface ParkingECS {
+  status: "resolved" | "unresolved";
+  use: string; ecs_total: number | null; ecs_main: number | null; ecs_visitor: number | null;
+  basis: string | null; confidence: "authoritative" | "derived" | "unresolved";
+  citation: string; built_up_area_sqm: number | null; notes: string[]; next_action: string | null;
+}
+export interface MixedUseShare {
+  status: "resolved"; zone: string | null; sub_zone: string | null;
+  non_residential_max_pct: number; non_residential_max_sqm: number | null;
+  residential_pct: number | null; split: Record<string, number> | null;
+  basis: string | null; confidence: "authoritative"; citation: string | null;
+}
+export interface AccessAdequacy {
+  status: "resolved" | "unresolved"; width_m: number | null;
+  confidence: "authoritative" | "inferred" | "unresolved"; adequate: boolean | null;
+  min_required_m: number; min_citation: string; reason: string | null; next_action: string | null;
+}
+export interface ObligationChecklistItem {
+  item: string; status: "unverified"; reason: string; citation_gap: string; next_action: string;
+}
+export interface DevelopmentObligationsResult {
+  status: "resolved"; built_up_area_sqm: number | null;
+  parking: ParkingECS | null; mixed_use: MixedUseShare | null; access_adequacy: AccessAdequacy;
+  checklist: ObligationChecklistItem[]; computed_count: number; checklist_count: number;
+  data_source: string; disclaimer: string;
+}
+
+export async function getObligations(input: ObligationsInput): Promise<DevelopmentObligationsResult> {
+  return svcFetch<DevelopmentObligationsResult>(SVC.planning, "/planning/obligations", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// COMPUTED items (with citation + confidence) render as good/warn; CHECKLIST items render distinctly
+// as "unverified — confirm" and are NEVER shown as a computed value.
+export function obligationsQualitative(
+  r: DevelopmentObligationsResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  if (r.parking && r.parking.status === "resolved") {
+    out.push({
+      label: `Parking (COMPUTED · ${r.parking.confidence})`,
+      value: `${r.parking.ecs_total} ECS (${r.parking.ecs_main} + ${r.parking.ecs_visitor} visitor) · ${r.parking.citation}`,
+      tone: "good" as QualitativeTone,
+    });
+  }
+  if (r.mixed_use) {
+    out.push({
+      label: `Mixed-use max non-residential (COMPUTED · ${r.mixed_use.confidence})`,
+      value: `${(r.mixed_use.non_residential_max_pct * 100).toFixed(0)}%${r.mixed_use.non_residential_max_sqm ? ` (${r.mixed_use.non_residential_max_sqm} sqm)` : ""} · ${r.mixed_use.citation}`,
+      tone: "good" as QualitativeTone,
+    });
+  }
+  const a = r.access_adequacy;
+  out.push({
+    label: `Access road adequacy (min ${a.min_required_m} m)`,
+    value: a.adequate === null ? "Unresolved — width unknown, cannot judge (absence is not adequacy)."
+      : a.adequate ? `Adequate — ${a.width_m} m ≥ ${a.min_required_m} m` : (a.reason ?? "Below minimum"),
+    tone: (a.adequate === false ? "bad" : a.adequate === null ? "warn" : "good") as QualitativeTone,
+  });
+  // checklist — visibly distinct, unverified, no number
+  for (const c of r.checklist) {
+    out.push({
+      label: `☐ ${c.item} (UNVERIFIED — confirm)`,
+      value: `${c.reason} · ${c.next_action}`,
+      tone: "warn" as QualitativeTone,
+    });
+  }
+  out.push({ label: "⚠ Disclaimer", value: r.disclaimer, tone: "warn" as QualitativeTone });
+  return out;
+}
+
 /** permissible + TWO-LINE achievable (base / with-entitlements) as distinct lines; each
  *  entitlement tagged with its condition; band-edge matrix; inferred/authoritative/conditional
  *  visibly distinct; citations + sanction disclaimer. */

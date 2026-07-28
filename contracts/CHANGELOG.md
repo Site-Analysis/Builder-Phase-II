@@ -1,5 +1,26 @@
 # Contract Changelog
 
+## 2.24.0 — 2026-07-28
+
+### Added — planning.yaml (v1.4.0 → v1.5.0), US-083 mixed-use % + parking (ECS) + TIA
+- **`POST /planning/obligations`** (`DevelopmentObligationsResult`) — development obligations for a
+  plot, computed from built-up area (achievable_far × plot):
+  - **Parking ECS** from **RMP-2015 Table 23 (Ch.8, p.48)** — non-residential uses key by floor area
+    (retail/office 50 sqm, restaurant 75, hotel 80, hospital 100, educational 150, …) at
+    AUTHORITATIVE confidence; residential multi-dwelling is per-DU (row 13: 1 ECS/DU 50–150 sqm +
+    10% visitor), with the ~1 ECS/100 sqm figure marked DERIVED (proxy of the per-DU rule).
+  - **Mixed-use %** — zone-permitted non-residential share where the RMP states one
+    (Residential-Main 20% reg 4.1.2 p.27; Residential-Mixed 30% reg 4.2.2 p.28; Integrated Township
+    40/60 reg 7.3 p.47); other zones → checklist, never a fabricated %.
+  - **Access adequacy** — REUSES the `road_width_resolver` (not recomputed); flags the access road
+    below the RMP minimum for the use.
+  - **Checklist** — obligations RMP-2015 does NOT quantify are surfaced as `unverified` items with no
+    number: the **TIA trigger threshold** (absent from RMP-2015 Vol-III entirely — flagged as a
+    likely obligation for large/commercial builds), and any use/zone with no RMP rate.
+  - Config gains provenance-tracked `parking_norms` (Table 23) + `mixed_use_shares` blocks
+    (authoritative, pixel-verified p.47/48). Gated by the new `feature.planning.mixed-use`
+    (default-off).
+
 ## 2.23.0 — 2026-07-28
 
 ### Changed — future-infra.yaml (v1.0.0 → v1.1.0), US-090 pipeline audit + metro wire + price upside

@@ -31,6 +31,7 @@ class FeatureFlag(StrEnum):
     PLANNING_SITE_CAPACITY = "feature.planning.site-capacity"
     PLANNING_ROAD_WIDTH_RESOLVER = "feature.planning.road-width-resolver"
     PLANNING_FAR_ASSEMBLY = "feature.planning.far-assembly"
+    PLANNING_MIXED_USE = "feature.planning.mixed-use"
     INFRASTRUCTURE_CONNECTIVITY = "feature.infrastructure.connectivity"
     INFRASTRUCTURE_UTILITIES = "feature.infrastructure.utilities"
     CONTEXT_GROWTH_PIPELINE = "feature.context.growth-pipeline"
