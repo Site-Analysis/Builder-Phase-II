@@ -2059,12 +2059,18 @@ export async function getWaterConstraintsAnalysis(lat: number, lon: number): Pro
 
 export async function getGrowthAnalysis(lat: number, lon: number): Promise<ModuleResult> {
   const d = await svcFetch<Record<string, unknown>>(SVC.growth, `/future-infra/pipeline?lat=${lat}&lon=${lon}&radius_km=10`);
-  const items = (d.pipeline_items ?? []) as Array<{ type: string; name: string; status: string; distance_km: number; source: string; source_date: string; description?: string }>;
+  const items = (d.pipeline_items ?? []) as Array<{ type: string; name: string; status: string; distance_km: number; source: string; source_date: string; status_as_of?: string; contributes_to_upside?: boolean; description?: string }>;
   const underConstruction = items.filter((p) => p.status === "Under Construction").length;
+  const cancelled = items.filter((p) => p.status === "Cancelled" || p.status === "Tendered").length;
+  // US-090: a Cancelled/Tendered project is shown in RED and must never read as positive.
+  const statusTone = (s: string): QualitativeTone =>
+    s === "Cancelled" || s === "Tendered" ? "bad"
+      : s === "Operational" || s === "Under Construction" ? "good"
+      : "neutral";
   return {
     score: num(d.score, 50),
     severity: (d.severity ?? "moderate") as ModuleResult["severity"],
-    summary: `${items.length} projects within 10km — ${underConstruction} under construction`,
+    summary: `${items.length} projects within 10km — ${underConstruction} under construction${cancelled ? `, ${cancelled} cancelled (excluded)` : ""}`,
     data_source: `${d.data_source ?? "Curated pipeline"} (${d.data_as_of ?? "2024-Q4"})`,
     indicators: [
       { label: "Total Projects", value: String(items.length), unit: "", barFraction: clamp01(items.length / 10), citation: "Curated" },
@@ -2079,8 +2085,8 @@ export async function getGrowthAnalysis(lat: number, lon: number): Promise<Modul
       },
       ...items.map((p) => ({
         label: `${p.name} (${p.source ?? "Curated"})`,
-        value: `${p.status} · ${p.distance_km.toFixed(1)}km · ${p.source_date ?? "2024-Q4"}`,
-        tone: (p.status === "Under Construction" || p.status === "Operational" ? "good" : "neutral") as QualitativeTone,
+        value: `${p.status}${p.status === "Cancelled" ? " — NOT counted" : ""} · ${p.distance_km.toFixed(1)}km · as of ${p.status_as_of ?? p.source_date ?? "2024-Q4"}`,
+        tone: statusTone(p.status),
       })),
     ],
     detailMetrics: [{ group: "Pipeline (curated 2024-Q4 — verify at source)", rows: items.map((p) => ({ label: `[${p.type}] ${p.name}`, value: `${p.status} · ${p.distance_km.toFixed(1)}km · ${p.source ?? ""}` })) }],
@@ -2093,6 +2099,64 @@ export async function getGrowthAnalysis(lat: number, lon: number): Promise<Modul
     loading: false,
     error: null,
   };
+}
+
+// ─── Indicative price upside — POST /future-infra/price-upside (US-090) ────────────────────────
+// A RANGE, never a scalar. Absent guidance value -> unresolved (not 0).
+
+export interface PriceUpsideRange {
+  low: number;
+  high: number;
+  unit: string;
+  node_name: string | null;
+  node_type: string | null;
+  node_status: string | null;
+  node_distance_m: number | null;
+  premium_low_pct: number | null;
+  premium_high_pct: number | null;
+  method: string;
+  confidence: "inferred";
+  as_of: string;
+}
+export interface PriceUpsideResult {
+  status: "resolved" | "unresolved";
+  upside: PriceUpsideRange | null;
+  guidance_value_per_sqm: number | null;
+  reason: string | null;
+  disclaimer: string;
+}
+
+export async function getPriceUpside(
+  lat: number, lon: number, guidanceValuePerSqm: number | null,
+): Promise<PriceUpsideResult> {
+  return svcFetch<PriceUpsideResult>(SVC.growth, "/future-infra/price-upside", {
+    method: "POST",
+    body: JSON.stringify({ lat, lon, guidance_value_per_sqm: guidanceValuePerSqm }),
+  });
+}
+
+// Render the upside strictly as a RANGE + disclaimer; unresolved is shown as a warn, never as ₹0.
+export function priceUpsideQualitative(
+  r: PriceUpsideResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  if (r.status === "unresolved" || !r.upside) {
+    out.push({
+      label: "Indicative price upside",
+      value: r.reason ?? "Unresolved — supply the Kaveri guidance value (₹/sqm) to estimate.",
+      tone: "warn" as QualitativeTone,
+    });
+  } else {
+    const u = r.upside;
+    const node = u.node_name ? `${u.node_name} (${u.node_status}, ${(u.node_distance_m ?? 0).toFixed(0)} m)` : "no operational/UC node in range";
+    out.push({
+      label: "Indicative price upside (RANGE — not a valuation)",
+      value: `₹${u.low.toLocaleString()}–₹${u.high.toLocaleString()} /sqm uplift (${u.premium_low_pct}–${u.premium_high_pct}%) vs guidance · nearest node: ${node}`,
+      tone: (u.high > 0 ? "good" : "neutral") as QualitativeTone,
+    });
+  }
+  out.push({ label: "⚠ Disclaimer", value: r.disclaimer, tone: "warn" as QualitativeTone });
+  return out;
 }
 
 // NOTE: Land records module requires user input — called manually, not on page load

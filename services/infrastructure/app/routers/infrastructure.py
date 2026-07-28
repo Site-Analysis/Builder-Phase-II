@@ -20,6 +20,7 @@ from app.services.infrastructure_service import InfrastructureService
 _INFRA_FLAG = "feature.infrastructure.connectivity"
 _UTILITIES_FLAG = "feature.infrastructure.utilities"
 _PLANNING_URL = os.getenv("PLANNING_API_URL", "http://localhost:8006")
+_GROWTH_URL = os.getenv("GROWTH_API_URL", "http://localhost:8008")
 
 
 def _require_flag(flag: str = _INFRA_FLAG) -> None:
@@ -75,10 +76,33 @@ async def analyze_connectivity(request: ConnectivityRequest) -> ConnectivityResu
         except Exception:
             road_width_result = None  # planning unreachable -> unresolved (never fabricated)
 
-    # metro/rail/highway sources are not fetchable in this environment -> inert seams (unresolved).
+    # METRO — US-090 fills the US-086 metro seam with CURATED alignment distance from future-infra
+    # (inferred, approximate — not live GTFS). Fetch over HTTP; unreachable -> unresolved (never
+    # fabricated). The MetroNearest resolved shape already matches transport_seam's `fetched` record.
+    metro_fetched: dict | None = None
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.get(
+                f"{_GROWTH_URL}/future-infra/metro-nearest",
+                params={"lat": request.latitude, "lon": request.longitude},
+            )
+            if resp.status_code == 200:
+                m = resp.json()
+                if m.get("status") == "resolved":
+                    metro_fetched = {
+                        "name": m.get("name"),
+                        "ref": m.get("corridor_status"),   # carry corridor status as the ref tag
+                        "distance_m": m.get("distance_m"),
+                        "distance_type": m.get("distance_type", "straight-line"),
+                        "confidence": m.get("confidence", "inferred"),
+                    }
+    except Exception:
+        metro_fetched = None  # future-infra unreachable -> unresolved (never fabricated)
+
+    # rail/highway sources remain not fetchable in this environment -> inert seams (unresolved).
     result = build_connectivity(
         request.latitude, request.longitude,
-        metro_fetched=None, rail_fetched=None, highway_fetched=None,
+        metro_fetched=metro_fetched, rail_fetched=None, highway_fetched=None,
         road_width_result=road_width_result,
     )
     return ConnectivityResult(**result)

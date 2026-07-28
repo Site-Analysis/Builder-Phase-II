@@ -1,5 +1,28 @@
 # Contract Changelog
 
+## 2.23.0 — 2026-07-28
+
+### Changed — future-infra.yaml (v1.0.0 → v1.1.0), US-090 pipeline audit + metro wire + price upside
+- **Pipeline status audit.** `PipelineStatus` enum gains **`Tendered`** and **`Cancelled`**;
+  `PipelineItem` gains `status_as_of` (when the status was last verified) and
+  `contributes_to_upside` (true only for Operational / Under-Construction). A Cancelled/Tendered
+  project is shown for transparency but is EXCLUDED from the growth score and price upside — the
+  curated data was corrected: the **BDA Peripheral Ring Road (PRR) is now `Cancelled`** (tender
+  cancelled Jul-2024), split from the distinct NHAI **STRR Phase-1** (`Operational`); Metro Phase-3
+  corrected to the Aug-2024 Cabinet-approved 44.65 km / 31-station scope (`Approved`, not upcoming);
+  **K-RIDE** suburban rail added (`Under Construction`, target Dec-2026).
+- **`GET /future-infra/metro-nearest`** (`MetroNearest`) — nearest curated metro-corridor node,
+  straight-line EPSG:32643, **INFERRED** (approximate curated alignment, NOT live BMRCL GTFS).
+  Fills the US-086 metro seam; `/infrastructure/connectivity` now consumes it as `metro_fetched`, so
+  `connectivity_signal.metro_status` resolves from curated data instead of `unresolved`.
+- **`POST /future-infra/price-upside`** (`PriceUpsideResult` / `PriceUpside`) — indicative price
+  upside as a **RANGE** {low, high, method, confidence, as_of}; the schema has **no scalar price
+  field** and enforces low ≤ high. Kaveri guidance value × hedonic distance-decay (MPRA 124686) off
+  the nearest Operational/Under-Construction node; only those statuses contribute (Cancelled = 0).
+  Absent guidance value → `unresolved` (NOT zero). Confidence `inferred`; carries an
+  "indicative, not a valuation — consult a registered valuer" disclaimer. Gated by the existing
+  `feature.context.growth-pipeline`.
+
 ## 2.22.0 — 2026-07-24
 
 ### Added — land-records.yaml (v1.0.0 → v1.1.0), US-091 ownership snapshot
