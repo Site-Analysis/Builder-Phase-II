@@ -184,7 +184,7 @@ def test_authority_bengaluru(monkeypatch):
               "bye_law_reference", "portal", "confidence", "live_verified", "kgis",
               "notes", "data_source", "data_disclaimer"):
         assert f in body
-    assert body["confidence"] == "medium"  # unchanged from pre-wire-in
+    assert body["confidence"] == "derived"  # US-092 C4: ladder (was off-ladder "medium")
     assert body["provenance"]["tier"] == "authoritative"
     assert body["provenance"]["mode"] == "kgis-live"
 
@@ -231,7 +231,7 @@ def test_authority_no_context_no_fallback_unresolved(monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     assert body["authority"] == "Unknown"
-    assert body["confidence"] == "low"
+    assert body["confidence"] == "unresolved"  # US-092 C4: ladder (was off-ladder "low")
     assert body["provenance"]["tier"] == "unresolved"
     assert body["provenance"]["mode"] == "unresolved"
 

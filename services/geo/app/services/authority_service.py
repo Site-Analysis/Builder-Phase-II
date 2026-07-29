@@ -13,7 +13,9 @@ corporations) and the BDA / BMRDA / BIAAPA planning-area tracks.
 Authoritative jurisdiction requires a point-in-polygon test over the KGIS Boundaries /
 LPA layers — that is **deferred** until KGIS access lands (Phase-0). Until then this is
 best-effort from the admin context, returned with `live_verified=false` and an honest
-confidence. No fabrication: when context is unavailable the result is `Unknown`/low.
+confidence on the canonical ladder (US-092 C4: authoritative/derived/inferred/unresolved —
+KGIS admin-context is `derived`, open-data fallback is `inferred`). No fabrication: when
+context is unavailable the result is `Unknown`/`unresolved`.
 """
 
 from __future__ import annotations
@@ -96,7 +98,7 @@ async def detect_authority(
             approval_track="GBA / city-corporation BPAS (AutoDCR); Sakala 30-day",
             bye_law_reference=_BBMP_BYELAWS,
             portal=_BPAS_PORTAL,
-            confidence="medium",
+            confidence="derived",  # KGIS admin-context; authoritative only after KGIS PIP (Phase-0)
             live_verified=False,
             kgis=kgis,
             provenance=_KGIS_PROV,
@@ -114,7 +116,7 @@ async def detect_authority(
             approval_track="ULB BPAS / DPMS; Sakala",
             bye_law_reference="Karnataka Municipal Building Bye-laws / Model Bye-laws 2017",
             portal=None,
-            confidence="low",
+            confidence="inferred",  # KGIS admin-context, non-Bengaluru — best-effort
             live_verified=False,
             kgis=kgis,
             provenance=_KGIS_PROV,
@@ -129,7 +131,7 @@ async def detect_authority(
         approval_track="Gram Panchayat + RDPR; NA conversion if agricultural",
         bye_law_reference="Karnataka Panchayat Raj building rules / applicable LPA regulations",
         portal=None,
-        confidence="low",
+        confidence="inferred",  # KGIS admin-context, rural — best-effort
         live_verified=False,
         kgis=kgis,
         provenance=_KGIS_PROV,
@@ -161,7 +163,7 @@ def _fallback_authority(lat: float, lon: float) -> AuthorityResult:
                 approval_track="GBA / city-corporation BPAS (AutoDCR); Sakala 30-day",
                 bye_law_reference=_BBMP_BYELAWS,
                 portal=_BPAS_PORTAL,
-                confidence="low",  # inferred from an open-data ward boundary, not KGIS
+                confidence="inferred",  # from an open-data ward boundary, not KGIS
                 live_verified=False,
                 notes=(
                     "KGIS unavailable — ward inferred from the OpenCity GBA layer: "
@@ -191,7 +193,7 @@ def _fallback_authority(lat: float, lon: float) -> AuthorityResult:
                 approval_track="Gram Panchayat + RDPR; NA conversion if agricultural",
                 bye_law_reference="Karnataka Panchayat Raj building rules / applicable LPA regulations",
                 portal=None,
-                confidence="low",
+                confidence="inferred",  # from the open-data LGD village layer, not KGIS
                 live_verified=False,
                 notes=(
                     "KGIS unavailable — village inferred from the LGD layer: "
@@ -208,7 +210,7 @@ def _fallback_authority(lat: float, lon: float) -> AuthorityResult:
     return AuthorityResult(
         authority="Unknown",
         jurisdiction_type="Unknown",
-        confidence="low",
+        confidence="unresolved",  # no KGIS + no fallback layer answered — honest no-answer
         live_verified=False,
         notes="KGIS reverse geocode returned no context and no bundled fallback layer "
         "contains this point (service unreachable or point outside coverage). Verify "

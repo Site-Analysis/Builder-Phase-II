@@ -352,7 +352,10 @@ class AuthorityResult(BaseModel):
     approval_track: str | None = None
     bye_law_reference: str | None = None
     portal: str | None = None
-    confidence: str = "low"  # "high" | "medium" | "low"
+    # US-092 C4: unified onto the canonical confidence ladder (was off-ladder high|medium|low).
+    # authoritative = KGIS-live PIP (pending); derived = KGIS admin-context (not yet PIP-verified);
+    # inferred = open-data fallback / best-effort; unresolved = no answer.
+    confidence: Literal["authoritative", "derived", "inferred", "unresolved"] = "unresolved"
     live_verified: bool = False
     kgis: KgisContext | None = None
     notes: str | None = None
