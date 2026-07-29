@@ -1,5 +1,20 @@
 # Contract Changelog
 
+## 2.25.0 — 2026-07-29
+
+### Changed — geo.yaml (v1.9.0 → v1.10.0) + land-records.yaml (v1.1.0 → v1.2.0), US-092 C1 gate booleans
+- **Every Tier-1 gate now exposes a machine-readable boolean** so the verdict engine determines
+  NO-GO from booleans alone, never from string-matching prose.
+- **geo `OverlayItem.is_killer`** (computed) — `true` iff `status == R`; **geo `OverlayResult.gates`**
+  — one `GateSignal` per overlay. A forest/buffer/wetland RED sets `is_killer=true` and its gate
+  `tripped=true`.
+- **land-records `OwnershipSnapshot.gates`** — the `kharab-non-saleable` gate (`tripped` iff Kharab-B)
+  and the `restricted-tenure` gate (`tripped` iff Gomala/restricted confirmed), previously only in
+  prose/notes.
+- **`GateSignal`** = `{gate_name, tripped: bool, basis, citation, confidence}` (confidence on the
+  US-092 C4 ladder). An unresolved gate is `tripped=false` WITH `confidence=unresolved` — the verdict
+  reads that as CAUTION, never a silent pass (C2). Purely additive; no existing field changed.
+
 ## 2.24.0 — 2026-07-28
 
 ### Added — planning.yaml (v1.4.0 → v1.5.0), US-083 mixed-use % + parking (ECS) + TIA

@@ -5,7 +5,24 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, computed_field, model_validator
+
+# US-092 C1: the canonical confidence ladder (mirrors packages/confidence — services can't import
+# it at runtime, so the value set is duplicated and locked by the cross-service confidence guard).
+LadderConfidence = Literal["authoritative", "derived", "inferred", "unresolved"]
+
+
+class GateSignal(BaseModel):
+    """A Tier-1 gate as a MACHINE-READABLE boolean the verdict reads WITHOUT parsing prose (US-092
+    C1). `tripped=True` => the gate fires (a hard-NO-GO contributor: RED buffer, non-saleable
+    Kharab, forest, confirmed restricted). `tripped=False` with `confidence='unresolved'` means NOT
+    confirmed clear either — the verdict must treat that as CAUTION, never a silent pass (C2)."""
+
+    gate_name: str
+    tripped: bool
+    basis: str
+    citation: str | None = None
+    confidence: LadderConfidence
 
 
 class Provenance(BaseModel):
@@ -64,6 +81,13 @@ class OverlayItem(BaseModel):
     next_action: str | None = None
     crs: str = "EPSG:32643"
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_killer(self) -> bool:
+        """US-092 C1: machine-readable — this overlay is a RED deal-killer (verdict reads this
+        boolean, never the status string)."""
+        return self.status == "R"
+
 
 class OverlayVerdict(BaseModel):
     """Booleans the future US-092 GO/NO-GO engine reads. Any RED → hard NO-GO. Any
@@ -99,6 +123,9 @@ class OverlayResult(BaseModel):
     crs: str = "EPSG:32643"
     overlays: list[OverlayItem]
     verdict: OverlayVerdict
+    # US-092 C1: one uniform gate per overlay — {gate_name, tripped, basis, citation, confidence}
+    # — so the verdict determines NO-GO from booleans alone, never from string matching.
+    gates: list[GateSignal] = []
     live_overlays: list[str]
     pending_overlays: list[str]
     # US-087: obligations with no obtainable public geometry (gas, HT-distribution). NOT scored,

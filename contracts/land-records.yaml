@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Land Records Service
-  version: "1.1.0"
+  version: "1.2.0"
   description: >
     Land-records lookup helper for Karnataka. Portal-only by design: government portals
     (Bhoomi RTC, KAVERI encumbrance, eCourts) require CAPTCHA/session auth and are NOT
@@ -142,6 +142,19 @@ components:
         title_verification: { type: string, enum: ["manual-required"] }
         confidence: { $ref: "#/components/schemas/OwnConfidence" }
         next_action: { type: string }
+    GateSignal:
+      type: object
+      description: >
+        US-092 C1 — a Tier-1 ownership gate as a machine-readable boolean. `tripped=true` fires
+        (Kharab-B non-saleable / confirmed restricted tenure); `tripped=false` with
+        `confidence=unresolved` means NOT confirmed clear (verdict treats as CAUTION, never a pass).
+      required: [gate_name, tripped, basis, confidence]
+      properties:
+        gate_name: { type: string }
+        tripped: { type: boolean }
+        basis: { type: string }
+        citation: { type: string, nullable: true }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
     OwnershipSnapshot:
       type: object
       required: [kharab, restricted, ownership_feasibility, data_source]
@@ -149,6 +162,10 @@ components:
         kharab: { $ref: "#/components/schemas/KharabFlag" }
         restricted: { $ref: "#/components/schemas/RestrictedFlag" }
         ownership_feasibility: { $ref: "#/components/schemas/OwnershipFeasibility" }
+        gates:
+          type: array
+          description: "US-092 C1: machine-readable ownership gates (non-saleable Kharab, restricted)."
+          items: { $ref: "#/components/schemas/GateSignal" }
         deep_links: { type: array, items: { $ref: "#/components/schemas/DeepLink" } }
         handoff_note: { type: string }
         data_source: { type: string }

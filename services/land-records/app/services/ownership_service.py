@@ -134,6 +134,36 @@ def _deep_links(district: str, taluk: str, hobli: str, village: str, survey_numb
     ]
 
 
+def _flag_confidence(status: str, resolved_conf: str) -> str:
+    """Map a flag status to the canonical ladder for its gate. A resolved Kharab read (KGIS L5) is
+    authoritative; a resolved Gomala read (Dishaank visual) is derived; a checklist item is inferred
+    (obtainable but not yet read); unresolved stays unresolved."""
+    return {"resolved": resolved_conf, "checklist": "inferred", "unresolved": "unresolved"}.get(
+        status, "unresolved")
+
+
+def _gates(kharab: dict[str, Any], restricted: dict[str, Any]) -> list[dict[str, Any]]:
+    """US-092 C1: the ownership Tier-1 gates as machine-readable booleans. `tripped` is True ONLY
+    when the hazard is CONFIRMED (non_saleable is True / is_restricted is True); an unresolved flag
+    is tripped=False WITH confidence=unresolved so the verdict forces CAUTION, never a silent pass."""
+    return [
+        {
+            "gate_name": "kharab-non-saleable",
+            "tripped": kharab.get("non_saleable") is True,
+            "basis": kharab["note"],
+            "citation": kharab["source"],
+            "confidence": _flag_confidence(kharab["status"], "authoritative"),
+        },
+        {
+            "gate_name": "restricted-tenure",
+            "tripped": restricted.get("is_restricted") is True,
+            "basis": restricted["note"],
+            "citation": restricted["source"],
+            "confidence": _flag_confidence(restricted["status"], "derived"),
+        },
+    ]
+
+
 def build_ownership_snapshot(
     *, district: str, taluk: str, hobli: str, village: str, survey_number: str,
     parcel_resolved: bool, cadastral_l5: str | None, dishaank_class: str | None,
@@ -165,6 +195,7 @@ def build_ownership_snapshot(
         "kharab": kharab,
         "restricted": restricted,
         "ownership_feasibility": feasibility,
+        "gates": _gates(kharab, restricted),
         "deep_links": _deep_links(district, taluk, hobli, village, survey_number),
         "handoff_note": _HANDOFF,
         "data_source": "KGIS Cadastral L5 + Dishaank (flags) + Karnataka portals (deep-links) — "

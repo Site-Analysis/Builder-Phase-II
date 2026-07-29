@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models.geo import (
+    GateSignal,
     NocChecklistItem,
     OverlayItem,
     OverlayProvenance,
@@ -642,9 +643,21 @@ def evaluate_overlays(
         red_overlays=red,
         unresolved_overlays=unres,
     )
+    # US-092 C1: one uniform machine-readable gate per overlay. tripped = RED. An unresolved overlay
+    # is tripped=False WITH confidence=unresolved — the verdict reads that as CAUTION, never a pass.
+    gates = [
+        GateSignal(
+            gate_name=i.name,
+            tripped=(i.status == "R"),
+            basis=i.reason or i.rule_citation or f"{i.name} overlay",
+            citation=i.rule_citation,
+            confidence=i.provenance.confidence,
+        )
+        for i in items
+    ]
     noc_checklist = [NocChecklistItem(**c) for c in _NOC_CHECKLIST]
     return OverlayResult(
-        lat=lat, lon=lon, overlays=items, verdict=verdict,
+        lat=lat, lon=lon, overlays=items, verdict=verdict, gates=gates,
         live_overlays=live, pending_overlays=pending,
         noc_checklist=noc_checklist, data_disclaimer=_DISCLAIMER,
     )

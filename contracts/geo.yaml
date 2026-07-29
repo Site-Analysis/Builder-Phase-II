@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.9.0"
+  version: "1.10.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
     OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS layers. Zoning is
@@ -275,6 +275,22 @@ components:
         reason: { type: string, nullable: true }
         next_action: { type: string, nullable: true }
         crs: { type: string, default: "EPSG:32643" }
+        is_killer:
+          type: boolean
+          description: "US-092 C1: machine-readable RED deal-killer (status == R). Read-only/computed."
+    GateSignal:
+      type: object
+      description: >
+        US-092 C1 — a Tier-1 gate as a machine-readable boolean. `tripped=true` fires the gate;
+        `tripped=false` with `confidence=unresolved` means NOT confirmed clear either (verdict must
+        treat as CAUTION, never a pass).
+      required: [gate_name, tripped, basis, confidence]
+      properties:
+        gate_name: { type: string }
+        tripped: { type: boolean }
+        basis: { type: string }
+        citation: { type: string, nullable: true }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
     OverlayVerdict:
       type: object
       required: [hard_no_go, blocks_clean_go, red_overlays, unresolved_overlays]
@@ -294,6 +310,10 @@ components:
           type: array
           items: { $ref: "#/components/schemas/OverlayItem" }
         verdict: { $ref: "#/components/schemas/OverlayVerdict" }
+        gates:
+          type: array
+          description: "US-092 C1: one machine-readable gate per overlay (tripped = RED)."
+          items: { $ref: "#/components/schemas/GateSignal" }
         live_overlays: { type: array, items: { type: string } }
         pending_overlays: { type: array, items: { type: string } }
         noc_checklist:

@@ -43,6 +43,22 @@ class CourtCase(BaseModel):
 
 OwnConfidence = Literal["authoritative", "inferred", "unresolved"]
 FlagStatus = Literal["resolved", "unresolved", "checklist"]
+# US-092 C1: canonical confidence ladder (mirrors packages/confidence; locked by the cross-service
+# confidence guard). Includes `derived` for the Dishaank-visual restricted gate.
+LadderConfidence = Literal["authoritative", "derived", "inferred", "unresolved"]
+
+
+class GateSignal(BaseModel):
+    """A Tier-1 gate as a MACHINE-READABLE boolean the verdict reads WITHOUT parsing prose (US-092
+    C1). `tripped=True` => the gate fires (non-saleable Kharab, confirmed restricted tenure).
+    `tripped=False` with `confidence='unresolved'` means NOT confirmed clear either — the verdict
+    must treat that as CAUTION, never a silent pass (C2)."""
+
+    gate_name: str
+    tripped: bool
+    basis: str
+    citation: str | None = None
+    confidence: LadderConfidence
 
 
 class OwnershipRequest(LandRecordsRequest):
@@ -96,6 +112,9 @@ class OwnershipSnapshot(BaseModel):
     kharab: KharabFlag
     restricted: RestrictedFlag
     ownership_feasibility: OwnershipFeasibility
+    # US-092 C1: the Tier-1 ownership gates as machine-readable booleans — Kharab-B non-saleable +
+    # confirmed restricted tenure — {gate_name, tripped, basis, citation, confidence}.
+    gates: list[GateSignal] = Field(default_factory=list)
     deep_links: list[DeepLink] = Field(default_factory=list)
     handoff_note: str = (
         "SCREENING SIGNAL ONLY — full title verification requires an advocate's opinion + a Kaveri "
