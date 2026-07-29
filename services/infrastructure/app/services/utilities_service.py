@@ -143,26 +143,73 @@ def build_noc_checklist() -> list[dict[str, Any]]:
     ]
 
 
+_CONF_RANK = {"authoritative": 3, "derived": 2, "inferred": 1, "unresolved": 0}
+
+
+def _weakest_conf(confs: list[str]) -> str:
+    return min(confs, key=lambda c: _CONF_RANK.get(c, 0)) if confs else "unresolved"
+
+
 def build_readiness(
     water_main: dict, telecom: dict, noc_count: int, *,
     power_score: float | None = None, road_score: float | None = None,
 ) -> dict[str, Any]:
     """Compact infra-readiness signal for US-092. Water is known/unknown (never fabricated);
-    telecom/power are inferred scores; `noc_pending` counts mandatory obligations."""
+    telecom/power are inferred scores; `noc_pending` counts mandatory obligations.
+
+    US-092 C2: `resolved_score` is the mean over KNOWN inputs ONLY (null when < 2 are known), so an
+    unresolved input is NEVER averaged into a middling pass. Water is pivotal — if its presence is
+    UNKNOWN the signal is `status=unresolved` and surfaces water in `unknowns`; the score is never a
+    single number that hides the unknowns."""
     water_status = water_main["present"]
     water_conf = water_main["confidence"]
-    notes = []
+    notes: list[str] = []
+    unknowns: list[dict[str, Any]] = []
+    known_scores: list[float] = []
+
+    # water: authoritatively known (present/absent) OR unknown (never fabricated)
     if water_status == "unknown":
+        unknowns.append({"name": "water_main",
+                         "next_action": water_main.get("next_action")
+                         or "confirm the BWSSB water trunk main (authoritative mains layer)"})
         notes.append("water main presence UNKNOWN — authoritative BWSSB layer not available; "
                      "readiness cannot be 'ready' until confirmed.")
-    # overall: 'ready' only when water is authoritatively present; 'unknown' when water is unknown;
-    # else 'partial'. NOC obligations always remain pending until discharged manually.
+    else:
+        known_scores.append(100.0 if water_status == "present" else 0.0)
+    # telecom: inferred OSM proxy — a KNOWN inferred read
+    known_scores.append(float(telecom["score"]))
+    # power / road: known only when a score was supplied
+    if power_score is None:
+        unknowns.append({"name": "power", "next_action": "resolve BESCOM power proximity/score"})
+    else:
+        known_scores.append(float(power_score))
+    if road_score is None:
+        unknowns.append({"name": "road", "next_action": "resolve the access-road score"})
+    else:
+        known_scores.append(float(road_score))
+
+    unresolved_count = len(unknowns)
+    # score over KNOWN inputs only; null when too few (< 2) are known to be meaningful.
+    resolved_score = round(sum(known_scores) / len(known_scores), 1) if len(known_scores) >= 2 else None
+
+    # status: water unknown OR too-few-known => unresolved (never a passing score); else by unknowns.
+    if water_status == "unknown" or resolved_score is None:
+        status = "unresolved"
+    elif unresolved_count == 0:
+        status = "resolved"
+    else:
+        status = "partial"
+
+    confidence = "unresolved" if status == "unresolved" else _weakest_conf([water_conf, "inferred"])
+
+    # overall (back-compat): 'ready' only when water authoritatively present + telecom present.
     if water_status == "present" and telecom["score"] > 0:
         overall = "ready"
     elif water_status == "unknown":
         overall = "unknown"
     else:
         overall = "partial"
+
     return {
         "water_status": water_status,
         "water_confidence": water_conf,
@@ -171,6 +218,11 @@ def build_readiness(
         "road_score": road_score,
         "noc_pending": noc_count,
         "overall": overall,
+        "status": status,
+        "resolved_score": resolved_score,
+        "unresolved_count": unresolved_count,
+        "unknowns": unknowns,
+        "confidence": confidence,
         "notes": notes,
     }
 

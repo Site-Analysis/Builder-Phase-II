@@ -1963,16 +1963,23 @@ export interface TransportDistance {
   confidence: "authoritative" | "inferred" | "unresolved"; crs: string;
   data_source: string | null; reason: string | null; next_action: string | null;
 }
+// US-092 C2: one unresolved decision-relevant input surfaced as a "confirm this" item.
+export interface SignalUnknown { name: string; next_action: string }
+export type SignalStatus = "resolved" | "partial" | "unresolved";
+export type LadderConfidence = "authoritative" | "derived" | "inferred" | "unresolved";
 export interface ConnectivitySignal {
   airport_km: number | null; airport_distance_type: string | null;
   metro_status: "resolved" | "unresolved"; road_width_confidence: string | null;
-  access_flags: string[]; overall: "good" | "partial" | "unknown"; notes: string[];
+  access_flags: string[]; overall: "good" | "partial" | "unknown";
+  // C2 known-vs-unknown
+  status: SignalStatus; resolved_score: number | null; unresolved_count: number;
+  unknowns: SignalUnknown[]; confidence: LadderConfidence; notes: string[];
 }
 export interface ConnectivityResult {
   airport: TransportDistance; metro: TransportDistance; rail: TransportDistance;
   highway: TransportDistance;
   road_width: { status: string; value_m: number | null; band: Record<string, number> | null; confidence: string; source: string; reason: string | null; next_action: string | null };
-  connectivity_score: number; access_flags: string[];
+  connectivity_score: number | null; access_flags: string[];   // C2: null when unresolved
   connectivity_signal: ConnectivitySignal; data_source: string; data_disclaimer: string;
 }
 
@@ -1999,7 +2006,13 @@ export function connectivityQualitative(r: ConnectivityResult): import("../store
   out.push(rw.status === "resolved"
     ? { label: "Access road width", value: `${rw.value_m ?? "—"} m (${rw.confidence}, ${rw.source}).`, tone: "neutral" }
     : { label: "⚠ Access road width unresolved", value: `${rw.reason ?? ""} ${rw.next_action ?? ""}`, tone: "warn" });
-  out.push({ label: "Connectivity score", value: `${r.connectivity_score}/100 · flags: ${r.access_flags.join(", ") || "none"} · ${r.connectivity_signal.overall.toUpperCase()}`, tone: r.connectivity_signal.overall === "good" ? "good" : "neutral" });
+  // C2: an unresolved signal shows NO score (never a misleading number) + the unknowns to confirm.
+  const sig = r.connectivity_signal;
+  if (sig.status === "unresolved" || r.connectivity_score === null) {
+    out.push({ label: "⚠ Connectivity UNRESOLVED", value: `Not scored — ${sig.unresolved_count} decision inputs unresolved: ${sig.unknowns.map((u) => u.name).join(", ")}. Confirm before relying on connectivity.`, tone: "warn" });
+  } else {
+    out.push({ label: `Connectivity score (${sig.status})`, value: `${r.connectivity_score}/100 over KNOWN inputs${sig.unresolved_count ? ` · ${sig.unresolved_count} unresolved: ${sig.unknowns.map((u) => u.name).join(", ")}` : ""} · flags: ${r.access_flags.join(", ") || "none"} · ${sig.confidence}`, tone: sig.status === "resolved" && sig.overall === "good" ? "good" : "neutral" });
+  }
   out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
   return out;
 }
@@ -2029,7 +2042,10 @@ export interface InfraReadiness {
   water_status: "present" | "absent" | "unknown";
   water_confidence: "authoritative" | "inferred" | "unresolved";
   telecom_score: number; power_score: number | null; road_score: number | null;
-  noc_pending: number; overall: "ready" | "partial" | "unknown"; notes: string[];
+  noc_pending: number; overall: "ready" | "partial" | "unknown";
+  // C2 known-vs-unknown
+  status: SignalStatus; resolved_score: number | null; unresolved_count: number;
+  unknowns: SignalUnknown[]; confidence: LadderConfidence; notes: string[];
 }
 export interface UtilitiesResult {
   water_main: UtilityMain; sewer_main: UtilityMain;
@@ -2056,7 +2072,10 @@ export function utilitiesQualitative(r: UtilitiesResult): import("../stores/anal
   out.push({ label: "Water availability (OSM proxy)", value: `${r.water_availability.score}/100 (inferred — not a connection).`, tone: "neutral" });
   out.push({ label: "Telecom availability (OSM proxy)", value: `${r.telecom_availability.score}/100 (inferred).`, tone: "neutral" });
   const rd = r.infra_readiness;
-  out.push({ label: "Infra readiness (US-092)", value: `${rd.overall.toUpperCase()} — water ${rd.water_status}, telecom ${rd.telecom_score}/100, ${rd.noc_pending} NOC obligations pending.`, tone: rd.overall === "ready" ? "good" : rd.overall === "unknown" ? "warn" : "neutral" });
+  // C2: unresolved readiness shows NO resolved_score + surfaces the unknowns to confirm.
+  out.push(rd.status === "unresolved"
+    ? { label: "⚠ Infra readiness UNRESOLVED (US-092)", value: `Not scored — confirm: ${rd.unknowns.map((u) => u.name).join(", ") || "water main"}. ${rd.noc_pending} NOC obligations pending.`, tone: "warn" }
+    : { label: `Infra readiness (${rd.status}, US-092)`, value: `score ${rd.resolved_score}/100 over KNOWN inputs${rd.unresolved_count ? ` · ${rd.unresolved_count} unresolved: ${rd.unknowns.map((u) => u.name).join(", ")}` : ""} · water ${rd.water_status} · ${rd.noc_pending} NOC pending · ${rd.confidence}`, tone: rd.status === "resolved" ? "good" : "neutral" });
   for (const c of r.noc_checklist) {
     out.push({ label: `NOC — ${c.authority}`, value: `${c.requirement}. ${c.rule_citation}.${c.typical_validity ? ` Validity: ${c.typical_validity}.` : ""}${c.applies_when ? ` Applies: ${c.applies_when}.` : ""}`, tone: "warn" });
   }

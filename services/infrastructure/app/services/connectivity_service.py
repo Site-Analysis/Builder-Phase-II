@@ -76,6 +76,14 @@ _NO_METRO_THRESHOLD_M = 5000.0   # "no metro within 5 km" access flag
 _NH_PROXIMITY_M = 500.0          # highway-adjacency flag (noise/access)
 _NARROW_APPROACH_M = 9.0         # access road narrower than this -> constrained approach
 
+# C4 confidence ladder rank (mirrors packages/confidence; locked by the cross-service guard).
+_CONF_RANK = {"authoritative": 3, "derived": 2, "inferred": 1, "unresolved": 0}
+
+
+def _weakest_conf(confs: list[str]) -> str:
+    """Weakest confidence on the C4 ladder (for the merged signal). Empty -> unresolved."""
+    return min(confs, key=lambda c: _CONF_RANK.get(c, 0)) if confs else "unresolved"
+
 
 def airport_connectivity(lat: float, lon: float) -> dict[str, Any]:
     """Nearest bundled AAI aerodrome, STRAIGHT-LINE distance in EPSG:32643 metres."""
@@ -189,10 +197,38 @@ def merge_connectivity(
         score += 15.0
     if highway["status"] == "resolved":
         score += 15.0
-    score = round(min(100.0, score), 1)
+    raw_score = round(min(100.0, score), 1)
 
-    resolved = [m for m in (airport, metro, rail, highway, road_width) if m["status"] == "resolved"]
-    overall = "good" if score >= 65 else "partial" if resolved else "unknown"
+    # ── US-092 C2: known-vs-unknown. DECISION-relevant inputs = metro/rail/highway/road_width
+    # (airport is always bundled → context, not decision-critical). An all-unresolved signal must
+    # NOT emit a single misleading number: the score is SUPPRESSED (null) and status=unresolved.
+    decision = {"metro": metro, "rail": rail, "highway": highway, "road_width": road_width}
+    unknowns = [
+        {"name": name, "next_action": comp.get("next_action") or f"resolve the {name} source"}
+        for name, comp in decision.items() if comp.get("status") != "resolved"
+    ]
+    unresolved_count = len(unknowns)
+    known_decision = len(decision) - unresolved_count
+    if unresolved_count == 0:
+        status = "resolved"
+    elif known_decision == 0:
+        status = "unresolved"          # only the bundled airport is known — signal is unknown
+    else:
+        status = "partial"
+    resolved_score = None if status == "unresolved" else raw_score
+
+    # confidence on the C4 ladder: weakest of the RESOLVED components; unresolved when the signal is.
+    if status == "unresolved":
+        confidence = "unresolved"
+    else:
+        resolved_confs = [
+            m.get("confidence", "unresolved")
+            for m in (airport, metro, rail, highway, road_width) if m["status"] == "resolved"
+        ]
+        confidence = _weakest_conf(resolved_confs)
+
+    overall = "good" if (resolved_score is not None and resolved_score >= 65) else (
+        "partial" if status != "unresolved" else "unknown")
 
     signal = {
         "airport_km": round(airport["distance_m"] / 1000, 2) if airport.get("distance_m") else None,
@@ -201,12 +237,21 @@ def merge_connectivity(
         "road_width_confidence": road_width.get("confidence"),
         "access_flags": flags,
         "overall": overall,
+        "status": status,
+        "resolved_score": resolved_score,
+        "unresolved_count": unresolved_count,
+        "unknowns": unknowns,
+        "confidence": confidence,
         "notes": [
             "airport/metro distances are STRAIGHT-LINE (not road-network) unless labelled otherwise.",
+            "score is computed over RESOLVED inputs only; unresolved inputs are surfaced in `unknowns`, "
+            "never averaged into the number." if unresolved_count else
+            "all decision inputs resolved.",
             *([m["reason"] for m in (metro, rail, highway) if m["status"] == "unresolved" and m.get("reason")]),
         ],
     }
-    return {"score": score, "access_flags": flags, "connectivity_signal": signal}
+    # top-level score mirrors the signal: suppressed (None) when unresolved.
+    return {"score": resolved_score, "access_flags": flags, "connectivity_signal": signal}
 
 
 def build_connectivity(

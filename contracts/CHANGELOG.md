@@ -1,5 +1,20 @@
 # Contract Changelog
 
+## 2.26.0 — 2026-07-29
+
+### Changed — infrastructure.yaml (v1.2.0 → v1.3.0), US-092 C2 unresolved never scores as a pass
+- **`connectivity_signal` + `infra_readiness` restructured to expose known-vs-unknown** so an
+  unresolved decision-relevant input can never be averaged into a middling "partial-good" number.
+  Both gain `status` (`resolved|partial|unresolved`), `resolved_score` (over KNOWN inputs ONLY; null
+  when too few are known), `unresolved_count`, `unknowns[]` (`SignalUnknown{name, next_action}`), and
+  `confidence` on the C4 ladder (`unresolved` when the signal is).
+- **`ConnectivityResult.connectivity_score` is now nullable** — SUPPRESSED (null) when the signal is
+  unresolved (only the always-bundled airport is known). An all-unresolved connectivity read returns
+  `status=unresolved` + the `unknowns` list, never a passing/middling score.
+- **`infra_readiness`**: water presence UNKNOWN (no authoritative BWSSB layer) is pivotal → forces
+  `status=unresolved`; the score is the mean over KNOWN inputs only, null when fewer than two are
+  known. Additive — existing fields (`overall`, `telecom_score`, …) unchanged for back-compat.
+
 ## 2.25.0 — 2026-07-29
 
 ### Changed — geo.yaml (v1.9.0 → v1.10.0) + land-records.yaml (v1.1.0 → v1.2.0), US-092 C1 gate booleans

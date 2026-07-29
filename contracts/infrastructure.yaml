@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Infrastructure Service
-  version: "1.2.0"
+  version: "1.3.0"
   description: >
     Site connectivity analysis from OpenStreetMap. Scores road access, public transit
     proximity, and power infrastructure within a radius. Water/sewage/telecom are
@@ -153,9 +153,16 @@ components:
         source: { type: string }
         reason: { type: string, nullable: true }
         next_action: { type: string, nullable: true }
+    SignalUnknown:
+      type: object
+      description: "US-092 C2 — one unresolved decision-relevant input surfaced as a 'confirm this' item."
+      required: [name, next_action]
+      properties:
+        name: { type: string }
+        next_action: { type: string }
     ConnectivitySignal:
       type: object
-      required: [metro_status, overall]
+      required: [metro_status, overall, status, unresolved_count, confidence]
       properties:
         airport_km: { type: number, format: float, nullable: true }
         airport_distance_type: { type: string, nullable: true }
@@ -163,6 +170,16 @@ components:
         road_width_confidence: { type: string, nullable: true }
         access_flags: { type: array, items: { type: string } }
         overall: { type: string, enum: ["good", "partial", "unknown"] }
+        # US-092 C2 known-vs-unknown structure
+        status: { type: string, enum: ["resolved", "partial", "unresolved"] }
+        resolved_score:
+          type: number
+          format: float
+          nullable: true
+          description: "over KNOWN decision inputs only; null when only the bundled airport is known"
+        unresolved_count: { type: integer }
+        unknowns: { type: array, items: { $ref: "#/components/schemas/SignalUnknown" } }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
         notes: { type: array, items: { type: string } }
     ConnectivityResult:
       type: object
@@ -173,7 +190,11 @@ components:
         rail: { $ref: "#/components/schemas/TransportDistance" }
         highway: { $ref: "#/components/schemas/TransportDistance" }
         road_width: { $ref: "#/components/schemas/RoadWidthConn" }
-        connectivity_score: { type: number, format: float }
+        connectivity_score:
+          type: number
+          format: float
+          nullable: true
+          description: "US-092 C2: null when the signal is unresolved (only the bundled airport known)"
         access_flags: { type: array, items: { type: string } }
         connectivity_signal: { $ref: "#/components/schemas/ConnectivitySignal" }
         data_source: { type: string }
@@ -219,7 +240,7 @@ components:
         mandatory: { type: boolean, default: true }
     InfraReadiness:
       type: object
-      required: [water_status, water_confidence, telecom_score, noc_pending, overall]
+      required: [water_status, water_confidence, telecom_score, noc_pending, overall, status, unresolved_count, confidence]
       properties:
         water_status: { $ref: "#/components/schemas/Presence" }
         water_confidence: { $ref: "#/components/schemas/UtilityConfidence" }
@@ -228,6 +249,16 @@ components:
         road_score: { type: number, format: float, nullable: true }
         noc_pending: { type: integer }
         overall: { type: string, enum: ["ready", "partial", "unknown"] }
+        # US-092 C2 known-vs-unknown structure
+        status: { type: string, enum: ["resolved", "partial", "unresolved"] }
+        resolved_score:
+          type: number
+          format: float
+          nullable: true
+          description: "mean over KNOWN inputs only; null when fewer than 2 are known"
+        unresolved_count: { type: integer }
+        unknowns: { type: array, items: { $ref: "#/components/schemas/SignalUnknown" } }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
         notes: { type: array, items: { type: string } }
     UtilitiesResult:
       type: object

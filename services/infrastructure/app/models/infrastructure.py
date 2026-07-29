@@ -57,7 +57,19 @@ class InfraSubScores(BaseModel):
 
 
 Confidence = Literal["authoritative", "inferred", "unresolved"]
+# US-092 C4 ladder (adds `derived`); C2 signals carry it. Mirrors packages/confidence, locked by the
+# cross-service confidence guard.
+LadderConfidence = Literal["authoritative", "derived", "inferred", "unresolved"]
 Presence = Literal["present", "absent", "unknown"]
+SignalStatus = Literal["resolved", "partial", "unresolved"]
+
+
+class SignalUnknown(BaseModel):
+    """US-092 C2: one decision-relevant input that is UNRESOLVED — surfaced as a 'confirm this'
+    item so the verdict blocks a clean GO, never averages it into a passing score."""
+
+    name: str
+    next_action: str
 
 
 class UtilityMain(BaseModel):
@@ -98,7 +110,12 @@ class NocChecklistItem(BaseModel):
 
 class InfraReadiness(BaseModel):
     """Compact signal the US-092 GO/NO-GO engine consumes. Water is `known`/`unknown` (never
-    fabricated); telecom + power are inferred scores; `noc_pending` counts mandatory obligations."""
+    fabricated); telecom + power are inferred scores; `noc_pending` counts mandatory obligations.
+
+    US-092 C2: `resolved_score` is computed over KNOWN inputs ONLY (null when too few are known), so
+    an unresolved input is NEVER averaged into a middling pass. `status=unresolved` + `unknowns`
+    surfaces exactly what must be confirmed; `confidence` is on the C4 ladder (`unresolved` when the
+    signal is)."""
 
     water_status: Presence
     water_confidence: Confidence
@@ -107,6 +124,12 @@ class InfraReadiness(BaseModel):
     road_score: float | None = None
     noc_pending: int
     overall: Literal["ready", "partial", "unknown"]
+    # C2 known-vs-unknown structure
+    status: SignalStatus = "unresolved"
+    resolved_score: float | None = None      # over KNOWN inputs only; null if too few known
+    unresolved_count: int = 0
+    unknowns: list[SignalUnknown] = []
+    confidence: LadderConfidence = "unresolved"
     notes: list[str] = []
 
 
@@ -168,7 +191,11 @@ class RoadWidthConn(BaseModel):
 
 
 class ConnectivitySignal(BaseModel):
-    """Compact signal for the US-092 GO/NO-GO engine (same shape family as infra_readiness)."""
+    """Compact signal for the US-092 GO/NO-GO engine (same shape family as infra_readiness).
+
+    US-092 C2: `resolved_score` is over KNOWN decision inputs ONLY (null when only the always-bundled
+    airport is known), so an all-unresolved signal never reads as a middling pass. `status` +
+    `unknowns` surface what must be confirmed; `confidence` is on the C4 ladder."""
 
     airport_km: float | None = None
     airport_distance_type: str | None = None
@@ -176,6 +203,12 @@ class ConnectivitySignal(BaseModel):
     road_width_confidence: str | None = None
     access_flags: list[str] = []
     overall: Literal["good", "partial", "unknown"]
+    # C2 known-vs-unknown structure
+    status: SignalStatus = "unresolved"
+    resolved_score: float | None = None      # over KNOWN inputs only; null if too few known
+    unresolved_count: int = 0
+    unknowns: list[SignalUnknown] = []
+    confidence: LadderConfidence = "unresolved"
     notes: list[str] = []
 
 
@@ -185,7 +218,9 @@ class ConnectivityResult(BaseModel):
     rail: TransportDistance
     highway: TransportDistance
     road_width: RoadWidthConn
-    connectivity_score: float
+    # US-092 C2: null when the signal is unresolved (only the bundled airport is known) — a single
+    # misleading number is NEVER emitted for an all-unresolved connectivity read.
+    connectivity_score: float | None = None
     access_flags: list[str] = []
     connectivity_signal: ConnectivitySignal
     data_source: str
