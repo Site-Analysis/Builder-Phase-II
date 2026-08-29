@@ -9,6 +9,7 @@ import { Settings, Upload, Plus, LogOut, MapPin, ArrowLeftRight } from "lucide-r
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useProfileStore } from "@/lib/stores/profile";
+import { useUIStore } from "@/lib/stores/ui";
 
 export interface Breadcrumb {
   label: string;
@@ -56,6 +57,7 @@ export function TopNav({
 }: TopNavProps) {
   const router = useRouter();
   const storeProfile = useProfileStore((s) => s.profile);
+  const { nightMode, toggleNightMode } = useUIStore();
   // Self-source the active profile + switch action so every TopNav page shows the
   // badge without prop-threading; explicit props still override.
   const effectiveProfile = viewProfile ?? storeProfile ?? undefined;
@@ -192,6 +194,17 @@ export function TopNav({
 
         {/* Extra right content (e.g. layout toggle on Settings page) */}
         {rightContent}
+
+        {/* Global night/day toggle */}
+        <button
+          onClick={toggleNightMode}
+          title={nightMode ? "Switch to day mode" : "Switch to night mode"}
+          aria-label={nightMode ? "Day mode" : "Night mode"}
+          className="flex h-8 w-8 items-center justify-center rounded border border-neutral-border bg-neutral-surface hover:bg-neutral-bg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-secondary"
+          style={nightMode ? { background: "#1a1f2e", borderColor: "#3a4460" } : undefined}
+        >
+          <span style={{ fontSize: 15, lineHeight: 1 }}>{nightMode ? "☀️" : "🌙"}</span>
+        </button>
 
         {onSettingsClick && (
           <button

@@ -2,18 +2,26 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Run Fullstack",
+      "detail": "All services (8 analysis + cadastral) + frontend",
+      "dependsOn": ["Backend", "Frontend", "svc: cadastral"],
+      "dependsOrder": "parallel",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
       "label": "Run All",
       "detail": "Start backend (8 services) + frontend",
       "dependsOn": ["Backend", "Frontend"],
       "dependsOrder": "parallel",
-      "group": { "kind": "build", "isDefault": true },
+      "group": "build",
       "problemMatcher": []
     },
     {
       "label": "Frontend",
       "detail": "Next.js dev server (apps/web) on :3000",
       "type": "shell",
-      "command": "npm run dev",
+      "command": "$p = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue; Start-Sleep 1 }; npm run dev",
       "options": {
         "cwd": "${workspaceFolder}/apps/web",
         "env": {
@@ -120,7 +128,7 @@
       "options": {
         "cwd": "${workspaceFolder}/services/geo",
         "env": {
-          "FLAGS": "feature.zoning.land-use,feature.environment.soil,feature.environment.water-constraints,feature.geo.amenities,feature.geo.kgis-context,feature.geo.parcel-geometry",
+          "FLAGS": "feature.zoning.land-use,feature.environment.soil,feature.environment.water-constraints,feature.geo.amenities,feature.geo.kgis-context,feature.geo.parcel-geometry,feature.geo.zone-resolver,feature.geo.transport-access,feature.geo.authority",
           "OVERPASS_URL": "https://overpass.openstreetmap.fr/api/interpreter"
         }
       },
@@ -153,7 +161,28 @@
       "args": ["app.main:app", "--port", "8007"],
       "options": {
         "cwd": "${workspaceFolder}/services/infrastructure",
-        "env": { "FLAGS": "feature.infrastructure.connectivity" }
+        "env": { "FLAGS": "feature.infrastructure.connectivity,feature.infrastructure.utilities,feature.infrastructure.power-grid" }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+
+    {
+      "label": "svc: cadastral",
+      "detail": ":8011 cadastral land records + overlays",
+      "type": "process",
+      "command": "${workspaceFolder}/services/cadastral/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--host", "0.0.0.0", "--port", "8011", "--reload"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/cadastral",
+        "env": {
+          "CADASTRAL_REPO_ROOT": "C:\\Users\\tanny\\chirag's cadestral\\prime-karnataka-cadastral-viewer",
+          "CADASTRAL_DATA_DIR": "C:\\Users\\tanny\\chirag's cadestral\\prime-karnataka-cadastral-viewer\\data\\cadastral_lake_v2",
+          "CADASTRAL_DB_PATH": "C:\\Users\\tanny\\chirag's cadestral\\prime-karnataka-cadastral-viewer\\db\\karnataka_lands_full.db",
+          "WRIS_LAKES_PATH": "C:\\Users\\tanny\\Downloads\\wris_lakes (1).parquet",
+          "FLAGS": "feature.cadastral.land-records,feature.cadastral.overlays"
+        }
       },
       "isBackground": true,
       "problemMatcher": [],

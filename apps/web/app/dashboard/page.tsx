@@ -13,15 +13,21 @@ import { useProjectStore } from "@/lib/stores/project";
 import { getProjects } from "@/lib/api/projects";
 import type { Project } from "@/lib/stores/project";
 
-// TODO GH#53: getProjects returns mock stubs — swap for real Supabase query once table exists
-
-const MODULE_PIPS = [
+const CLIMATE_PIPS = [
   { id: "sunpath",     color: "#F59E0B" },
   { id: "flood",       color: "#5B93C9" },
   { id: "temperature", color: "#D97575" },
   { id: "wind",        color: "#6BBFCC" },
   { id: "rainfall",    color: "#9B7EC8" },
 ] as const;
+
+const BUILDER_PIPS = [
+  { id: "zoning", color: "#B45309" },
+  { id: "land",   color: "#6B21A8" },
+] as const;
+
+// Combined for decorative use (NewAnalysisCard)
+const MODULE_PIPS = [...CLIMATE_PIPS];
 
 const HERO_MODULES = [
   { label: "Sun Path",    bg: "rgba(245,158,11,0.10)",  color: "#8A6820", border: "rgba(245,158,11,0.22)",  dot: "#F59E0B" },
@@ -148,6 +154,8 @@ function ProjectCard({ project, onClick, mapVariant }: {
 }) {
   const isComplete = project.status === "complete";
   const activeModuleIds = new Set(project.modules_run ?? []);
+  const isBuilder = activeModuleIds.has("zoning") || activeModuleIds.has("land");
+  const PIPS = isBuilder ? BUILDER_PIPS : CLIMATE_PIPS;
 
   return (
     <div
@@ -247,7 +255,7 @@ function ProjectCard({ project, onClick, mapVariant }: {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           {/* Module pill tags */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-            {MODULE_PIPS.filter(({ id }) => activeModuleIds.has(id)).map(({ id, color }) => (
+            {PIPS.filter(({ id }) => activeModuleIds.has(id)).map(({ id, color }) => (
               <span key={id} style={{
                 display: "inline-flex", alignItems: "center", gap: 3,
                 padding: "2px 7px", borderRadius: 9999,
@@ -262,12 +270,22 @@ function ProjectCard({ project, onClick, mapVariant }: {
               </span>
             ))}
             {/* Inactive pips as faded dots */}
-            {MODULE_PIPS.filter(({ id }) => !activeModuleIds.has(id)).length > 0 && (
+            {PIPS.filter(({ id }) => !activeModuleIds.has(id)).length > 0 && (
               <span style={{ display: "flex", gap: 3, alignItems: "center", marginLeft: 2 }}>
-                {MODULE_PIPS.filter(({ id }) => !activeModuleIds.has(id)).map(({ id }) => (
+                {PIPS.filter(({ id }) => !activeModuleIds.has(id)).map(({ id }) => (
                   <span key={id} style={{ width: 5, height: 5, borderRadius: "50%", background: "#D8DED5", display: "block" }} aria-label={id}/>
                 ))}
               </span>
+            )}
+            {/* Builder badge */}
+            {isBuilder && (
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 3,
+                padding: "2px 7px", borderRadius: 9999,
+                fontSize: 9, fontWeight: 700, letterSpacing: "0.3px",
+                background: "rgba(48,98,35,0.08)", color: "#306223",
+                border: "1px solid rgba(48,98,35,0.20)",
+              }}>BUILDER</span>
             )}
           </div>
 

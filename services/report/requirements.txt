@@ -1,0 +1,6 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+# Optional — PDF rendering. Requires native deps (pango, cairo). The service degrades to an HTML
+# fallback (pdf.status="unavailable") when it is not installed, never a fake PDF.
+# weasyprint==62.3

@@ -1,5 +1,97 @@
 # Contract Changelog
 
+## 2.32.0 — 2026-08-29
+
+### Added — infrastructure.yaml: `GET /infrastructure/power-grid` — KPTCL/BESCOM proximity
+- **`GET /infrastructure/power-grid?lat=&lon=&radius_m=`** — OSM Overpass power-line and substation proximity. Returns nearest KPTCL transmission line (≥66kV), BESCOM distribution line (11-33kV), and nearest substation with voltage + operator + distance. Emits three connection-feasibility flags: `bescom_lt_within_200m`, `bescom_ht_within_2km`, `kptcl_ht_within_5km`. Gated by `feature.infrastructure.power-grid`.
+- New schemas: `PowerLine`, `PowerSubstation`, `PowerGridResult`
+- `infrastructure.yaml` version bumped `1.3.0` → `1.4.0`
+
+## 2.31.0 — 2026-08-29
+
+### Added — geo.yaml: `/geo/transport-access` — nearest transport access points with coordinates
+- **`GET /geo/transport-access?lat=&lon=&radius_m=`** — returns nearest metro stations, rail stations, highway access points, and airport with lat/lon coordinates and straight-line distances. Gated by `feature.geo.transport-access`.
+- New schemas: `TransportFeature`, `TransportCategory`, `TransportAccessResult`
+- Airport: hardcoded BLR (Kempegowda International) — authoritative confidence, no OSM dependency
+- Metro/Rail: OSM Overpass, `osm-derived` confidence
+- Highway: OSM motorway/trunk nodes + junction nodes, `osm-derived` confidence
+
+## 2.30.0 — 2026-08-27
+
+### Changed — cadastral.yaml: hierarchy endpoints return `{code, name}` objects
+- **`GET /districts`**, **`/taluks`**, **`/hoblis`**, **`/villages`** — response changed from `array<string>` (numeric codes) to `array<{code: string, name: string}>` (sourced from `village_roster`; falls back to parquet-dir codes when roster has no entry)
+- Frontend: `CadastralToolbar` dropdowns now show district/taluk/hobli/village names; numeric code still passed to `/data`
+
+## 2.29.0 — 2026-08-27
+
+### Added — cadastral.yaml: hierarchy listing + new overlay endpoints (cadastral explorer feature)
+- **`GET /districts`** — list all district codes present in cadastral_lake_v2 (for dropdown cascade)
+- **`GET /taluks?dist=`** — list taluk codes for a district
+- **`GET /hoblis?dist=&taluk=`** — list hobli codes for a district+taluk
+- **`GET /villages?dist=&taluk=&hobli=`** — list village codes for a district+taluk+hobli
+- **`GET /hydrorivers?bbox=`** — HydroRIVERS river network (split from `/drainage` which is now OSM-only)
+- **`GET /bbmp-swd?bbox=`** — BBMP storm water drain lines (primary/secondary/tertiary)
+- **`GET /cgd-zones`** — PNGRB City Gas Distribution zone boundaries (GeoJSON)
+- `/drainage` now returns OSM waterways only; HydroRIVERS moved to `/hydrorivers`
+- Feature flag: `feature.cadastral.explorer` added to `packages/flags/src/flags.py`
+
+## 2.28.0 — 2026-08-27
+
+### Added — cadastral.yaml (NEW, v1.0.0), Karnataka e-Chawadi land records + infrastructure overlays
+- **NEW SERVICE `services/cadastral/` (port 8011)** — wraps Karnataka Bhoomi e-Chawadi scraped data
+  (1.7 GB parquet lake + 639 MB SQLite) as a FastAPI service. Preferred over KGIS digitization
+  where coverage exists (96% of 32k Karnataka villages).
+- **`GET /search?q=`** — survey number prefix search across 8.9M indexed Karnataka parcels. Returns
+  up to 25 `SurveySearchResult` matches with village context (dist/taluk/hobli/vlg for RCCMS lookup).
+- **`GET /rccms?dist=&taluk=&hobli=&vlg=`** — RCCMS court cases per village: ack_no, case_id,
+  applicant_name, survey_no, case_status. Encumbrance risk signal for builders.
+- **`GET /mutations?dist=&taluk=&hobli=&vlg=`** — Mutation (land transfer) records per village:
+  tran_no, mr_number, transaction_type, survey_numbers, status, acquisition_type.
+- **`GET /village-info`** / **`GET /village-by-lgd`** — village metadata + LGD code resolution.
+  `village-by-lgd` bridges KGIS parcel LGD_VillageCode → e-Chawadi hierarchy for cross-linking.
+- **`GET /data?dist=&taluk=&hobli=&vlg=`** — parcel polygon GeoJSON (WGS84). Source parquets have
+  X/Y swapped (EPSG:32643 scraper bug) — fixed at read time via affine transform. Always scope
+  by all four hierarchy params; unscoped loads full 1.7 GB lake.
+- **`GET /lgd-villages`** — Karnataka village boundary GeoJSON (LGD source, 418 MB parquet). Each
+  feature carries `covered=true` when e-Chawadi parcel data exists. Frontend uses this to pick
+  primary layer (e-Chawadi where covered, KGIS fallback where not).
+- **`GET /road-width?bbox=`** — BBMP + OSM road widths with RMP FAR tier annotation. FAR mapping:
+  <9m→1.5, 9–12m→1.75, 12–18m→2.25, 18–24m→2.75, 24–30m→3.25, ≥30m→3.75. This is the
+  RMP-primary FAR criterion; makes road-width FAR the controlling signal over zone-based FAR.
+- **`GET /encroachment?bbox=`** — Rajakaluve (storm-water channel) encroachment parcels from BBMP /
+  Revenue Dept (rajakaluve.org, 936 Bengaluru Urban villages). Carries bbmp_notified + revenue_flagged
+  booleans + proximity to drain/lake. Triggers automatic red flag in builders verdict.
+- **Infrastructure overlays** (all gated by `feature.cadastral.overlays`):
+  - `GET /bwssb-sewerage?tier=&bbox=` — BWSSB sewerage network by pipe diameter (data.opencity.in)
+  - `GET /osm-powerlines?bbox=` — OSM power lines classified EHV/HV/MV by voltage
+  - `GET /gas-pipelines?bbox=` + `GET /gas-nodes?bbox=` — OSM gas network + infrastructure nodes
+  - `GET /drainage?bbox=` — OSM waterways + HydroRIVERS (Strahler ≥3)
+  - `GET /wris-lakes?bbox=` — WRIS water bodies (Govt of India)
+  - `GET /bescom-boundaries` — BESCOM electricity zones (division/section/subdivision)
+- **Feature flags added:** `feature.cadastral.land-records` (core) + `feature.cadastral.overlays`
+  (infrastructure layers). All endpoints return HTTP 403 when the relevant flag is not set.
+
+## 2.27.0 — 2026-07-29
+
+### Added — report.yaml (NEW, v1.0.0), US-092 GO / CAUTION / NO-GO verdict + shareable report
+- **`POST /report/go-no-go`** (`ReportResponse`) — the final story: a one-screen HONEST-TRIAGE verdict
+  aggregating all live signal outputs. **Two-tier, not a weighted average** (replaces the client-side
+  `computeSiteScore` mean + the html2canvas export stub, GH#54):
+  - **Tier-1 gates (booleans, C1):** any `is_killer` overlay / `kharab-non-saleable` / `restricted-
+    tenure` tripped → **hard NO-GO**, regardless of everything else; each red flag cited + severity-
+    sorted (critical first).
+  - **Tier-2 (gate-clear only):** GO requires no tripped gate AND no unresolved decision input AND
+    favourable resolved signals; otherwise **CAUTION** with a ranked `confirm_to_upgrade` list (each
+    with its `next_action`). An unresolved decision input (C2) can NEVER yield GO — it forces CAUTION,
+    never a silent pass.
+  - **Verdict confidence (C4 weakest):** the verdict carries its own confidence = weakest decision
+    input; an inferred zone yields an inferred verdict, stated prominently in `confidence_note`.
+  - Every `ReportRow` carries value + citation + confidence + `data_vintage` + buffer `as_of` + the
+    mandatory "subject to authority sanction" note.
+  - Delivery seams: PDF via WeasyPrint (HTML fallback when not installed — never a fake PDF); a
+    read-only report SNAPSHOT + signed share link via Supabase (`pending-supabase` when creds absent —
+    never a fake link). Gated by the new flag `feature.report.go-no-go` (default-off).
+
 ## 2.26.0 — 2026-07-29
 
 ### Changed — infrastructure.yaml (v1.2.0 → v1.3.0), US-092 C2 unresolved never scores as a pass

@@ -4,7 +4,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Sun, Waves, Thermometer, Wind, CloudRain, Settings, MapPin, Building2, Wifi, Layers, Droplets, TrendingUp, FileText, Scale } from "lucide-react";
 import { TopNav } from "@/components/layout/TopNav";
@@ -30,7 +30,12 @@ import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
 import { useConfigStore } from "@/lib/stores/config";
 import { useParcelStore } from "@/lib/stores/parcel";
+import { useProfileStore } from "@/lib/stores/profile";
 import { getProject } from "@/lib/api/projects";
+import { ParcelVerdictDock, type ParcelVerdictState } from "@/components/map/ParcelVerdictDock";
+import { parcelKey, parcelAreaSqm, type CadastralParcel } from "@/lib/api/cadastral";
+import { runBuilderSignals } from "@/lib/api/verdict";
+import { fetchEchawadiRecords, fetchEncroachment } from "@/lib/api/cadastral_records";
 import {
   computeSiteScore,
   getFloodAnalysis,
@@ -47,6 +52,15 @@ import {
   getGrowthAnalysis,
   getAmenitiesAnalysis,
   getSolarDay,
+  // US-092 Job A signal adapters (signal → ModuleResult)
+  zoneRingModule,
+  farModule,
+  obligationsModule,
+  connectivityModule,
+  utilitiesModule,
+  overlaysModule,
+  terrainModule,
+  priceUpsideModule,
   type AnalysisCoords,
   type SolarDay,
 } from "@/lib/api/analysis";
@@ -124,6 +138,27 @@ const ClimateContextHUD = dynamic(
   () => import("@/components/zoning/ClimateContextHUD").then((m) => m.ClimateContextHUD),
   { ssr: false }
 );
+// Cadastral infrastructure overlays (Phase 3 + 4)
+const RoadWidthOverlay = dynamic(
+  () => import("@/components/map/RoadWidthOverlay").then((m) => m.RoadWidthOverlay),
+  { ssr: false }
+);
+const BwssbSewerageOverlay = dynamic(
+  () => import("@/components/map/BwssbSewerageOverlay").then((m) => m.BwssbSewerageOverlay),
+  { ssr: false }
+);
+const PowerLinesOverlay = dynamic(
+  () => import("@/components/map/PowerLinesOverlay").then((m) => m.PowerLinesOverlay),
+  { ssr: false }
+);
+const GasPipelineOverlay = dynamic(
+  () => import("@/components/map/GasPipelineOverlay").then((m) => m.GasPipelineOverlay),
+  { ssr: false }
+);
+const DrainageOverlay = dynamic(
+  () => import("@/components/map/DrainageOverlay").then((m) => m.DrainageOverlay),
+  { ssr: false }
+);
 
 // TODO GH#53: all 5 analysis endpoints unconfirmed — responses are mapped via defensive guesses
 
@@ -135,6 +170,8 @@ const MODULE_ABBREV: Record<ModuleId, string> = {
   sunpath: "SUN", flood: "FLOOD", temperature: "TEMP", wind: "WIND", rainfall: "RAIN",
   zone: "ZONE", planning: "FAR", zoning: "ZONING", infrastructure: "INFRA", soil: "SOIL",
   waterConstraints: "WATER", growth: "GROWTH", land: "TITLE", amenities: "AMENITY",
+  zoneRing: "ZONE+", farAssembly: "FAR2", obligations: "MIX", connectivitySignal: "CONN",
+  utilities: "UTIL", overlays: "OVERLAY", terrain: "TERRAIN", priceUpside: "PRICE",
 };
 
 const MODULE_META: {
@@ -157,6 +194,15 @@ const MODULE_META: {
   { id: "growth",           name: "Growth Context",    color: "#16A34A", icon: <TrendingUp size={14} />   },
   { id: "land",             name: "Title & Documents", color: "#6B21A8", icon: <FileText size={14} />     },
   { id: "amenities",        name: "Amenities",         color: "#059669", icon: <MapPin size={14} />        },
+  // US-092 Job A — Builder-feasibility signal panels (honest-by-shape; C4 confidence badge, no score).
+  { id: "zoneRing",           name: "Zone & Ring (RMP)",            color: "#0D9488", icon: <MapPin size={14} />    },
+  { id: "farAssembly",        name: "FAR — Permissible/Achievable", color: "#EA580C", icon: <Building2 size={14} /> },
+  { id: "obligations",        name: "Mixed-Use, Parking & TIA",     color: "#B45309", icon: <Scale size={14} />     },
+  { id: "connectivitySignal", name: "Connectivity — Air/Metro/Road", color: "#0EA5E9", icon: <Wifi size={14} />     },
+  { id: "utilities",          name: "Utilities & NOC",              color: "#0891B2", icon: <Droplets size={14} />  },
+  { id: "overlays",           name: "Deal-Killer Overlays",         color: "#DC2626", icon: <Layers size={14} />    },
+  { id: "terrain",            name: "Terrain — Slope/Geotech",      color: "#65A30D", icon: <TrendingUp size={14} /> },
+  { id: "priceUpside",        name: "Price Upside (Indicative)",    color: "#16A34A", icon: <TrendingUp size={14} /> },
 ];
 
 function getInitials(user: { email?: string; user_metadata?: { full_name?: string } }) {
@@ -184,7 +230,14 @@ export default function ProjectPage() {
     setSiteScore,
     resetAnalysis,
   } = useAnalysisStore();
+  const profile = useProfileStore((s) => s.profile);
+  console.log("[ProfileDebug] profile =", profile, "showCadastralUI =", profile === "builder");
   const parcel = useParcelStore((s) => s.parcel);
+  const selected = useParcelStore((s) => s.selected);
+  const setSelected = useParcelStore((s) => s.setSelected);
+  const clearSelected = useParcelStore((s) => s.clearSelected);
+  const echawadiRecords = useParcelStore((s) => s.echawadiRecords);
+  const setEchawadiRecords = useParcelStore((s) => s.setEchawadiRecords);
 
   const [project,      setProject]      = useState<Awaited<ReturnType<typeof getProject>> | null>(null);
   const [center,       setCenter]       = useState<[number, number]>([12.9716, 77.5946]);
@@ -195,6 +248,10 @@ export default function ProjectPage() {
   const [showClimate,  setShowClimate]  = useState(false);
   const [showSiteCircle, setShowSiteCircle] = useState(true);
   const [analysisCoords, setAnalysisCoords] = useState<AnalysisCoords | null>(null);
+  // SLICE 1 — the JOIN. Clicking a KGIS parcel selects it; the dock's Analyze button then runs the
+  // signal panels + verdict for THAT parcel. Flag-gated, default-off.
+  const parcelAnalysisEnabled = process.env.NEXT_PUBLIC_ENABLE_PARCEL_ANALYSIS === "1";
+  const [verdictState, setVerdictState] = useState<ParcelVerdictState>({ analyzing: false, verdict: null, error: null });
   const climateRequestedRef = useRef(false);
   // 3D sun-path study — selected date drives the accurate sun/shadows.
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -216,6 +273,8 @@ export default function ProjectPage() {
     flood: true, sunpath: false, wind: false, temperature: false, rainfall: false,
     zone: false, planning: false, zoning: false, infrastructure: false, soil: false,
     waterConstraints: false, growth: false, land: false, amenities: false,
+    zoneRing: false, farAssembly: false, obligations: false, connectivitySignal: false,
+    utilities: false, overlays: false, terrain: false, priceUpside: false,
   });
 
   useEffect(() => {
@@ -233,6 +292,50 @@ export default function ProjectPage() {
     setCenter([lat, lng]);
   }, [parcel]);
 
+  // Fire every analysis fetcher for a subject (project boundary OR a clicked parcel). Extracted from
+  // the load effect so the parcel-select "Analyze" button re-runs the SAME modules for the parcel's
+  // TRUE geometry. `runIds` undefined ⇒ run all (button); a Set ⇒ only those (project load).
+  const runAnalysisFor = useCallback(
+    (lat: number, lng: number, polygon: [number, number][] | null, area: number, runIds?: Set<ModuleId>) => {
+      resetAnalysis();
+      const coords: AnalysisCoords = { lat, lng, projectId: id, bufferM, startDate, endDate };
+      const plotArea = area && area > 0 ? area : 1000;
+      const allFetchers: [ModuleId, () => Promise<unknown>][] = [
+        ["flood",             () => getFloodAnalysis(coords)],
+        ["rainfall",          () => getRainfallAnalysis(coords)],
+        ["sunpath",           () => getSunpathAnalysis(coords)],
+        ["wind",              () => getWindAnalysis(coords)],
+        ["temperature",       () => getTemperatureAnalysis(coords)],
+        ["zone",              () => getZoneAnalysis(lat, lng)],
+        ["planning",          () => getPlanningAnalysis(lat, lng)],
+        ["zoning",            () => getZoningAnalysis(lat, lng, plotArea)],
+        ["infrastructure",    () => getInfraAnalysis(lat, lng)],
+        ["soil",              () => getSoilAnalysis(lat, lng)],
+        ["waterConstraints",  () => getWaterConstraintsAnalysis(lat, lng)],
+        ["growth",            () => getGrowthAnalysis(lat, lng)],
+        ["amenities",         () => getAmenitiesAnalysis(lat, lng)],
+        // US-092 Job A — Builder-feasibility signals; input-dependent ones (FAR/obligations/terrain)
+        // return honest-unresolved until their inputs are supplied.
+        ["zoneRing",           () => zoneRingModule(lat, lng)],
+        ["farAssembly",        () => farModule(lat, lng, plotArea)],
+        ["obligations",        () => obligationsModule(lat, lng, plotArea)],
+        ["connectivitySignal", () => connectivityModule(lat, lng)],
+        ["utilities",          () => utilitiesModule(lat, lng)],
+        ["overlays",           () => overlaysModule(lat, lng)],
+        ["terrain",            () => terrainModule(lat, lng, polygon)],
+        ["priceUpside",        () => priceUpsideModule(lat, lng)],
+      ];
+      for (const [moduleId, fetcher] of allFetchers) {
+        if (runIds && !runIds.has(moduleId)) continue;
+        setModuleLoading(moduleId);
+        fetcher()
+          .then((result) => setModuleResult(moduleId, result as never))
+          .catch((err) => setModuleError(moduleId, err instanceof Error ? err.message : "Failed"));
+      }
+    },
+    [id, bufferM, startDate, endDate, resetAnalysis, setModuleLoading, setModuleResult, setModuleError],
+  );
+
   useEffect(() => {
     if (!id || !user) return;
     resetAnalysis();
@@ -244,6 +347,7 @@ export default function ProjectPage() {
       // Point → that point; Polygon (drawn rect/freehand) → centroid + keep the
       // ring so the map shows the actual drawn area instead of a marker/circle.
       let lat = 12.9716, lng = 77.5946;
+      let analysisPolygon: [number, number][] | null = null;
       if (p.boundary?.type === "Point" && Array.isArray(p.boundary.coordinates)) {
         lng = p.boundary.coordinates[0] as number;
         lat = p.boundary.coordinates[1] as number;
@@ -256,6 +360,7 @@ export default function ProjectPage() {
           lat = pts.reduce((s, q) => s + q[0], 0) / pts.length;
           lng = pts.reduce((s, q) => s + q[1], 0) / pts.length;
           setBoundaryPolygon(pts);
+          analysisPolygon = pts;
         }
       }
       setCenter([lat, lng]);
@@ -268,21 +373,10 @@ export default function ProjectPage() {
       // The zoning map overlay renders amenity pins, so amenities must run whenever
       // zoning does — even if the project's modules_run didn't list it explicitly.
       if (run.has("zoning")) run.add("amenities");
-      const allFetchers: [ModuleId, () => Promise<unknown>][] = [
-        ["flood",             () => getFloodAnalysis(coords)],
-        ["rainfall",          () => getRainfallAnalysis(coords)],
-        ["sunpath",           () => getSunpathAnalysis(coords)],
-        ["wind",              () => getWindAnalysis(coords)],
-        ["temperature",       () => getTemperatureAnalysis(coords)],
-        ["zone",              () => getZoneAnalysis(lat, lng)],
-        ["planning",          () => getPlanningAnalysis(lat, lng)],
-        ["zoning",            () => getZoningAnalysis(lat, lng, p.area_sqm && p.area_sqm > 0 ? p.area_sqm : 1000)],
-        ["infrastructure",    () => getInfraAnalysis(lat, lng)],
-        ["soil",              () => getSoilAnalysis(lat, lng)],
-        ["waterConstraints",  () => getWaterConstraintsAnalysis(lat, lng)],
-        ["growth",            () => getGrowthAnalysis(lat, lng)],
-        ["amenities",         () => getAmenitiesAnalysis(lat, lng)],
-      ];
+      // US-092 Job A: the Builder-feasibility signals always run (existing projects' stored
+      // modules_run predates them) so Analyze always shows the epic panels.
+      for (const sig of ["zoneRing", "farAssembly", "obligations", "connectivitySignal", "utilities", "overlays", "terrain", "priceUpside"] as ModuleId[]) run.add(sig);
+      const plotArea = p.area_sqm && p.area_sqm > 0 ? p.area_sqm : 1000;
 
       // Open the first selected module in canonical order.
       const firstSelected = MODULE_META.find((m) => run.has(m.id))?.id;
@@ -291,17 +385,13 @@ export default function ProjectPage() {
           flood: false, sunpath: false, wind: false, temperature: false, rainfall: false,
           zone: false, planning: false, zoning: false, infrastructure: false, soil: false,
           waterConstraints: false, growth: false, land: false, amenities: false,
+          zoneRing: false, farAssembly: false, obligations: false, connectivitySignal: false,
+          utilities: false, overlays: false, terrain: false, priceUpside: false,
           [firstSelected]: true,
         });
       }
 
-      for (const [moduleId, fetcher] of allFetchers) {
-        if (!run.has(moduleId)) continue;
-        setModuleLoading(moduleId);
-        fetcher()
-          .then((result) => setModuleResult(moduleId, result as never))
-          .catch((err) => setModuleError(moduleId, err instanceof Error ? err.message : "Failed"));
-      }
+      runAnalysisFor(lat, lng, analysisPolygon, plotArea, run);
     }).catch(console.error);
   }, [id, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -347,11 +437,91 @@ export default function ProjectPage() {
     if (score) setSiteScore(score);
   }, [modules, project, setSiteScore]);
 
+  // Click a KGIS parcel → make it the selection (its TRUE geometry; the alignment nudge never enters
+  // here — Rule 5). No backend runs yet; the dock's Analyze button drives analysis.
+  // Immediately kick off an async e-Chawadi lookup so RCCMS + mutation chips appear in the dock.
+  const handleParcelSelect = useCallback((p: CadastralParcel) => {
+    const ring = p.geometry.coordinates?.[0] ?? [];
+    if (ring.length < 3) return;
+    const lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+    const lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+    setSelected({
+      surveyNumber: p.surveyNumber, hasSurvey: p.hasSurvey, category: p.category,
+      ulpin: p.ulpin, villageCode: p.villageCode, lgdVillage: p.lgdVillage,
+      geometryTrue: p.geometry, centroid: [lat, lon], areaSqm: parcelAreaSqm(p.geometry),
+    });
+    setVerdictState({ analyzing: false, verdict: null, error: null });
+
+    // Async e-Chawadi fetch — show loading chip immediately, update on completion
+    if (p.hasSurvey && p.lgdVillage) {
+      setEchawadiRecords({
+        rccms: [], mutations: [], villageInfo: null,
+        loading: true, error: null,
+        encroachmentFlagged: null, bbmpNotified: false, revenueFlagged: false,
+      });
+      (async () => {
+        const records = await fetchEchawadiRecords(p.surveyNumber, p.lgdVillage);
+        // Also check encroachment via bbox of parcel
+        const coords = ring;
+        const lons = coords.map((c: number[]) => c[0]);
+        const lats = coords.map((c: number[]) => c[1]);
+        const bbox = {
+          minLon: Math.min(...lons), minLat: Math.min(...lats),
+          maxLon: Math.max(...lons), maxLat: Math.max(...lats),
+        };
+        const encFC = await fetchEncroachment(bbox);
+        let encroachmentFlagged = false;
+        let bbmpNotified = false;
+        let revenueFlagged = false;
+        if (encFC?.features?.length) {
+          const sn = p.surveyNumber.split("/")[0].trim();
+          const match = encFC.features.find((f: GeoJSON.Feature) => {
+            const fp = (f.properties as Record<string, unknown>);
+            return String(fp?.survey_no ?? "").split("/")[0].trim() === sn;
+          });
+          if (match) {
+            const fp = match.properties as Record<string, unknown>;
+            encroachmentFlagged = true;
+            bbmpNotified = Boolean(fp.bbmp_notified);
+            revenueFlagged = Boolean(fp.revenue_flagged);
+          }
+        }
+        setEchawadiRecords({
+          rccms:       records?.rccms ?? [],
+          mutations:   records?.mutations ?? [],
+          villageInfo: records?.villageInfo ?? null,
+          loading: false, error: null,
+          encroachmentFlagged, bbmpNotified, revenueFlagged,
+        });
+      })();
+    }
+  }, [setSelected, setEchawadiRecords]);
+
+  // Analyze the selected parcel — runs the map's signal panels for its centroid + TRUE geometry AND
+  // requests the GO / CAUTION / NO-GO verdict for the dock. Both use TRUE geometry, never the nudge.
+  const handleAnalyzeParcel = useCallback(async () => {
+    const sel = selected;
+    if (!sel) return;
+    const [clat, clon] = sel.centroid;
+    const trueRing: [number, number][] = sel.geometryTrue.coordinates[0].map(([lo, la]) => [la, lo]);
+    setCenter([clat, clon]);
+    runAnalysisFor(clat, clon, trueRing, sel.areaSqm);
+    setVerdictState({ analyzing: true, verdict: null, error: null });
+    const res = await runBuilderSignals({
+      lat: clat, lon: clon, polygon: trueRing, area: sel.areaSqm || 1000,
+      label: sel.hasSurvey ? `Survey ${sel.surveyNumber}` : "Parcel",
+      survey: sel.hasSurvey ? sel.surveyNumber : null,
+    });
+    setVerdictState({ analyzing: false, verdict: res.verdict, error: res.verdictError });
+  }, [selected, runAnalysisFor]);
+
   function toggleModule(moduleId: ModuleId) {
     setExpanded((prev) => ({
       flood: false, sunpath: false, wind: false, temperature: false, rainfall: false,
       zone: false, planning: false, zoning: false, infrastructure: false, soil: false,
       waterConstraints: false, growth: false, land: false, amenities: false,
+      zoneRing: false, farAssembly: false, obligations: false, connectivitySignal: false,
+      utilities: false, overlays: false, terrain: false, priceUpside: false,
       [moduleId]: !prev[moduleId],
     }));
   }
@@ -381,6 +551,7 @@ export default function ProjectPage() {
   const runModules = MODULE_META.filter(
     (m) => !project?.modules_run || project.modules_run.includes(m.id)
   );
+  const selectedParcelKey = selected ? parcelKey(selected.surveyNumber, selected.geometryTrue) : "";
 
   if (!user) return null;
 
@@ -402,6 +573,16 @@ export default function ProjectPage() {
         onSignOut={async () => { await supabase.auth.signOut(); clearAuth(); router.replace("/login"); }}
         onExportClick={() => router.push(`/project/${id}/export`)}
       />
+
+      {parcelAnalysisEnabled && (
+        <ParcelVerdictDock
+          selected={selected}
+          state={verdictState}
+          echawadiRecords={echawadiRecords}
+          onAnalyze={handleAnalyzeParcel}
+          onClear={() => { clearSelected(); setVerdictState({ analyzing: false, verdict: null, error: null }); }}
+        />
+      )}
 
       {/* Main layout — overview vs module detail */}
       <div className="pt-14 flex flex-1 min-h-0 overflow-hidden">
@@ -480,7 +661,7 @@ export default function ProjectPage() {
 
               {/* Full-screen map with floating card */}
               <div className="relative flex-1">
-                <MapContainer mode="full-screen" center={center} zoom={16}>
+                <MapContainer mode="full-screen" center={center} zoom={16} siteBoundary={boundaryPolygon ?? undefined} onParcelSelect={parcelAnalysisEnabled ? handleParcelSelect : undefined} selectedParcelKey={selectedParcelKey} showCadastralUI={profile === "builder"}>
 
                   {project?.boundary && (
                     boundaryPolygon
@@ -524,11 +705,16 @@ export default function ProjectPage() {
                   {detailModule === "zoning" && showClimate && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
                     <SunPathArc center={center} result={modules.sunpath} />
                   )}
+                  <RoadWidthOverlay enabled={detailModule === "farAssembly"} siteBoundary={boundaryPolygon ?? undefined} />
+                  <BwssbSewerageOverlay enabled={detailModule === "utilities"} siteBoundary={boundaryPolygon ?? undefined} />
+                  <PowerLinesOverlay enabled={detailModule === "utilities"} siteBoundary={boundaryPolygon ?? undefined} />
+                  <GasPipelineOverlay enabled={detailModule === "utilities"} siteBoundary={boundaryPolygon ?? undefined} />
+                  <DrainageOverlay enabled={detailModule === "waterConstraints" || detailModule === "flood"} siteBoundary={boundaryPolygon ?? undefined} />
                   <DrawTools
                     hasSiteCircle={showSiteCircle && !boundaryPolygon}
                     onClear={() => setShowSiteCircle(false)}
                   />
-                  <MapSearch />
+                  <MapSearch topOffset={104} />
                 </MapContainer>
 
                 {/* HTML badge + legend overlay — not inside Leaflet */}
@@ -785,7 +971,7 @@ export default function ProjectPage() {
               {/* 2D map + HTML overlays (Leaflet) — hidden when 3D is active */}
               {!view3D && (
                 <>
-                  <MapContainer mode="split" center={center} zoom={16}>
+                  <MapContainer mode="split" center={center} zoom={16} siteBoundary={boundaryPolygon ?? undefined} onParcelSelect={parcelAnalysisEnabled ? handleParcelSelect : undefined} selectedParcelKey={selectedParcelKey} showCadastralUI={profile === "builder"}>
                     {project?.boundary && (
                       boundaryPolygon
                         ? <SiteBoundaryOverlay shape="polygon" coordinates={boundaryPolygon} />
@@ -828,11 +1014,19 @@ export default function ProjectPage() {
                     {expanded.zoning && showClimate && modules.sunpath && !modules.sunpath.loading && !modules.sunpath.error && modules.sunpath.solar && (
                       <SunPathArc center={center} result={modules.sunpath} />
                     )}
+                    {/* Road-width FAR overlay: shown when farAssembly panel is open (Phase 3) */}
+                    <RoadWidthOverlay enabled={expanded.farAssembly} siteBoundary={boundaryPolygon ?? undefined} />
+                    {/* Utilities overlays: shown when utilities panel is open (Phase 4) */}
+                    <BwssbSewerageOverlay enabled={expanded.utilities} siteBoundary={boundaryPolygon ?? undefined} />
+                    <PowerLinesOverlay enabled={expanded.utilities} siteBoundary={boundaryPolygon ?? undefined} />
+                    <GasPipelineOverlay enabled={expanded.utilities} siteBoundary={boundaryPolygon ?? undefined} />
+                    {/* Drainage: shown when waterConstraints or flood panels are open */}
+                    <DrainageOverlay enabled={expanded.waterConstraints || expanded.flood} siteBoundary={boundaryPolygon ?? undefined} />
                     <DrawTools
                       hasSiteCircle={showSiteCircle && !boundaryPolygon}
                       onClear={() => setShowSiteCircle(false)}
                     />
-                    <MapSearch topOffset={16} />
+                    <MapSearch topOffset={104} />
                   </MapContainer>
                   {/* HTML badge + legend overlay — not inside Leaflet */}
                   {expanded.flood && modules.flood && !modules.flood.loading && !modules.flood.error && (
@@ -891,6 +1085,7 @@ export default function ProjectPage() {
                     moduleColor={color}
                     severity={result?.severity ?? "none"}
                     score={result?.score ?? 0}
+                    confidence={result?.confidence}
                     loading={!result || result.loading}
                     error={result?.error}
                     indicators={result?.indicators}

@@ -14,7 +14,7 @@
 //   rainfall    (8004): feature.rainfall.summary
 
 import type {
-  ModuleId, ModuleResult, SiteScore, Severity, QualitativeTone,
+  ModuleId, ModuleResult, SiteScore, Severity, QualitativeTone, QualitativeStat,
 } from "../stores/analysis";
 
 // Per-module accent colours (match the rest of the UI).
@@ -50,6 +50,97 @@ const SVC = {
   land:           process.env.NEXT_PUBLIC_LAND_RECORDS_API_URL   ?? "http://localhost:8009",
   amenities:      process.env.NEXT_PUBLIC_GEO_API_URL            ?? "http://localhost:8005",
 } as const;
+
+export interface ParcelZone {
+  zone_class: string;
+  permitted_uses: string[];
+  source_confidence: string;
+  zone_authority: string | null;
+  na_order_required: boolean;
+  forest_clearance_required: boolean;
+}
+
+export async function fetchParcelZone(lat: number, lon: number): Promise<ParcelZone | null> {
+  try {
+    return await svcFetch<ParcelZone>(SVC.zone, `/geo/zone?lat=${lat}&lon=${lon}&radius_m=200`);
+  } catch {
+    return null;
+  }
+}
+
+export interface RingContext {
+  status: "resolved" | "unresolved";
+  ring: "I" | "II" | "III" | null;
+  tdr_zone: "A" | "B" | "C" | null;
+  confidence: "inferred";
+  data_source: string;
+  reason: string | null;
+}
+
+export async function fetchRingContext(lat: number, lon: number): Promise<RingContext | null> {
+  try {
+    return await svcFetch<RingContext>(SVC.zone, `/geo/ring?lat=${lat}&lon=${lon}`);
+  } catch {
+    return null;
+  }
+}
+
+export interface TransportFeature {
+  name: string;
+  subtype: string;
+  lat: number;
+  lon: number;
+  distance_m: number;
+  confidence: string;
+}
+export interface TransportCategory {
+  nearest: TransportFeature | null;
+  features: TransportFeature[];
+  status: "resolved" | "none_found";
+}
+export interface TransportAccessResult {
+  metro: TransportCategory;
+  rail: TransportCategory;
+  highway: TransportCategory;
+  airport: TransportCategory;
+  radius_m: number;
+  data_source: string;
+}
+
+export async function fetchTransportAccess(
+  lat: number,
+  lon: number,
+  radiusM = 10000,
+): Promise<TransportAccessResult | null> {
+  try {
+    return await svcFetch<TransportAccessResult>(
+      SVC.zone,
+      `/geo/transport-access?lat=${lat}&lon=${lon}&radius_m=${radiusM}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export interface AuthorityResult {
+  authority: string;
+  jurisdiction_type: string;
+  planning_authority: string | null;
+  approval_track: string | null;
+  bye_law_reference: string | null;
+  portal: string | null;
+  confidence: string;
+  live_verified: boolean;
+  notes: string | null;
+}
+
+export async function fetchAuthority(lat: number, lon: number): Promise<AuthorityResult | null> {
+  try {
+    return await svcFetch<AuthorityResult>(SVC.zone, `/geo/authority?lat=${lat}&lon=${lon}`);
+  } catch {
+    return null;
+  }
+}
 
 async function svcFetch<T>(base: string, path: string, init?: RequestInit, timeoutMs = 30_000): Promise<T> {
   const ctrl = new AbortController();
@@ -912,6 +1003,53 @@ export async function getPlanningAnalysis(
     loading: false,
     error: null,
   };
+}
+
+// ─── Raw planning fetch — for the in-map SitePlanningCard popup ──────────────
+
+export interface RawPlanningResult {
+  far_applicable: number;
+  far_source: string;
+  ground_coverage_max: number;
+  setback_front_m: number;
+  setback_rear_m: number;
+  setback_side_m: number;
+  max_height_m: number;
+  height_limiting_factor: string;
+  buildable_area_sqm: number;
+  road_width_used_m: number;
+  road_width_source: "user_input" | "osm_detected" | "default_9m";
+  tod_applicable: boolean;
+  metro_station_name: string | null;
+  metro_distance_m: number | null;
+  score: number;
+  data_source: string;
+}
+
+export async function fetchRawPlanning(
+  lat: number,
+  lon: number,
+  plotAreaSqm: number,
+  zoneClass?: string,
+): Promise<RawPlanningResult | null> {
+  try {
+    return await svcFetch<RawPlanningResult>(
+      SVC.planning,
+      "/planning/analyze",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          latitude: lat,
+          longitude: lon,
+          plot_area_sqm: plotAreaSqm,
+          ...(zoneClass ? { zone_class: zoneClass } : {}),
+        }),
+      },
+    );
+  } catch {
+    return null;
+  }
 }
 
 // ─── Road-width resolver — POST /planning/road-width (US-084 feeder) ───────────
@@ -2061,6 +2199,55 @@ export async function getUtilities(lat: number, lon: number, radiusM = 3000): Pr
   });
 }
 
+// ─── Power Grid — GET /infrastructure/power-grid ──────────────────────────────
+// Gated by feature.infrastructure.power-grid. OSM Overpass: KPTCL transmission (≥66kV) +
+// BESCOM distribution (11-33kV) + substations. Emits connection-feasibility flags.
+
+export interface PowerLine {
+  voltage_kv: number | null;
+  operator: string | null;
+  distance_m: number;
+  classification: "transmission" | "distribution_ht" | "distribution_lt" | "unknown";
+  confidence: string;
+}
+
+export interface PowerSubstation {
+  name: string | null;
+  voltage_kv: number | null;
+  operator: string | null;
+  distance_m: number;
+  lat: number;
+  lon: number;
+  confidence: string;
+}
+
+export interface PowerGridResult {
+  nearest_ht_line: PowerLine | null;
+  nearest_distribution_line: PowerLine | null;
+  nearest_substation: PowerSubstation | null;
+  bescom_lt_within_200m: boolean;
+  bescom_ht_within_2km: boolean;
+  kptcl_ht_within_5km: boolean;
+  radius_m: number;
+  data_source: string;
+  data_disclaimer: string;
+}
+
+export async function fetchPowerGrid(
+  lat: number,
+  lon: number,
+  radiusM = 10_000,
+): Promise<PowerGridResult | null> {
+  try {
+    return await svcFetch<PowerGridResult>(
+      SVC.infrastructure,
+      `/infrastructure/power-grid?lat=${lat}&lon=${lon}&radius_m=${radiusM}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Utilities rows — main presence shown honestly (unknown != absent), NOC checklist surfaced. */
 export function utilitiesQualitative(r: UtilitiesResult): import("../stores/analysis").QualitativeStat[] {
   const out: import("../stores/analysis").QualitativeStat[] = [];
@@ -2462,6 +2649,129 @@ export function ownershipQualitative(r: OwnershipSnapshot): import("../stores/an
   return out;
 }
 
+// ─── US-092 Job A — signal → ModuleResult adapters ────────────────────────────
+// Each epic signal is packed into the universal ModuleResult so the existing generic
+// AnalysisModuleSection renders it (qualitative via QualitativeChips). The honesty lives in the
+// per-signal formatters (two-line FAR, C2 unknowns, R/A/G overlays, unresolved-not-a-pass); the
+// adapter adds the C4 `confidence` (badge) and an honest summary. Score is left 0 + hidden (the
+// header suppresses it whenever `confidence` is set — an epic signal is triage, not a number).
+
+function sevFromStats(stats: QualitativeStat[]): Severity {
+  if (stats.some((s) => s.tone === "bad")) return "high";
+  if (stats.some((s) => s.tone === "warn")) return "moderate";
+  return "low";
+}
+
+function signalModule(
+  qualitative: QualitativeStat[], confidence: LadderConfidence, data_source: string, summary: string,
+): ModuleResult {
+  return {
+    score: 0, severity: sevFromStats(qualitative), summary,
+    indicators: [], chart_data: [], qualitative, confidence, data_source,
+    loading: false, error: null,
+  };
+}
+
+/** US-082 — tiered zone (RMP > user-confirmed > OSM-hint > unresolved) + planning ring. */
+export async function zoneRingModule(lat: number, lon: number): Promise<ModuleResult> {
+  const [z, ring] = await Promise.all([
+    resolveZone({ lat, lon, include_osm_hint: true }),
+    getRing(lat, lon).catch(() => null),
+  ]);
+  const view = zoneConfirmationView(z);
+  const stats: QualitativeStat[] = [{ label: `Zone — ${view.badge}`, value: view.headline, tone: view.tone }];
+  if (z.next_action) stats.push({ label: "☑ Confirm your zone", value: z.next_action, tone: "warn" });
+  if (ring && ring.status === "resolved") stats.push({ label: `Ring ${ring.ring} (TDR ${ring.tdr_zone})`, value: `${ring.reg_basis} — ${ring.confidence}.`, tone: "neutral" });
+  else if (ring) stats.push({ label: "⚠ Ring unresolved", value: `${ring.reason ?? ""} ${ring.next_action ?? ""}`.trim(), tone: "warn" });
+  return signalModule(stats, z.confidence, z.data_source ?? "geo /geo/zone-resolve + /geo/ring", view.headline);
+}
+
+/** US-084/085 — permissible vs two-line achievable FAR (band-edge matrix when present). Chains the
+ *  zone resolution (its confidence CAPS FAR — an inferred zone can never mint an authoritative FAR). */
+export async function farModule(lat: number, lon: number, plotAreaSqm: number): Promise<ModuleResult> {
+  const [z, ring] = await Promise.all([
+    resolveZone({ lat, lon, include_osm_hint: true }),
+    getRing(lat, lon).catch(() => null),
+  ]);
+  const r = await assembleFar({ ...farInputFromZone(z, ring), plot_area_sqm: plotAreaSqm });
+  const conf: LadderConfidence = r.status === "unresolved" ? "unresolved" : (r.permissible_far?.confidence ?? "inferred");
+  const summary = r.status === "unresolved"
+    ? (r.reason ?? "FAR unresolved — confirm zone + road width")
+    : `Permissible ${r.permissible_far?.value ?? "—"} · ${r.achievable_matrix ? "achievable = band-edge matrix (survey required)" : `achievable ${(r.achievable_with_entitlements ?? r.achievable_base)?.value ?? "—"}`}`;
+  return signalModule(farAssemblyQualitative(r), conf, "planning /planning/far", summary);
+}
+
+/** US-083 — mixed-use % + parking ECS + TIA obligations (chains zone + achievable FAR). */
+export async function obligationsModule(lat: number, lon: number, plotAreaSqm: number): Promise<ModuleResult> {
+  const z = await resolveZone({ lat, lon, include_osm_hint: true });
+  const ring = await getRing(lat, lon).catch(() => null);
+  const far = await assembleFar({ ...farInputFromZone(z, ring), plot_area_sqm: plotAreaSqm }).catch(() => null);
+  const achievable = far?.achievable_with_entitlements?.value ?? far?.achievable_base?.value ?? undefined;
+  const r = await getObligations({
+    zone: z.zone ?? undefined, sub_zone: z.sub_zone ?? undefined,
+    plot_area_sqm: plotAreaSqm, use_type: "residential_multi_dwelling", achievable_far: achievable,
+  });
+  const conf: LadderConfidence = (r.parking?.confidence as LadderConfidence | undefined) ?? "inferred";
+  return signalModule(obligationsQualitative(r), conf, r.data_source, `${r.computed_count} computed, ${r.checklist_count} to confirm (incl TIA)`);
+}
+
+/** US-086 — connectivity (C2 known-vs-unknown; unresolved never a fake score). */
+export async function connectivityModule(lat: number, lon: number): Promise<ModuleResult> {
+  const r = await getConnectivity(lat, lon);
+  const sig = r.connectivity_signal;
+  const summary = sig.status === "unresolved"
+    ? `UNRESOLVED — not scored; confirm ${sig.unknowns.map((u) => u.name).join(", ")}`
+    : `${sig.status} · score ${sig.resolved_score}/100 over known inputs`;
+  return signalModule(connectivityQualitative(r), sig.confidence, r.data_source, summary);
+}
+
+/** US-087 — utilities availability + BWSSB main + NOC checklist (C2 readiness). */
+export async function utilitiesModule(lat: number, lon: number): Promise<ModuleResult> {
+  const r = await getUtilities(lat, lon);
+  const rd = r.infra_readiness;
+  const summary = rd.status === "unresolved"
+    ? `UNRESOLVED — confirm ${rd.unknowns.map((u) => u.name).join(", ") || "water main"}`
+    : `readiness ${rd.status} · ${rd.noc_pending} NOC obligations`;
+  return signalModule(utilitiesQualitative(r), rd.confidence, r.data_source, summary);
+}
+
+/** US-088 — deal-killer overlays (R/A/G/unresolved; RED = hard NO-GO). */
+export async function overlaysModule(lat: number, lon: number, buildingHeightM?: number): Promise<ModuleResult> {
+  const r = await getOverlays(lat, lon, buildingHeightM);
+  const conf: LadderConfidence = r.verdict.blocks_clean_go && !r.verdict.hard_no_go ? "unresolved" : "authoritative";
+  const summary = r.verdict.hard_no_go
+    ? `NO-GO — RED: ${r.verdict.red_overlays.join(", ")}`
+    : r.verdict.blocks_clean_go
+      ? `Blocks clean GO — unresolved: ${r.verdict.unresolved_overlays.join(", ")}`
+      : "All overlays clear";
+  return signalModule(overlaysQualitative(r), conf, "geo /geo/overlays", summary);
+}
+
+/** US-089 — terrain slope/HAND/cut-fill/geotech. Needs the drawn parcel polygon ([lat,lng][]); a
+ *  slope is NEVER assumed 0 — without the polygon it is honestly unresolved. */
+export async function terrainModule(lat: number, lon: number, polygon?: [number, number][] | null): Promise<ModuleResult> {
+  if (!polygon || polygon.length < 3) {
+    return signalModule(
+      [{ label: "⚠ Terrain — draw the parcel", value: "Draw the parcel boundary on the map to resolve slope / HAND / cut-fill. Terrain is NOT assumed flat — it stays unresolved until the polygon is supplied.", tone: "warn" }],
+      "unresolved", "flood /flood/terrain (GLO-30 DEM)", "Draw the parcel to resolve terrain",
+    );
+  }
+  const ring = [...polygon.map(([la, lo]) => [lo, la]), [polygon[0][1], polygon[0][0]]];
+  const r = await getTerrain({ parcel_geojson: { type: "Polygon", coordinates: [ring] } });
+  const conf: LadderConfidence = r.status === "unresolved" ? "unresolved" : (r.slope.confidence as LadderConfidence);
+  return signalModule(terrainQualitative(r), conf, r.dem_source, r.status === "unresolved" ? "Terrain unresolved (no DEM/GEE)" : "Slope / HAND / cut-fill / geotech");
+}
+
+/** US-090 — indicative price upside RANGE. No guidance value → unresolved (never blank/zero). */
+export async function priceUpsideModule(lat: number, lon: number, guidanceValuePerSqm: number | null = null): Promise<ModuleResult> {
+  const r = await getPriceUpside(lat, lon, guidanceValuePerSqm);
+  const conf: LadderConfidence = r.status === "unresolved" ? "unresolved" : (r.upside?.confidence ?? "inferred");
+  const summary = r.status === "unresolved"
+    ? "Provide the Kaveri guidance value (₹/sqm) to see indicative upside"
+    : `₹${r.upside?.low}–₹${r.upside?.high}/sqm (indicative range)`;
+  return signalModule(priceUpsideQualitative(r), conf, "future-infra /price-upside", summary);
+}
+
 // ─── Site score — computed from resolved module results ───────────────────────
 // No dedicated endpoint exists; the composite is derived client-side.
 
@@ -2472,6 +2782,11 @@ const MODULE_LABEL: Record<ModuleId, string> = {
   infrastructure: "Connectivity",
   soil: "Soil Profile", waterConstraints: "Water Constraints", growth: "Growth Context", land: "Title & Documents",
   amenities: "Amenities",
+  // US-092 Job A signal panels
+  zoneRing: "Zone & Ring (RMP)", farAssembly: "FAR — Permissible vs Achievable",
+  obligations: "Mixed-Use, Parking & TIA", connectivitySignal: "Connectivity — Airport/Metro/Road",
+  utilities: "Utilities & NOC", overlays: "Deal-Killer Overlays", terrain: "Terrain — Slope/Geotech",
+  priceUpside: "Price Upside (Indicative)",
 };
 
 export function computeSiteScore(

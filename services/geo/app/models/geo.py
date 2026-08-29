@@ -306,6 +306,30 @@ class WaterConstraintResult(BaseModel):
     )
 
 
+class TransportFeature(BaseModel):
+    name: str
+    subtype: str  # "metro_station" | "rail_station" | "highway_junction" | "highway_access" | "airport"
+    lat: float
+    lon: float
+    distance_m: float
+    confidence: str  # "osm-derived" | "authoritative"
+
+
+class TransportCategory(BaseModel):
+    nearest: TransportFeature | None = None
+    features: list[TransportFeature] = []
+    status: Literal["resolved", "none_found"] = "none_found"
+
+
+class TransportAccessResult(BaseModel):
+    metro: TransportCategory
+    rail: TransportCategory
+    highway: TransportCategory
+    airport: TransportCategory
+    radius_m: int
+    data_source: str
+
+
 class AmenityItem(BaseModel):
     name: str
     type: str

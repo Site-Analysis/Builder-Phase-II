@@ -232,6 +232,36 @@ class ConnectivityResult(BaseModel):
     )
 
 
+class PowerLine(BaseModel):
+    voltage_kv: int | None = None
+    operator: str | None = None
+    distance_m: float
+    classification: str  # "transmission"|"distribution_ht"|"distribution_lt"|"unknown"
+    confidence: str = "derived"
+
+
+class PowerSubstation(BaseModel):
+    name: str | None = None
+    voltage_kv: int | None = None
+    operator: str | None = None
+    distance_m: float
+    lat: float
+    lon: float
+    confidence: str = "derived"
+
+
+class PowerGridResult(BaseModel):
+    nearest_ht_line: PowerLine | None = None        # ≥66kV KPTCL transmission
+    nearest_distribution_line: PowerLine | None = None  # 11-33kV BESCOM
+    nearest_substation: PowerSubstation | None = None
+    bescom_lt_within_200m: bool = False
+    bescom_ht_within_2km: bool = False
+    kptcl_ht_within_5km: bool = False
+    radius_m: int
+    data_source: str
+    data_disclaimer: str
+
+
 class InfraResult(BaseModel):
     road_access: RoadAccess | None = None
     transit: list[TransitStop] = []

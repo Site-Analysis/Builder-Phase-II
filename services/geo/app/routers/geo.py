@@ -16,12 +16,14 @@ from app.models.geo import (
     Provenance,
     RingResult,
     SoilResult,
+    TransportAccessResult,
     WaterConstraintResult,
     ZoneResolution,
     ZoneResult,
 )
 from app.services import kgis_service
 from app.services.amenities_service import AmenitiesService
+from app.services.transport_service import fetch_transport_access
 from app.services.authority_service import detect_authority
 from app.services.geo_service import GeoService
 from app.services.soil_service import SoilService
@@ -36,6 +38,7 @@ _PARCEL_FLAG = "feature.geo.parcel-geometry"
 _AUTHORITY_FLAG = "feature.geo.authority"
 _OVERLAYS_FLAG = "feature.geo.overlays"
 _ZONE_RESOLVER_FLAG = "feature.geo.zone-resolver"
+_TRANSPORT_FLAG = "feature.geo.transport-access"
 
 
 def _enabled_flags() -> set[str]:
@@ -100,6 +103,22 @@ async def get_amenities(
 ) -> AmenitiesResult:
     _require_flag(_AMENITY_FLAG)
     return await _amenities_service.get_amenities(lat, lon, radius_m)
+
+
+@router.get("/transport-access", response_model=TransportAccessResult)
+async def get_transport_access(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    radius_m: int = Query(10000),
+) -> TransportAccessResult:
+    """Nearest metro/rail/highway/airport access points with coordinates (US-transport-layer).
+
+    Metro and rail from OSM Overpass (osm-derived). Airport hardcoded BLR ARP (authoritative).
+    Highway: motorway junctions + nearest node on trunk/motorway ways. Gated by
+    `feature.geo.transport-access`.
+    """
+    _require_flag(_TRANSPORT_FLAG)
+    return await fetch_transport_access(lat, lon, radius_m)
 
 
 @router.get("/parcel", response_model=ParcelGeometry)

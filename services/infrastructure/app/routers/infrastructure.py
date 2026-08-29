@@ -13,12 +13,14 @@ from app.models.infrastructure import (
     ConnectivityResult,
     InfraRequest,
     InfraResult,
+    PowerGridResult,
     UtilitiesResult,
 )
 from app.services.infrastructure_service import InfrastructureService
 
 _INFRA_FLAG = "feature.infrastructure.connectivity"
 _UTILITIES_FLAG = "feature.infrastructure.utilities"
+_POWER_FLAG = "feature.infrastructure.power-grid"
 _PLANNING_URL = os.getenv("PLANNING_API_URL", "http://localhost:8006")
 _GROWTH_URL = os.getenv("GROWTH_API_URL", "http://localhost:8008")
 
@@ -106,3 +108,20 @@ async def analyze_connectivity(request: ConnectivityRequest) -> ConnectivityResu
         road_width_result=road_width_result,
     )
     return ConnectivityResult(**result)
+
+
+from fastapi import Query  # noqa: E402
+
+
+@router.get("/power-grid", response_model=PowerGridResult)
+async def get_power_grid(
+    lat: float = Query(..., description="Site latitude"),
+    lon: float = Query(..., description="Site longitude"),
+    radius_m: int = Query(10_000, ge=500, le=25_000, description="Search radius in metres"),
+) -> PowerGridResult:
+    """OSM Overpass power-line and substation proximity. Classifies KPTCL transmission (≥66kV)
+    and BESCOM distribution (11-33kV) lines; emits connection-feasibility flags for capex estimation.
+    Gated by `feature.infrastructure.power-grid`."""
+    _require_flag(_POWER_FLAG)
+    from app.services.power_service import fetch_power_grid
+    return await fetch_power_grid(lat, lon, radius_m)

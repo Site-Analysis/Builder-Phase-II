@@ -238,6 +238,27 @@ paths:
               schema: { $ref: "#/components/schemas/ZoneResolution" }
         "403": { description: Feature flag disabled }
 
+  /geo/transport-access:
+    get:
+      operationId: getTransportAccess
+      summary: Nearest transport access points (metro/rail/highway/airport) with coordinates
+      description: >
+        Returns nearest transport features per category with lat/lon for map markers and
+        straight-line distances. Metro/rail/highway from OSM Overpass (osm-derived); airport
+        from bundled BLR ARP (authoritative). Gated by `feature.geo.transport-access`.
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, format: float } }
+        - { name: lon, in: query, required: true, schema: { type: number, format: float } }
+        - { name: radius_m, in: query, required: false, schema: { type: integer, default: 10000 } }
+      responses:
+        "200":
+          description: Transport access result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransportAccessResult" }
+        "403": { description: Feature flag disabled }
+        "422": { description: Validation error }
+
 components:
   schemas:
     OverlayProvenance:
@@ -592,7 +613,9 @@ components:
         approval_track: { type: string, nullable: true }
         bye_law_reference: { type: string, nullable: true }
         portal: { type: string, nullable: true }
-        confidence: { type: string, enum: ["high", "medium", "low"] }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
+        data_source: { type: string }
+        data_disclaimer: { type: string }
         live_verified:
           type: boolean
           description: >
@@ -614,3 +637,35 @@ components:
             - type: "null"
         data_source: { type: string }
         data_disclaimer: { type: string }
+
+    TransportFeature:
+      type: object
+      required: [name, subtype, lat, lon, distance_m, confidence]
+      properties:
+        name: { type: string }
+        subtype: { type: string, enum: ["metro_station", "rail_station", "highway_junction", "highway_access", "airport"] }
+        lat: { type: number, format: float }
+        lon: { type: number, format: float }
+        distance_m: { type: number, format: float }
+        confidence: { type: string, enum: ["osm-derived", "authoritative"] }
+
+    TransportCategory:
+      type: object
+      properties:
+        nearest:
+          oneOf:
+            - $ref: "#/components/schemas/TransportFeature"
+            - type: "null"
+        features: { type: array, items: { $ref: "#/components/schemas/TransportFeature" } }
+        status: { type: string, enum: ["resolved", "none_found"] }
+
+    TransportAccessResult:
+      type: object
+      required: [metro, rail, highway, airport, radius_m, data_source]
+      properties:
+        metro: { $ref: "#/components/schemas/TransportCategory" }
+        rail: { $ref: "#/components/schemas/TransportCategory" }
+        highway: { $ref: "#/components/schemas/TransportCategory" }
+        airport: { $ref: "#/components/schemas/TransportCategory" }
+        radius_m: { type: integer }
+        data_source: { type: string }

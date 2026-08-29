@@ -34,17 +34,29 @@ _OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
 ]
 _OUT = Path(__file__).resolve().parents[1] / "services" / "geo" / "app" / "data" / "ka_rings.geojson"
-_CLOSE_TOL_M = 250.0   # stitched ring endpoints must meet within this to count as "closed"
+_CLOSE_TOL_M = 800.0   # stitched ring endpoints must meet within this to count as "closed"
 _MIN_AREA_KM2 = 5.0    # a plausible enclosed ring (Core Ring is small; reject slivers)
 
-# Bengaluru bbox for the Overpass area filter (S,W,N,E).
-_BBOX = (12.80, 77.40, 13.20, 77.80)
+# Bengaluru bbox for the Overpass area filter (S,W,N,E). Wider than city to catch ORR fully.
+_BBOX = (12.75, 77.35, 13.25, 77.85)
+
+
+def _q_regex(pattern: str) -> str:
+    """Ways whose name matches a regex within the Bengaluru bbox."""
+    s, w, n, e = _BBOX
+    return f"""
+[out:json][timeout:180];
+(
+  way["name"~"{pattern}",i]({s},{w},{n},{e});
+);
+out geom;
+"""
 
 
 def _q(named: str) -> str:
     s, w, n, e = _BBOX
     return f"""
-[out:json][timeout:120];
+[out:json][timeout:180];
 (
   way["name"="{named}"]({s},{w},{n},{e});
 );
@@ -52,9 +64,19 @@ out geom;
 """
 
 
+def _q_boundary_regex(pattern: str) -> str:
+    return f"""
+[out:json][timeout:180];
+(
+  relation["boundary"="administrative"]["name"~"{pattern}",i];
+);
+out geom;
+"""
+
+
 def _q_boundary(name: str) -> str:
     return f"""
-[out:json][timeout:120];
+[out:json][timeout:180];
 (
   relation["boundary"="administrative"]["name"="{name}"];
 );
@@ -143,6 +165,54 @@ def _ring_from_boundary(elements: list[dict]) -> list[list[float]] | None:
     return _stitch(ways)
 
 
+def _convex_hull(pts: list[list[float]]) -> list[list[float]] | None:
+    """Graham scan convex hull on [[lon,lat],...] points. Returns closed ring or None."""
+    if len(pts) < 3:
+        return None
+    # Work in Cartesian (close enough for ~100km bbox).
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    pivot = min(range(len(pts)), key=lambda i: (ys[i], xs[i]))
+    px, py = xs[pivot], ys[pivot]
+
+    def polar_angle(i: int) -> tuple[float, float]:
+        dx, dy = xs[i] - px, ys[i] - py
+        return (math.atan2(dy, dx), -(dx * dx + dy * dy))
+
+    order = sorted([i for i in range(len(pts)) if i != pivot], key=polar_angle)
+    hull = [pivot, order[0]]
+    for i in order[1:]:
+        while len(hull) >= 2:
+            ax, ay = xs[hull[-2]], ys[hull[-2]]
+            bx, by = xs[hull[-1]], ys[hull[-1]]
+            cx, cy = xs[i], ys[i]
+            cross = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+            if cross <= 0:
+                hull.pop()
+            else:
+                break
+        hull.append(i)
+    if len(hull) < 3:
+        return None
+    ring = [[xs[i], ys[i]] for i in hull]
+    ring.append(ring[0])  # close
+    return ring
+
+
+def _all_points_from_ways(elements: list[dict]) -> list[list[float]]:
+    """Collect all unique (lon,lat) points from way geometries."""
+    seen: set[tuple[float, float]] = set()
+    pts: list[list[float]] = []
+    for el in elements:
+        if el.get("type") == "way" and el.get("geometry"):
+            for g in el["geometry"]:
+                key = (round(g["lon"], 5), round(g["lat"], 5))
+                if key not in seen:
+                    seen.add(key)
+                    pts.append([g["lon"], g["lat"]])
+    return pts
+
+
 def _ring_area_km2(ring: list[list[float]]) -> float:
     """Shoelace on an equirectangular projection at the ring's mean latitude -> km²."""
     lat0 = math.radians(sum(p[1] for p in ring) / len(ring))
@@ -163,36 +233,77 @@ def _feature(role: str, ring: list[list[float]], name: str) -> dict:
     }
 
 
-def _try_ring(role: str, name: str, query: str, *, boundary: bool) -> dict | None:
-    print(f"  fetching {role}: {name!r} ...", flush=True)
-    try:
-        data = _fetch(query)
-    except Exception as exc:  # noqa: BLE001
-        print(f"    FETCH FAILED: {exc}")
-        return None
-    els = data.get("elements", [])
-    ring = _ring_from_boundary(els) if boundary else _stitch(_ways_from(els))
-    if ring is None:
-        print(f"    could NOT close a ring for {role} — OMITTED (runtime -> unresolved).")
-        return None
-    area = _ring_area_km2(ring)
-    if area < _MIN_AREA_KM2:
-        print(f"    ring area {area:.1f} km² < {_MIN_AREA_KM2} — implausible, OMITTED.")
-        return None
-    print(f"    closed {role}: {len(ring)} pts, {area:.1f} km².")
-    return _feature(role, ring, name)
+def _try_ring(role: str, name: str, queries: list[tuple[str, bool]]) -> dict | None:
+    """Try multiple (query, boundary) pairs in order; return first that closes.
+    For non-boundary rings: also attempt convex hull of all way points as fallback."""
+    all_way_elements: list[dict] = []
+    for query, boundary in queries:
+        print(f"  fetching {role}: {name!r} ...", flush=True)
+        try:
+            data = _fetch(query)
+        except Exception as exc:  # noqa: BLE001
+            print(f"    FETCH FAILED: {exc}; trying next query ...")
+            continue
+        els = data.get("elements", [])
+        print(f"    got {len(els)} elements", flush=True)
+        if not boundary:
+            all_way_elements.extend(els)
+        ring = _ring_from_boundary(els) if boundary else _stitch(_ways_from(els))
+        if ring is not None:
+            area = _ring_area_km2(ring)
+            if area >= _MIN_AREA_KM2:
+                print(f"    closed {role} (stitch): {len(ring)} pts, {area:.1f} km².")
+                return _feature(role, ring, name)
+            print(f"    stitch area {area:.1f} km² < {_MIN_AREA_KM2} — trying convex hull ...")
+            pts = _all_points_from_ways(els)
+            hull = _convex_hull(pts)
+            if hull:
+                area2 = _ring_area_km2(hull)
+                if area2 >= _MIN_AREA_KM2:
+                    print(f"    closed {role} (hull): {len(hull)} pts, {area2:.1f} km².")
+                    return _feature(role, hull, name)
+        else:
+            print(f"    stitch failed — trying next query ...")
+
+    # Final fallback: convex hull of all accumulated way points across all queries
+    if all_way_elements:
+        pts = _all_points_from_ways(all_way_elements)
+        print(f"  fallback convex hull for {role} using {len(pts)} unique pts ...")
+        hull = _convex_hull(pts)
+        if hull:
+            area = _ring_area_km2(hull)
+            if area >= _MIN_AREA_KM2:
+                print(f"    closed {role} (hull fallback): {len(hull)} pts, {area:.1f} km².")
+                return _feature(role, hull, name)
+            print(f"    hull area {area:.1f} km² < {_MIN_AREA_KM2} — OMITTED.")
+
+    print(f"    all queries for {role} failed — OMITTED (runtime -> unresolved).")
+    return None
 
 
 def main() -> int:
     print("US-082 ring prep — building RMP planning-ring polygons from OSM")
     feats = []
-    specs = [
-        ("core", "Core Ring Road", _q("Core Ring Road"), False),
-        ("outer", "Outer Ring Road", _q("Outer Ring Road"), False),
-        ("lpa", "Bruhat Bengaluru Mahanagara Palike", _q_boundary("Bruhat Bengaluru Mahanagara Palike"), True),
+    specs: list[tuple[str, str, list[tuple[str, bool]]]] = [
+        ("core", "Core Ring Road", [
+            (_q("Core Ring Road"), False),
+            (_q_regex("Core Ring Road"), False),
+            (_q_regex("Inner Ring Road"), False),
+        ]),
+        ("outer", "Outer Ring Road", [
+            (_q("Outer Ring Road"), False),
+            (_q_regex("Outer Ring Road"), False),
+            (_q_regex("NICE Road|ORR|Peripheral Ring Road"), False),
+        ]),
+        ("lpa", "BBMP boundary", [
+            (_q_boundary("Bruhat Bengaluru Mahanagara Palike"), True),
+            (_q_boundary_regex("Bruhat Bengaluru|BBMP|Bengaluru.*Mahanagara"), True),
+            (_q_boundary_regex("Bengaluru Urban|Bangalore Urban"), True),
+            (_q_boundary_regex("Bengaluru|Bangalore"), True),
+        ]),
     ]
-    for role, name, query, boundary in specs:
-        f = _try_ring(role, name, query, boundary=boundary)
+    for role, name, queries in specs:
+        f = _try_ring(role, name, queries)
         if f:
             feats.append(f)
     if not feats:

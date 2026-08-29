@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Infrastructure Service
-  version: "1.3.0"
+  version: "1.4.0"
   description: >
     Site connectivity analysis from OpenStreetMap. Scores road access, public transit
     proximity, and power infrastructure within a radius. Water/sewage/telecom are
@@ -110,6 +110,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConnectivityResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
+  /infrastructure/power-grid:
+    get:
+      operationId: getPowerGrid
+      summary: Power grid proximity — KPTCL transmission + BESCOM distribution + substations
+      description: >
+        OSM Overpass query for `power=line` ways and `power=substation` nodes within `radius_m`.
+        Classifies lines by voltage: ≥66kV → transmission (KPTCL jurisdiction); 11-33kV →
+        distribution_ht (BESCOM HT); <11kV → distribution_lt (BESCOM LT). Emits three connection-
+        feasibility flags: `bescom_lt_within_200m`, `bescom_ht_within_2km`, `kptcl_ht_within_5km`.
+        Distances are straight-line to nearest OSM geometry node — indicative only.
+        Gated by `feature.infrastructure.power-grid`.
+      parameters:
+        - in: query
+          name: lat
+          required: true
+          schema: { type: number, format: float }
+        - in: query
+          name: lon
+          required: true
+          schema: { type: number, format: float }
+        - in: query
+          name: radius_m
+          required: false
+          schema: { type: integer, default: 10000, minimum: 500, maximum: 25000 }
+      responses:
+        "200":
+          description: Power grid proximity result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PowerGridResult"
         "403":
           description: Feature flag disabled
         "422":
@@ -418,6 +454,82 @@ components:
           maximum: 100
         severity:
           $ref: "#/components/schemas/Severity"
+        data_source:
+          type: string
+        data_disclaimer:
+          type: string
+
+    PowerLine:
+      type: object
+      required: [distance_m, classification, confidence]
+      properties:
+        voltage_kv:
+          type: integer
+          nullable: true
+        operator:
+          type: string
+          nullable: true
+          example: "KPTCL"
+        distance_m:
+          type: number
+          format: float
+        classification:
+          type: string
+          enum: [transmission, distribution_ht, distribution_lt, unknown]
+        confidence:
+          type: string
+          enum: [derived, inferred, unresolved]
+
+    PowerSubstation:
+      type: object
+      required: [distance_m, lat, lon, confidence]
+      properties:
+        name:
+          type: string
+          nullable: true
+        voltage_kv:
+          type: integer
+          nullable: true
+        operator:
+          type: string
+          nullable: true
+        distance_m:
+          type: number
+          format: float
+        lat:
+          type: number
+          format: float
+        lon:
+          type: number
+          format: float
+        confidence:
+          type: string
+          enum: [derived, inferred, unresolved]
+
+    PowerGridResult:
+      type: object
+      required: [bescom_lt_within_200m, bescom_ht_within_2km, kptcl_ht_within_5km, radius_m, data_source, data_disclaimer]
+      properties:
+        nearest_ht_line:
+          oneOf:
+            - $ref: "#/components/schemas/PowerLine"
+            - type: "null"
+        nearest_distribution_line:
+          oneOf:
+            - $ref: "#/components/schemas/PowerLine"
+            - type: "null"
+        nearest_substation:
+          oneOf:
+            - $ref: "#/components/schemas/PowerSubstation"
+            - type: "null"
+        bescom_lt_within_200m:
+          type: boolean
+        bescom_ht_within_2km:
+          type: boolean
+        kptcl_ht_within_5km:
+          type: boolean
+        radius_m:
+          type: integer
         data_source:
           type: string
         data_disclaimer:
