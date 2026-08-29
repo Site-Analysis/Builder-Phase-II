@@ -1,0 +1,3 @@
+[submodule "services/cadastral-data"]
+	path = services/cadastral-data
+	url = https://github.com/TanmayCJ/prime-karnataka-cadastral-viewer
