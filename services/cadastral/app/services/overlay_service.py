@@ -76,7 +76,7 @@ def _to_json(gdf: gpd.GeoDataFrame) -> str:
     return gdf.to_json()
 
 
-def lgd_villages_geojson(rccms_db: str) -> str:
+def lgd_villages_geojson(rccms_db: str, bbox: str | None = None) -> str:
     gdf = _load_once(
         "lgd_villages",
         LGD_VILLAGES_PATH,
@@ -86,6 +86,7 @@ def lgd_villages_geojson(rccms_db: str) -> str:
         return _EMPTY_FC
     import sqlite3
     gdf = gdf[gdf["state_lgd"] == KARNATAKA_LGD].copy()
+    gdf = _bbox_filter(gdf, bbox)
     try:
         conn = sqlite3.connect(rccms_db)
         vm = pd.read_sql("SELECT village_code FROM villages_master", conn)

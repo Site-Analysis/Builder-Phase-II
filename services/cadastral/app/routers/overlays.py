@@ -33,10 +33,10 @@ def _json(content: str) -> Response:
 
 
 @router.get("/lgd-villages")
-def lgd_villages() -> Response:
+def lgd_villages(bbox: str | None = Query(None, description="minlng,minlat,maxlng,maxlat")) -> Response:
     """Karnataka village boundaries (LGD source) with covered=true where e-Chawadi data exists."""
     _require_flag()
-    return _json(ov.lgd_villages_geojson(cs.RCCMS_DB))
+    return _json(ov.lgd_villages_geojson(cs.RCCMS_DB, bbox))
 
 
 @router.get("/road-width")

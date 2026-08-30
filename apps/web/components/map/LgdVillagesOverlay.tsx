@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: LicenseRef-Proprietary
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 import { getSession } from "next-auth/react";
 
-const BASE = process.env.NEXT_PUBLIC_CADASTRAL_API_URL ?? "http://localhost:8011";
+const BASE = process.env.NEXT_PUBLIC_CADASTRAL_API_URL ?? "https://api.builder.qnit.site";
 
 interface Props {
   enabled: boolean;
@@ -16,21 +16,25 @@ interface Props {
 export function LgdVillagesOverlay({ enabled }: Props) {
   const map = useMap();
   const layerRef = useRef<L.GeoJSON | null>(null);
+  const ctrlRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    if (!enabled) {
-      if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current = null; }
-      return;
-    }
-
+  const fetchLgd = useCallback(() => {
+    if (ctrlRef.current) ctrlRef.current.abort();
     const ctrl = new AbortController();
+    ctrlRef.current = ctrl;
+
+    const b = map.getBounds();
+    const bbox = `${b.getWest().toFixed(6)},${b.getSouth().toFixed(6)},${b.getEast().toFixed(6)},${b.getNorth().toFixed(6)}`;
+
     getSession().then((session) => {
-      const authHeader: Record<string, string> = session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {};
-      fetch(`${BASE}/lgd-villages`, { headers: authHeader, signal: ctrl.signal })
+      const authHeader: Record<string, string> = session?.accessToken
+        ? { Authorization: `Bearer ${session.accessToken}` }
+        : {};
+      fetch(`${BASE}/lgd-villages?bbox=${bbox}`, { headers: authHeader, signal: ctrl.signal })
         .then((r) => r.json())
         .then((fc: GeoJSON.FeatureCollection) => {
           if (ctrl.signal.aborted) return;
-          if (layerRef.current) { map.removeLayer(layerRef.current); }
+          if (layerRef.current) map.removeLayer(layerRef.current);
           const layer = L.geoJSON(fc, {
             style: (feature) => {
               const covered = feature?.properties?.covered;
@@ -53,12 +57,24 @@ export function LgdVillagesOverlay({ enabled }: Props) {
         })
         .catch(() => {});
     });
+  }, [map]);
+
+  useEffect(() => {
+    if (!enabled) {
+      if (ctrlRef.current) { ctrlRef.current.abort(); ctrlRef.current = null; }
+      if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current = null; }
+      return;
+    }
+
+    fetchLgd();
+    map.on("moveend", fetchLgd);
 
     return () => {
-      ctrl.abort();
+      if (ctrlRef.current) { ctrlRef.current.abort(); ctrlRef.current = null; }
       if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current = null; }
+      map.off("moveend", fetchLgd);
     };
-  }, [enabled, map]);
+  }, [enabled, map, fetchLgd]);
 
   return null;
 }

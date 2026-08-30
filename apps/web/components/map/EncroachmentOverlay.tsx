@@ -7,7 +7,7 @@ import { useMap } from "react-leaflet";
 import L from "leaflet";
 import { bboxOfLatLng } from "@/lib/api/cadastral";
 
-const BASE = process.env.NEXT_PUBLIC_CADASTRAL_API_URL ?? "http://localhost:8011";
+const BASE = process.env.NEXT_PUBLIC_CADASTRAL_API_URL ?? "https://api.builder.qnit.site";
 
 interface Props {
   enabled: boolean;
