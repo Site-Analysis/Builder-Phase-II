@@ -5,7 +5,6 @@ import type { Metadata } from "next";
 import { Inter, Space_Grotesk, Space_Mono } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import "./globals.css";
-import { requirePublicEnv } from "../lib/env";
 import { AuthHydrator } from "../components/AuthHydrator";
 import { ProfileGate } from "../components/ProfileGate";
 
@@ -31,8 +30,6 @@ export const metadata: Metadata = {
   title: "Qnit — Site Intelligence",
   description: "Cited, India-specific site intelligence — flood, sun, wind, rainfall, temperature — on one map.",
 };
-
-requirePublicEnv();
 
 export default function RootLayout({
   children,
