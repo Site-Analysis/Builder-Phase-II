@@ -125,6 +125,10 @@ const MODULE_LABEL: Record<ModuleId, string> = {
   infrastructure: "Connectivity",
   soil: "Soil Profile", waterConstraints: "Water Constraints", growth: "Growth Context", land: "Title & Documents",
   amenities: "Amenities",
+  zoneRing: "Zone & Ring (RMP)", farAssembly: "FAR — Permissible vs Achievable",
+  obligations: "Mixed-Use, Parking & TIA", connectivitySignal: "Connectivity — Airport/Metro/Road",
+  utilities: "Utilities & NOC", overlays: "Deal-Killer Overlays", terrain: "Terrain — Slope/Geotech",
+  priceUpside: "Price Upside (Indicative)",
 };
 
 export function exportCsv(project: Project | null, modules: Modules, baseName: string) {

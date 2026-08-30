@@ -425,10 +425,7 @@ export function Scene3D({ center, bufferM, mode, solar, hour, boundary, dayPoint
     sunSphRef.current = sunSph;
 
     // ── MapLibre map ───────────────────────────────────────────────────────
-    const key   = process.env.NEXT_PUBLIC_MAPTILER_KEY;
-    const style = key
-      ? `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`
-      : "https://tiles.openfreemap.org/styles/positron";
+    const style = "https://tiles.openfreemap.org/styles/liberty";
 
     const map = new maplibregl.Map({ container: mapEl, style, center: [center[1], center[0]] as [number, number], zoom: 16, pitch: 45, bearing: -20 });
     mapRef.current = map;

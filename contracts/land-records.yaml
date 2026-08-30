@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Land Records Service
-  version: "1.0.0"
+  version: "1.2.0"
   description: >
     Land-records lookup helper for Karnataka. Portal-only by design: government portals
     (Bhoomi RTC, KAVERI encumbrance, eCourts) require CAPTCHA/session auth and are NOT
@@ -56,11 +56,120 @@ paths:
         "422":
           description: Validation error
 
+  /land-records/ownership:
+    post:
+      operationId: ownershipSnapshot
+      summary: Ownership SCREENING snapshot — Kharab/restricted flags + deep-links (US-091)
+      description: >
+        A screening signal ONLY — there is no bulk/public ownership API (Bhoomi RTC, e-Aasthi/
+        e-Swathu, Kaveri EC are CAPTCHA/OTP-gated). NO owner is fetched or inferred. Derives Kharab
+        (KGIS Cadastral L5; Kharab-B = government land, NON-SALEABLE) and Gomala/restricted
+        (Dishaank) flags ONLY when the parcel resolved — otherwise UNRESOLVED (absence of an RTC read
+        is NEVER 'clear title'). Emits deep-links (Bhoomi/e-Aasthi/e-Swathu/Kaveri/Dishaank, with the
+        exact inputs to type) and an `ownership_feasibility` signal for the US-092 engine. Gated by
+        `feature.land.ownership`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OwnershipRequest"
+      responses:
+        "200":
+          description: Ownership snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnershipSnapshot"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
 components:
   schemas:
     Severity:
       type: string
       enum: ["low", "moderate", "high", "none"]
+
+    OwnConfidence:
+      type: string
+      enum: ["authoritative", "inferred", "unresolved"]
+    FlagStatus:
+      type: string
+      enum: ["resolved", "unresolved", "checklist"]
+    OwnershipRequest:
+      type: object
+      required: [district, taluk, hobli, village, survey_number]
+      properties:
+        district: { type: string }
+        taluk: { type: string }
+        hobli: { type: string }
+        village: { type: string }
+        survey_number: { type: string }
+        state: { type: string, default: "Karnataka" }
+        parcel_resolved: { type: boolean, default: false }
+        cadastral_l5: { type: string, nullable: true }
+        dishaank_class: { type: string, nullable: true }
+    KharabFlag:
+      type: object
+      required: [status, source, note]
+      properties:
+        status: { $ref: "#/components/schemas/FlagStatus" }
+        is_kharab: { type: boolean, nullable: true }
+        kharab_type: { type: string, nullable: true }
+        non_saleable: { type: boolean, nullable: true }
+        area_affected: { type: string, nullable: true }
+        source: { type: string }
+        note: { type: string }
+        next_action: { type: string, nullable: true }
+    RestrictedFlag:
+      type: object
+      required: [status, source, note]
+      properties:
+        status: { $ref: "#/components/schemas/FlagStatus" }
+        is_restricted: { type: boolean, nullable: true }
+        restriction_type: { type: string, nullable: true }
+        source: { type: string }
+        note: { type: string }
+        next_action: { type: string, nullable: true }
+    OwnershipFeasibility:
+      type: object
+      required: [title_verification, confidence, next_action]
+      properties:
+        kharab_flag: { type: boolean, nullable: true }
+        restricted_flag: { type: boolean, nullable: true }
+        title_verification: { type: string, enum: ["manual-required"] }
+        confidence: { $ref: "#/components/schemas/OwnConfidence" }
+        next_action: { type: string }
+    GateSignal:
+      type: object
+      description: >
+        US-092 C1 — a Tier-1 ownership gate as a machine-readable boolean. `tripped=true` fires
+        (Kharab-B non-saleable / confirmed restricted tenure); `tripped=false` with
+        `confidence=unresolved` means NOT confirmed clear (verdict treats as CAUTION, never a pass).
+      required: [gate_name, tripped, basis, confidence]
+      properties:
+        gate_name: { type: string }
+        tripped: { type: boolean }
+        basis: { type: string }
+        citation: { type: string, nullable: true }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
+    OwnershipSnapshot:
+      type: object
+      required: [kharab, restricted, ownership_feasibility, data_source]
+      properties:
+        kharab: { $ref: "#/components/schemas/KharabFlag" }
+        restricted: { $ref: "#/components/schemas/RestrictedFlag" }
+        ownership_feasibility: { $ref: "#/components/schemas/OwnershipFeasibility" }
+        gates:
+          type: array
+          description: "US-092 C1: machine-readable ownership gates (non-saleable Kharab, restricted)."
+          items: { $ref: "#/components/schemas/GateSignal" }
+        deep_links: { type: array, items: { $ref: "#/components/schemas/DeepLink" } }
+        handoff_note: { type: string }
+        data_source: { type: string }
+        data_disclaimer: { type: string }
 
     LandRecordsRequest:
       type: object

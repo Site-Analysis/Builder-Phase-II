@@ -7,8 +7,10 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModuleChart } from "@/components/layout/ModuleChart";
 import { QualitativeChips } from "@/components/layout/QualitativeChips";
+import { LadderBadge } from "@/components/layout/LadderBadge";
 import type {
   Severity, Indicator, ChartDataPoint, ModuleChart as ModuleChartSpec, QualitativeStat,
+  LadderConfidence,
 } from "@/lib/stores/analysis";
 
 const BADGE: Record<Severity, { bg: string; color: string; label: string }> = {
@@ -23,6 +25,9 @@ export interface AnalysisModuleSectionProps {
   moduleColor: string;
   severity: Severity;
   score: number;
+  // US-092 Job A: when a signal carries a C4 confidence, the header shows a LadderBadge and HIDES
+  // the 0-100 score (an epic signal is honest triage, not a weighted number — no fake zero).
+  confidence?: LadderConfidence;
   loading?: boolean;
   error?: string | null;
   indicators?: Indicator[];
@@ -55,6 +60,7 @@ export function AnalysisModuleSection({
   moduleColor,
   severity,
   score,
+  confidence,
   loading = false,
   error = null,
   indicators = [],
@@ -94,19 +100,21 @@ export function AnalysisModuleSection({
         {/* Module name */}
         <span className="text-[13px] font-semibold text-text-primary flex-1">{moduleName}</span>
 
-        {/* Badge */}
+        {/* Badge — a C4 confidence LadderBadge for epic signals, else the climate SeverityBadge */}
         {loading ? (
           <div className="h-[18px] w-16 rounded-full bg-neutral-border animate-pulse" />
         ) : error ? (
           <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 10, fontWeight: 600, background: "#F5E4E4", color: "#C46A6A" }}>
             Retry
           </span>
+        ) : confidence ? (
+          <LadderBadge tier={confidence} />
         ) : (
           <SeverityBadge severity={severity} />
         )}
 
-        {/* Score */}
-        {loading ? (
+        {/* Score — hidden for epic signals (confidence set): an honest signal is not a 0-100 number */}
+        {confidence ? null : loading ? (
           <div className="h-3 w-6 rounded bg-neutral-border animate-pulse" />
         ) : error ? (
           <span className="text-[13px] font-bold text-text-disabled w-6 text-right">—</span>

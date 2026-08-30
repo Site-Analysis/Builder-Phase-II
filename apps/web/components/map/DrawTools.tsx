@@ -470,11 +470,20 @@ export function DrawTools({ onShapeCommitted, onClear, hasSiteCircle }: DrawTool
     shapes.length > 0 || polyPts.length > 0 || draftRect !== null || draftCircle !== null || !!hasSiteCircle;
 
   const btnBase: React.CSSProperties = {
-    width: 34, height: 34, borderRadius: 8, border: "none", cursor: "pointer",
+    width: 40, height: 40, borderRadius: 9, border: "none", cursor: "pointer",
     display: "flex", alignItems: "center", justifyContent: "center",
-    background: "transparent", color: "#7B8F83", transition: "background 0.12s, color 0.12s",
+    background: "transparent", color: "#3A3F3B", transition: "background 0.12s, color 0.12s",
+    flexShrink: 0,
   };
-  const activeStyle: React.CSSProperties = { background: "#306223", color: "#FDFCFB" };
+  const activeStyle: React.CSSProperties = {
+    background: "#306223", color: "#FDFCFB",
+    boxShadow: "0 2px 8px rgba(48,98,35,0.30)",
+  };
+
+  const MODE_HINT: Record<string, string> = {
+    rect: "Drag to draw a rectangle",
+    poly: "Click to place points · double-click or close to finish",
+  };
 
   const toolbar = (
     <div
@@ -482,59 +491,83 @@ export function DrawTools({ onShapeCommitted, onClear, hasSiteCircle }: DrawTool
       style={{
         position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)",
         zIndex: 1000,
-        background: "rgba(253,252,251,0.55)",
-        backdropFilter: "blur(16px) saturate(160%)",
-        WebkitBackdropFilter: "blur(16px) saturate(160%)",
-        border: "1px solid rgba(255,255,255,0.6)",
-        borderRadius: 12, padding: 5,
-        display: "flex", flexDirection: "row", gap: 3,
-        boxShadow: "0 8px 30px rgba(58,63,59,0.18), inset 0 1px 0 rgba(255,255,255,0.45)",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+        pointerEvents: "none",
       }}
       role="toolbar"
       aria-label="Map drawing tools"
     >
-      {/* Pan / deselect */}
-      <button
-        title="Pan / select"
-        onClick={() => setMode(null)}
-        style={{ ...btnBase, ...(mode === null ? activeStyle : {}) }}
-        onMouseEnter={(e) => { if (mode !== null) e.currentTarget.style.background = "#F2EDE8"; }}
-        onMouseLeave={(e) => { if (mode !== null) e.currentTarget.style.background = "transparent"; }}
-      >
-        <MousePointer2 size={16} aria-hidden />
-      </button>
+      {/* Mode hint pill — appears above toolbar when a drawing tool is active */}
+      {mode && (
+        <div style={{
+          background: "rgba(253,252,251,0.72)",
+          backdropFilter: "blur(14px) saturate(160%)",
+          WebkitBackdropFilter: "blur(14px) saturate(160%)",
+          border: "1px solid rgba(255,255,255,0.6)",
+          borderRadius: 20, padding: "4px 12px",
+          fontSize: 11, fontWeight: 600, color: "#306223",
+          boxShadow: "0 2px 10px rgba(58,63,59,0.14)",
+          whiteSpace: "nowrap", pointerEvents: "none",
+          fontFamily: "system-ui, sans-serif",
+        }}>
+          {MODE_HINT[mode] ?? mode}
+        </div>
+      )}
 
-      <div style={{ width: 1, height: 20, background: "#CFD6C4", margin: "4px 1px", alignSelf: "center" }} />
+      {/* Button row */}
+      <div style={{
+        background: "rgba(253,252,251,0.62)",
+        backdropFilter: "blur(16px) saturate(160%)",
+        WebkitBackdropFilter: "blur(16px) saturate(160%)",
+        border: "1px solid rgba(255,255,255,0.65)",
+        borderRadius: 14, padding: 6,
+        display: "flex", flexDirection: "row", gap: 2,
+        boxShadow: "0 8px 30px rgba(58,63,59,0.22), inset 0 1px 0 rgba(255,255,255,0.55)",
+        pointerEvents: "all",
+      }}>
+        {/* Pan / deselect */}
+        <button
+          title="Pan / select"
+          onClick={() => setMode(null)}
+          style={{ ...btnBase, ...(mode === null ? activeStyle : {}) }}
+          onMouseEnter={(e) => { if (mode !== null) { e.currentTarget.style.background = "#F2EDE8"; e.currentTarget.style.color = "#306223"; } }}
+          onMouseLeave={(e) => { if (mode !== null) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#3A3F3B"; } }}
+        >
+          <MousePointer2 size={17} aria-hidden />
+        </button>
 
-      {TOOLS.map(({ id, Icon, label }) => {
-        const on = mode === id;
-        return (
-          <button
-            key={id}
-            title={label}
-            onClick={() => selectTool(id)}
-            style={{ ...btnBase, ...(on ? activeStyle : {}) }}
-            onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = "#F2EDE8"; }}
-            onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = "transparent"; }}
-          >
-            <Icon size={16} aria-hidden />
-          </button>
-        );
-      })}
+        <div style={{ width: 1, height: 22, background: "rgba(207,214,196,0.6)", margin: "4px 2px", alignSelf: "center" }} />
 
-      <div style={{ width: 1, height: 20, background: "#CFD6C4", margin: "4px 1px", alignSelf: "center" }} />
+        {TOOLS.map(({ id, Icon, label }) => {
+          const on = mode === id;
+          return (
+            <button
+              key={id}
+              title={label}
+              onClick={() => selectTool(id)}
+              style={{ ...btnBase, ...(on ? activeStyle : {}) }}
+              onMouseEnter={(e) => { if (!on) { e.currentTarget.style.background = "#F2EDE8"; e.currentTarget.style.color = "#306223"; } }}
+              onMouseLeave={(e) => { if (!on) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#3A3F3B"; } }}
+            >
+              <Icon size={17} aria-hidden />
+            </button>
+          );
+        })}
 
-      {/* Clear */}
-      <button
-        title="Clear all drawings"
-        onClick={clearAll}
-        disabled={!hasDrawing}
-        style={{ ...btnBase, color: hasDrawing ? "#C46A6A" : "#B8C4BB", cursor: hasDrawing ? "pointer" : "default" }}
-        onMouseEnter={(e) => { if (hasDrawing) e.currentTarget.style.background = "#F5E4E4"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-      >
-        <Trash2 size={16} aria-hidden />
-      </button>
+        <div style={{ width: 1, height: 22, background: "rgba(207,214,196,0.6)", margin: "4px 2px", alignSelf: "center" }} />
+
+        {/* Clear */}
+        <button
+          title="Clear all drawings"
+          onClick={clearAll}
+          disabled={!hasDrawing}
+          style={{ ...btnBase, color: hasDrawing ? "#C46A6A" : "#B8C4BB", cursor: hasDrawing ? "pointer" : "default" }}
+          onMouseEnter={(e) => { if (hasDrawing) { e.currentTarget.style.background = "#FEE2E2"; e.currentTarget.style.color = "#b91c1c"; } }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = hasDrawing ? "#C46A6A" : "#B8C4BB"; }}
+        >
+          <Trash2 size={17} aria-hidden />
+        </button>
+      </div>
     </div>
   );
 

@@ -1,0 +1,76 @@
+{
+  "story": "US-084",
+  "title": "RMP-2015 buildable-envelope golden fixtures",
+  "status": "PENDING_TRANSCRIPTION_PRIMARY_PDF",
+  "note": "Expected values are EMPTY until transcribed from RMP-2015 Vol-III printed worked examples and public RERA-Karnataka sanctions. A filled 'expected' without a 'source' fails tests/planning_rmp_smoke.py (guess = P0). 'inputs' are chosen test scenarios, not regulatory data.",
+  "worked_examples": [
+    {
+      "id": "rmp-residential-main-1000-2000",
+      "inputs": { "zone": "Residential", "sub_zone": "Main", "ring": null, "road_width_m": 20.0, "plot_frontage_m": null, "plot_depth_m": null, "plot_area_sqm": 1500, "plot_area_unit": "sqm" },
+      "expected": { "permissible_far": 2.50, "achievable_far": null, "ground_coverage": 0.60, "setback_front_m": null, "setback_rear_m": null, "setback_side_m": null },
+      "source": "RMP-2015 Vol-III Table 10 (Residential Main), read from the primary PDF via pymupdf: plot 1000-2000 sqm -> FAR 2.50, GC 60%, road 18-24 m. achievable_far/setbacks null (need ring modifier + building height).",
+      "page_ref": "Table 10, p.27",
+      "status": "VERIFIED"
+    },
+    {
+      "id": "rmp-commercial-business-18-24",
+      "inputs": { "zone": "Commercial", "sub_zone": "Business", "ring": null, "road_width_m": 20.0, "plot_frontage_m": null, "plot_depth_m": null, "plot_area_sqm": 800, "plot_area_unit": "sqm" },
+      "expected": { "permissible_far": 2.50, "achievable_far": null, "ground_coverage": 0.45, "setback_front_m": null, "setback_rear_m": null, "setback_side_m": null },
+      "source": "RMP-2015 Vol-III Table 14 (Commercial Business, keyed by road width), read from the primary PDF via pymupdf: road 18-24 m -> FAR 2.50, GC 45% (plot cap 12000 sqm).",
+      "page_ref": "Table 14, p.31",
+      "status": "VERIFIED"
+    }
+  ],
+  "band_edge_cases": [
+    {
+      "id": "band-edge-12.0m",
+      "inputs": { "zone": null, "ring": null, "road_width_m": 12.0, "plot_area_sqm": null },
+      "expected": { "status": null, "far_low": null, "far_high": null },
+      "invariant_note": "at 12.0m (band edge) status must be 'survey required' with the FAR range across the edge, not a single number",
+      "source": "",
+      "status": "PENDING"
+    },
+    {
+      "id": "band-edge-11.6m",
+      "inputs": { "zone": null, "ring": null, "road_width_m": 11.6, "plot_area_sqm": null },
+      "expected": { "status": null, "far_low": null, "far_high": null },
+      "source": "",
+      "status": "PENDING"
+    }
+  ],
+  "unit_conversion_cases": [
+    {
+      "id": "unit-guntha",
+      "inputs": { "zone": null, "ring": null, "road_width_m": null, "plot_area": null, "plot_area_unit": "guntha" },
+      "expected": { "permissible_far": null, "net_plot_area_sqm": null },
+      "invariant_note": "guntha/acre/sqft/sqm variants of the same plot must yield the SAME far; echo source_unit",
+      "source": "",
+      "status": "PENDING"
+    },
+    {
+      "id": "unit-sqft",
+      "inputs": { "zone": null, "ring": null, "road_width_m": null, "plot_area": null, "plot_area_unit": "sqft" },
+      "expected": { "permissible_far": null, "net_plot_area_sqm": null },
+      "source": "",
+      "status": "PENDING"
+    },
+    {
+      "id": "unit-acre",
+      "inputs": { "zone": null, "ring": null, "road_width_m": null, "plot_area": null, "plot_area_unit": "acre" },
+      "expected": { "permissible_far": null, "net_plot_area_sqm": null },
+      "source": "",
+      "status": "PENDING"
+    }
+  ],
+  "rera_benchmarks": [
+    {
+      "id": "rera-sanctioned-1",
+      "inputs": { "project_name": null, "rera_id": null, "lat": null, "lon": null, "zone": null, "ring": null, "road_width_m": null, "plot_area_sqm": null },
+      "expected": { "sanctioned_far": null },
+      "tolerance": 0.05,
+      "explained_gap_reason": null,
+      "source_url": "",
+      "status": "PENDING"
+    }
+  ]
+}

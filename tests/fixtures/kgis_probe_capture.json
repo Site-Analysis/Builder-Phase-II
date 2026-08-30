@@ -1,0 +1,36 @@
+{
+  "status": "PENDING_LIVE_CAPTURE",
+  "note": "EMPTY until a human on a KGIS-whitelisted IP runs scripts/kgis_probe.py and pastes the raw responses here. The build agent cannot run the probes (egress blocked). NO fabricated sample responses — every slot is null until a real capture lands.",
+  "captured_by": null,
+  "captured_at": null,
+  "probes": {
+    "P1_villageid_equivalence": {
+      "captured": false,
+      "l5_KGISVillageID": null,
+      "geom_accepted_id": null,
+      "geom_status": null,
+      "raw": null
+    },
+    "P2_field_names": {
+      "captured": false,
+      "KGISVillageCode_field_present": null,
+      "surveynumberi_match_type": null,
+      "raw": null
+    },
+    "P3_cadastral_offset": {
+      "captured": false,
+      "parcels_checked": null,
+      "measured_offset_m_range": null,
+      "bmrda_coverage": null
+    },
+    "P4_P6_boundaries": {
+      "captured": false,
+      "gba_available": null,
+      "bda_lpa_available": null,
+      "bmrda_available": null,
+      "biaapa_available": null,
+      "panchayat_available": null,
+      "vintage": null
+    }
+  }
+}

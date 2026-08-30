@@ -4,12 +4,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Sun, Waves, Thermometer, Wind, CloudRain, Scale } from "lucide-react";
+import { Sun, Waves, Thermometer, Wind, CloudRain, Scale, FileText } from "lucide-react";
 import { TopNav } from "@/components/layout/TopNav";
 import { useAuthStore } from "@/lib/stores/auth";
-import { supabase } from "@/lib/supabase/client";
+import { signOut } from "next-auth/react";
 import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
 import { useConfigStore } from "@/lib/stores/config";
@@ -18,6 +18,9 @@ import { AnalysisConfigCard } from "@/components/map/AnalysisConfigCard";
 import { SiteConfigCard } from "@/components/map/SiteConfigCard";
 import { createProject } from "@/lib/api/projects";
 import type { ModuleId } from "@/lib/stores/analysis";
+import { useProfileStore } from "@/lib/stores/profile";
+import type { CadastralParcel } from "@/lib/api/cadastral";
+import { useUIStore } from "@/lib/stores/ui";
 
 const MapContainer = dynamic(
   () => import("@/components/map/MapContainer").then((m) => m.MapContainer),
@@ -39,131 +42,58 @@ const MapSearch = dynamic(
   () => import("@/components/map/MapSearch").then((m) => m.MapSearch),
   { ssr: false }
 );
+const SiteContextDock = dynamic(
+  () => import("@/components/map/SiteContextDock").then((m) => m.SiteContextDock),
+  { ssr: false }
+);
+const SitePlanningCard = dynamic(
+  () => import("@/components/map/SitePlanningCard").then((m) => m.SitePlanningCard),
+  { ssr: false }
+);
+
 
 // TODO GH#55: boundary is a 200 m circle — replace with /api/geo/site-boundary when confirmed
 
-const ANALYSIS_MODULES: { id: ModuleId; name: string; color: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "sunpath",     name: "Sun Path",          color: "#F59E0B", icon: <Sun size={15} />,         desc: "Solar access, shadows, daylight" },
-  { id: "flood",       name: "Risks",             color: "#2563EB", icon: <Waves size={15} />,       desc: "Risk, terrain, hydrology" },
-  { id: "temperature", name: "Temperature",       color: "#EF4444", icon: <Thermometer size={15} />, desc: "Thermal profile, comfort" },
-  { id: "wind",        name: "Wind",              color: "#06B6D4", icon: <Wind size={15} />,         desc: "Speed, ventilation, gusts" },
-  { id: "rainfall",    name: "Rainfall",          color: "#1D4ED8", icon: <CloudRain size={15} />,    desc: "Annual totals, wet days" },
-  { id: "zoning",      name: "Zoning",            color: "#B45309", icon: <Scale size={15} />,        desc: "Zone, LULC, FAR, NA order, DGCA" },
+type ModuleCategory = "climate" | "builder";
+const ANALYSIS_MODULES: { id: ModuleId; name: string; color: string; icon: React.ReactNode; desc: string; category: ModuleCategory }[] = [
+  { id: "sunpath",     name: "Sun Path",          color: "#F59E0B", icon: <Sun size={15} />,         desc: "Solar access, shadows, daylight",            category: "climate" },
+  { id: "flood",       name: "Risks",             color: "#2563EB", icon: <Waves size={15} />,       desc: "Risk, terrain, hydrology",                   category: "climate" },
+  { id: "temperature", name: "Temperature",       color: "#EF4444", icon: <Thermometer size={15} />, desc: "Thermal profile, comfort",                   category: "climate" },
+  { id: "wind",        name: "Wind",              color: "#06B6D4", icon: <Wind size={15} />,         desc: "Speed, ventilation, gusts",                  category: "climate" },
+  { id: "rainfall",    name: "Rainfall",          color: "#1D4ED8", icon: <CloudRain size={15} />,    desc: "Annual totals, wet days",                    category: "climate" },
+  { id: "zoning",      name: "Zoning",            color: "#B45309", icon: <Scale size={15} />,        desc: "Zone, LULC, FAR, NA order, DGCA",            category: "builder" },
+  { id: "land",        name: "Title & Documents", color: "#6B21A8", icon: <FileText size={15} />,     desc: "Survey number, parcel boundary, RTC/EC links", category: "builder" },
 ];
 
-// ─── Floating module selector ─────────────────────────────────────────────────
-function ModuleSelector({
-  selected, onToggle, onAll, onNone, onStart, creating, error,
-}: {
-  selected: Set<ModuleId>;
-  onToggle: (id: ModuleId) => void;
-  onAll: () => void;
-  onNone: () => void;
-  onStart: () => void;
-  creating: boolean;
-  error: string;
-}) {
-  return (
-    <div style={{
-      position: "absolute", top: 70, right: 16, width: 300, zIndex: 500,
-      background: "rgba(253,252,251,0.55)",
-      backdropFilter: "blur(16px) saturate(160%)",
-      WebkitBackdropFilter: "blur(16px) saturate(160%)",
-      border: "1px solid rgba(255,255,255,0.6)", borderRadius: 14,
-      boxShadow: "0 8px 30px rgba(58,63,59,0.18), inset 0 1px 0 rgba(255,255,255,0.45)",
-      overflow: "hidden",
-    }}>
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "12px 14px", borderBottom: "1px solid rgba(207,214,196,0.5)",
-      }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#3A3F3B" }}>Analyses to run</div>
-          <div style={{ fontSize: 11, color: "#7B8F83", marginTop: 1 }}>{selected.size} of 5 selected</div>
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={onAll}  style={pillBtn}>All</button>
-          <button onClick={onNone} style={pillBtn}>None</button>
-        </div>
-      </div>
-
-      <div style={{ padding: 8 }}>
-        {ANALYSIS_MODULES.map((m) => {
-          const on = selected.has(m.id);
-          return (
-            <button
-              key={m.id}
-              onClick={() => onToggle(m.id)}
-              style={{
-                width: "100%", display: "flex", alignItems: "center", gap: 10,
-                padding: "9px 10px", borderRadius: 8, cursor: "pointer",
-                border: "1px solid", borderColor: on ? `${m.color}55` : "transparent",
-                background: on ? `${m.color}10` : "transparent", textAlign: "left",
-                fontFamily: "inherit", transition: "all 0.12s",
-              }}
-            >
-              <span style={{
-                width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: on ? m.color : "#F0EDE9", color: on ? "#fff" : "#B8C4BB",
-              }}>
-                {m.icon}
-              </span>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#3A3F3B" }}>{m.name}</span>
-                <span style={{ display: "block", fontSize: 10.5, color: "#7B8F83" }}>{m.desc}</span>
-              </span>
-              <span style={{
-                width: 18, height: 18, borderRadius: 5, flexShrink: 0,
-                border: on ? "none" : "1.5px solid #CFD6C4",
-                background: on ? m.color : "transparent",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#fff", fontSize: 11, fontWeight: 700,
-              }}>
-                {on ? "✓" : ""}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div style={{ padding: "8px 12px 12px" }}>
-        {error && (
-          <div style={{
-            fontSize: 11, color: "#DC2626", marginBottom: 8,
-            padding: "5px 10px", borderRadius: 6,
-            background: "#FEF2F2", border: "1px solid #FCA5A5",
-          }}>
-            {error}
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={onStart}
-          disabled={creating}
-          style={{
-            width: "100%", height: 36, borderRadius: 8, border: "none",
-            background: creating ? "#24491a" : "#306223",
-            color: "white", fontSize: 13, fontWeight: 600,
-            cursor: creating ? "not-allowed" : "pointer",
-            fontFamily: "inherit", opacity: creating ? 0.8 : 1,
-            transition: "background 0.12s",
-          }}
-          onMouseEnter={(e) => { if (!creating) (e.currentTarget).style.background = "#24491a"; }}
-          onMouseLeave={(e) => { if (!creating) (e.currentTarget).style.background = "#306223"; }}
-        >
-          {creating ? "Creating…" : "Start Analysis →"}
-        </button>
-      </div>
-    </div>
-  );
+// ─── Drag helper ──────────────────────────────────────────────────────────────
+function useDraggable(initialPos: { top: number; left: number }) {
+  const [pos, setPos] = useState(initialPos);
+  const origin = useRef<{ mx: number; my: number; top: number; left: number } | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!origin.current) return;
+      setPos({ top: origin.current.top + e.clientY - origin.current.my, left: origin.current.left + e.clientX - origin.current.mx });
+    };
+    const onUp = () => { origin.current = null; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+  const onDragStart = (e: React.MouseEvent) => {
+    const el = (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-draggable]");
+    const rect = el?.getBoundingClientRect();
+    origin.current = { mx: e.clientX, my: e.clientY, top: rect?.top ?? pos.top, left: rect?.left ?? pos.left };
+    e.preventDefault();
+  };
+  return { pos, onDragStart };
 }
 
-const pillBtn: React.CSSProperties = {
-  height: 24, padding: "0 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.6)",
-  background: "rgba(253,252,251,0.5)", color: "#306223", fontSize: 11, fontWeight: 600,
-  cursor: "pointer", fontFamily: "inherit",
+const DRAG_HANDLE: React.CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "center",
+  height: 20, cursor: "grab", color: "#B8C4BB", fontSize: 14, letterSpacing: 3, userSelect: "none",
+  borderBottom: "1px solid rgba(207,214,196,0.4)", marginBottom: 4,
 };
+
 
 function getInitials(user: { email?: string; user_metadata?: { full_name?: string } }) {
   const name = user.user_metadata?.full_name;
@@ -174,10 +104,65 @@ function getInitials(user: { email?: string; user_metadata?: { full_name?: strin
   return user.email?.[0]?.toUpperCase() ?? "U";
 }
 
-function suggestName(address: string) {
+function suggestName(address: string, isBuilder?: boolean) {
   if (!address) return "";
-  if (/^-?\d/.test(address)) return `Site at ${address}`;
+  const prefix = isBuilder ? "Builder Site" : "Site";
+  if (/^-?\d/.test(address)) return `${prefix} — ${address}`;
   return address.split(",").slice(0, 2).map((s) => s.trim()).join(", ");
+}
+
+function _hav(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function boundingBoxDims(positions: [number, number][] | null | undefined): { nsM: number; ewM: number } | null {
+  if (!positions || positions.length < 2) return null;
+  const lats = positions.map(p => p[0]);
+  const lons = positions.map(p => p[1]);
+  const midLat = (Math.max(...lats) + Math.min(...lats)) / 2;
+  return {
+    nsM: _hav(Math.min(...lats), lons[0], Math.max(...lats), lons[0]),
+    ewM: _hav(midLat, Math.min(...lons), midLat, Math.max(...lons)),
+  };
+}
+
+// ─── Draggable config cards (left panel) ──────────────────────────────────────
+function DraggableConfigCards({ projectName, onSiteNameChange, lat, lng, onStart, creating, error }: {
+  projectName: string; onSiteNameChange: (v: string) => void; lat: number; lng: number;
+  onStart: () => void; creating: boolean; error: string;
+}) {
+  const { pos, onDragStart } = useDraggable({ top: 70, left: 16 });
+  return (
+    <div data-draggable style={{ position: "fixed", top: pos.top, left: pos.left, width: 248, zIndex: 500, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div onMouseDown={onDragStart} style={{ ...DRAG_HANDLE, background: "rgba(253,252,251,0.7)", backdropFilter: "blur(8px)", borderRadius: 8, marginBottom: 0, border: "1px solid rgba(207,214,196,0.5)" }}>⠿⠿⠿ drag to move</div>
+      <AnalysisConfigCard />
+      <SiteConfigCard siteName={projectName} onSiteNameChange={onSiteNameChange} lat={lat} lng={lng} />
+      <div>
+        {error && (
+          <div style={{ fontSize: 11, color: "#DC2626", marginBottom: 6, padding: "5px 10px", borderRadius: 6, background: "#FEF2F2", border: "1px solid #FCA5A5" }}>
+            {error}
+          </div>
+        )}
+        <button
+          type="button" onClick={onStart} disabled={creating}
+          style={{
+            width: "100%", height: 38, borderRadius: 9, border: "none",
+            background: creating ? "#24491a" : "#306223",
+            color: "white", fontSize: 13, fontWeight: 600,
+            cursor: creating ? "not-allowed" : "pointer",
+            fontFamily: "inherit", opacity: creating ? 0.8 : 1,
+          }}
+          onMouseEnter={(e) => { if (!creating) (e.currentTarget as HTMLButtonElement).style.background = "#24491a"; }}
+          onMouseLeave={(e) => { if (!creating) (e.currentTarget as HTMLButtonElement).style.background = "#306223"; }}
+        >
+          {creating ? "Creating…" : "Start Analysis →"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -188,7 +173,9 @@ export default function NewAnalysisPage() {
   const { resetAnalysis }      = useAnalysisStore();
   const { bufferM }            = useConfigStore();
   const drawnBoundary          = useDrawStore((s) => s.boundary);
+  const siteMeasurements       = useDrawStore((s) => s.siteMeasurements);
   const setDrawnBoundary        = useDrawStore((s) => s.setBoundary);
+  const { setPowerGridEnabled } = useUIStore();
 
   const [address,     setAddress]     = useState("");
   const [projectName, setProjectName] = useState("");
@@ -197,30 +184,28 @@ export default function NewAnalysisPage() {
   const [pinFromDraw, setPinFromDraw] = useState(false);
   const [creating,    setCreating]    = useState(false);
   const [error,       setError]       = useState("");
-  const [selected,    setSelected]    = useState<Set<ModuleId>>(new Set());
-
-  function toggleModule(id: ModuleId) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
+  const profile = useProfileStore((s) => s.profile);
+  const visibleModules = ANALYSIS_MODULES.filter(
+    (m) => m.category === (profile === "builder" ? "builder" : "climate"),
+  );
 
   useEffect(() => {
     if (!user) router.replace("/login");
   }, [user, router]);
 
+  useEffect(() => {
+    if (drawnBoundary?.positions?.length) setPowerGridEnabled(true);
+  }, [drawnBoundary, setPowerGridEnabled]);
+
   if (!user) return null;
 
   function handleMapClick(lat: number, lng: number) {
-    if (pinDropped) return; // site already set — ignore stray clicks
     const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
     setCenter([lat, lng]);
     setPinDropped(true);
     setPinFromDraw(false);
     setAddress(coords);
-    setProjectName(suggestName(coords));
+    setProjectName(suggestName(coords, profile === "builder"));
     setError("");
   }
 
@@ -230,7 +215,7 @@ export default function NewAnalysisPage() {
     setPinDropped(true);
     setPinFromDraw(true);
     setAddress(coords);
-    setProjectName(suggestName(coords));
+    setProjectName(suggestName(coords, profile === "builder"));
     setError("");
   }
 
@@ -251,25 +236,37 @@ export default function NewAnalysisPage() {
     setDrawnBoundary(null);
   }
 
+  function handleParcelSelectOnNew(p: CadastralParcel) {
+    const ring = p.geometry.coordinates?.[0] ?? [];
+    if (!ring.length) return;
+    const lon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+    const lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+    setCenter([lat, lon]);
+    setPinDropped(true);
+    setPinFromDraw(false);
+    const label = p.surveyNumber ? `Survey ${p.surveyNumber}` : "Parcel";
+    setAddress(label);
+    setProjectName(suggestName(label, profile === "builder"));
+    setError("");
+  }
+
   async function handleStart() {
     if (!projectName.trim()) { setError("Project name is required."); return; }
-    if (selected.size === 0) { setError("Select at least one analysis to run."); return; }
     setError("");
     setCreating(true);
     resetAnalysis();
     try {
-      // Use the drawn rectangle/polygon as the site boundary when present;
-      // otherwise fall back to the dropped marker point.
       let boundary: GeoJSON.Geometry;
+      let polygon: [number, number][] | null = null;
       if (drawnBoundary && drawnBoundary.positions.length >= 3) {
         const ring = drawnBoundary.positions.map(([lat, lng]) => [lng, lat]);
-        ring.push(ring[0]); // close the ring
+        ring.push(ring[0]);
         boundary = { type: "Polygon", coordinates: [ring] };
+        polygon = drawnBoundary.positions as [number, number][];
       } else {
         boundary = { type: "Point", coordinates: [center[1], center[0]] };
       }
-      // Preserve the canonical module order.
-      const modules_run = ANALYSIS_MODULES.map((m) => m.id).filter((id) => selected.has(id));
+      const modules_run = visibleModules.map((m) => m.id);
       const project = await createProject({
         name: projectName.trim(),
         location: address.trim() || `${center[0].toFixed(4)}, ${center[1].toFixed(4)}`,
@@ -280,6 +277,7 @@ export default function NewAnalysisPage() {
       router.push(`/project/${project.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project.");
+    } finally {
       setCreating(false);
     }
   }
@@ -301,49 +299,37 @@ export default function NewAnalysisPage() {
         showCurrentLocation={!pinDropped}
         onCurrentLocationClick={handleCurrentLocation}
         onSettingsClick={() => router.push("/settings")}
-        onSignOut={async () => { await supabase.auth.signOut(); clearAuth(); router.replace("/login"); }}
+        onSignOut={async () => { clearAuth(); await signOut({ callbackUrl: "/login" }); }}
+        viewProfile={profile ?? undefined}
+        onSwitchProfile={() => router.push("/select-profile")}
       />
 
       {/* Full-screen map */}
       <div className="pt-14 flex-1 relative" style={{ cursor: "crosshair" }}>
-        <MapContainer mode="full-screen">
+        <MapContainer mode="full-screen" showCadastralUI controlsAtBottom={pinDropped} onParcelSelect={handleParcelSelectOnNew} amenitiesCenter={pinDropped ? center : undefined}>
           <MapClickHandler onMapClick={handleMapClick} />
           {pinDropped && (
-            <SiteBoundaryOverlay
-              shape="circle"
-              coordinates={{ center, radius: bufferM }}
-            />
+            <>
+              <SiteBoundaryOverlay
+                shape="circle"
+                coordinates={{ center, radius: bufferM }}
+              />
+              <SitePlanningCard
+                lat={center[0]}
+                lon={center[1]}
+                plotAreaSqm={siteMeasurements?.area ?? null}
+                plotDims={boundingBoxDims(drawnBoundary?.positions)}
+              />
+            </>
           )}
           <DrawTools onShapeCommitted={handleShapeCommitted} />
-          <MapSearch />
+          <MapSearch topOffset={104} />
         </MapContainer>
 
-        {/* Config cards — stacked flex column, appear once a pin is placed */}
-        {pinDropped && (
-          <div style={{
-            position: "absolute", top: 70, left: 16, width: 248, zIndex: 500,
-            display: "flex", flexDirection: "column", gap: 8,
-          }}>
-            <AnalysisConfigCard />
-            <SiteConfigCard
-              siteName={projectName}
-              onSiteNameChange={setProjectName}
-              lat={center[0]}
-              lng={center[1]}
-            />
-          </div>
-        )}
-        {pinDropped && (
-          <ModuleSelector
-            selected={selected}
-            onToggle={toggleModule}
-            onAll={() => setSelected(new Set(ANALYSIS_MODULES.map((m) => m.id)))}
-            onNone={() => setSelected(new Set())}
-            onStart={handleStart}
-            creating={creating}
-            error={error}
-          />
-        )}
+        {pinDropped && <SiteContextDock lat={center[0]} lon={center[1]} />}
+
+        {/* Config cards — draggable, stacked flex column, appear once a pin is placed */}
+        {pinDropped && <DraggableConfigCards projectName={projectName} onSiteNameChange={setProjectName} lat={center[0]} lng={center[1]} onStart={handleStart} creating={creating} error={error} />}
 
 
 

@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Qnit. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
+import { getSession } from "next-auth/react";
+
 // Frontend ↔ analysis service wiring.
 // Endpoints + response shapes verified against the real FastAPI routers and
 // Pydantic models in services/<svc>/app/ (not the contracts, which can drift).
@@ -14,7 +16,7 @@
 //   rainfall    (8004): feature.rainfall.summary
 
 import type {
-  ModuleId, ModuleResult, SiteScore, Severity, QualitativeTone,
+  ModuleId, ModuleResult, SiteScore, Severity, QualitativeTone, QualitativeStat,
 } from "../stores/analysis";
 
 // Per-module accent colours (match the rest of the UI).
@@ -51,13 +53,108 @@ const SVC = {
   amenities:      process.env.NEXT_PUBLIC_GEO_API_URL            ?? "http://localhost:8005",
 } as const;
 
+export interface ParcelZone {
+  zone_class: string;
+  permitted_uses: string[];
+  source_confidence: string;
+  zone_authority: string | null;
+  na_order_required: boolean;
+  forest_clearance_required: boolean;
+}
+
+export async function fetchParcelZone(lat: number, lon: number): Promise<ParcelZone | null> {
+  try {
+    return await svcFetch<ParcelZone>(SVC.zone, `/geo/zone?lat=${lat}&lon=${lon}&radius_m=200`);
+  } catch {
+    return null;
+  }
+}
+
+export interface RingContext {
+  status: "resolved" | "unresolved";
+  ring: "I" | "II" | "III" | null;
+  tdr_zone: "A" | "B" | "C" | null;
+  confidence: "inferred";
+  data_source: string;
+  reason: string | null;
+}
+
+export async function fetchRingContext(lat: number, lon: number): Promise<RingContext | null> {
+  try {
+    return await svcFetch<RingContext>(SVC.zone, `/geo/ring?lat=${lat}&lon=${lon}`);
+  } catch {
+    return null;
+  }
+}
+
+export interface TransportFeature {
+  name: string;
+  subtype: string;
+  lat: number;
+  lon: number;
+  distance_m: number;
+  confidence: string;
+}
+export interface TransportCategory {
+  nearest: TransportFeature | null;
+  features: TransportFeature[];
+  status: "resolved" | "none_found";
+}
+export interface TransportAccessResult {
+  metro: TransportCategory;
+  rail: TransportCategory;
+  highway: TransportCategory;
+  airport: TransportCategory;
+  radius_m: number;
+  data_source: string;
+}
+
+export async function fetchTransportAccess(
+  lat: number,
+  lon: number,
+  radiusM = 10000,
+): Promise<TransportAccessResult | null> {
+  try {
+    return await svcFetch<TransportAccessResult>(
+      SVC.zone,
+      `/geo/transport-access?lat=${lat}&lon=${lon}&radius_m=${radiusM}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export interface AuthorityResult {
+  authority: string;
+  jurisdiction_type: string;
+  planning_authority: string | null;
+  approval_track: string | null;
+  bye_law_reference: string | null;
+  portal: string | null;
+  confidence: string;
+  live_verified: boolean;
+  notes: string | null;
+}
+
+export async function fetchAuthority(lat: number, lon: number): Promise<AuthorityResult | null> {
+  try {
+    return await svcFetch<AuthorityResult>(SVC.zone, `/geo/authority?lat=${lat}&lon=${lon}`);
+  } catch {
+    return null;
+  }
+}
+
 async function svcFetch<T>(base: string, path: string, init?: RequestInit, timeoutMs = 30_000): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const session = await getSession();
+  const authHeader: Record<string, string> = session?.accessToken
+    ? { Authorization: `Bearer ${session.accessToken}` }
+    : {};
   try {
     const res = await fetch(`${base}${path}`, {
-      headers: { "Content-Type": "application/json", ...init?.headers },
       ...init,
+      headers: { "Content-Type": "application/json", ...authHeader, ...(init?.headers as Record<string, string> | undefined) },
       signal: ctrl.signal,
     });
     if (!res.ok) {
@@ -808,7 +905,7 @@ export async function getZoneAnalysis(lat: number, lon: number): Promise<ModuleR
     chart_data: nearbyFeatures.map((f) => ({ label: f.value, value: f.distance_m })),
     qualitative: [
       ...lulcQual,
-      { label: "Data Confidence", value: sourceConf === "authoritative" ? "Authoritative (ISRO NRSC + OSM)" : "Community (OSM only)", tone: sourceConf === "authoritative" ? "good" : "warn" },
+      { label: "Data Confidence", value: sourceConf === "authoritative" ? "Authoritative (BDA RMP-2015)" : "Inferred (OSM/Bhuvan) — UNVERIFIED, confirm the RMP zone (see /geo/zone-resolve)", tone: sourceConf === "authoritative" ? "good" : "warn" },
       { label: "Zone Code", value: String(d.zone_code ?? "Verify locally"), tone: "neutral" },
       {
         label: "⚠ Zone Disclaimer",
@@ -895,7 +992,7 @@ export async function getPlanningAnalysis(
     qualitative: [
       ...roadWidthQual,
       { label: "FAR Source", value: String(d.far_source ?? "NBC 2016"), tone: "neutral" },
-      { label: "Airport", value: `${ar.nearest_airport ?? "—"} (${num(ar.distance_km).toFixed(1)}km)`, tone: ar.dgca_noc_required ? "bad" : "good" },
+      { label: "Airport (height cap)", value: `${ar.nearest_airport ?? "—"} — ${ar.restriction_surface ?? "OLS"}; distance via connectivity`, tone: ar.dgca_noc_required ? "bad" : "good" },
       { label: "DGCA NOC", value: ar.dgca_noc_required ? "Required — file with AAI before design" : "Not required", tone: ar.dgca_noc_required ? "bad" : "good" },
       { label: "⚠ Disclaimer", value: "FAR is computed from NBC 2016 Table 15 + BDA CDP 2031 rules. These are not a substitute for the official building permit from BDA/BBMP. Always verify with a licensed architect and local authority before investment.", tone: "warn" },
     ],
@@ -912,6 +1009,707 @@ export async function getPlanningAnalysis(
     loading: false,
     error: null,
   };
+}
+
+// ─── Raw planning fetch — for the in-map SitePlanningCard popup ──────────────
+
+export interface RawPlanningResult {
+  far_applicable: number;
+  far_source: string;
+  ground_coverage_max: number;
+  setback_front_m: number;
+  setback_rear_m: number;
+  setback_side_m: number;
+  max_height_m: number;
+  height_limiting_factor: string;
+  buildable_area_sqm: number;
+  road_width_used_m: number;
+  road_width_source: "user_input" | "osm_detected" | "default_9m";
+  tod_applicable: boolean;
+  metro_station_name: string | null;
+  metro_distance_m: number | null;
+  score: number;
+  data_source: string;
+}
+
+export async function fetchRawPlanning(
+  lat: number,
+  lon: number,
+  plotAreaSqm: number,
+  zoneClass?: string,
+): Promise<RawPlanningResult | null> {
+  try {
+    return await svcFetch<RawPlanningResult>(
+      SVC.planning,
+      "/planning/analyze",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          latitude: lat,
+          longitude: lon,
+          plot_area_sqm: plotAreaSqm,
+          ...(zoneClass ? { zone_class: zoneClass } : {}),
+        }),
+      },
+    );
+  } catch {
+    return null;
+  }
+}
+
+// ─── Road-width resolver — POST /planning/road-width (US-084 feeder) ───────────
+// Gated by feature.planning.road-width-resolver. Feed it the distance the user draws
+// across the road on the MapTiler measurement overlay (measured_width_m). Renders a
+// BAND (or edge-straddling range) + a confidence tier — never a false-authoritative point.
+
+export interface RoadWidthBand { min: number; max: number | null }
+export interface RoadWidthResult {
+  status: "resolved" | "unresolved";
+  value_m: number | null;
+  band: RoadWidthBand | null;
+  confidence: "authoritative" | "inferred" | "unresolved";
+  data_source: string | null;
+  data_vintage: string | null;
+  error_band_m: number[] | null;
+  reg_basis: string[];
+  survey_required: boolean;
+  band_range: RoadWidthBand[] | null;
+  option_value: {
+    far_low: number | null; far_high: number | null; far_delta: number | null;
+    extra_buildable_sqm: number | null; extra_value: number | null;
+    survey_cost: number | null; note: string;
+  } | null;
+  floor_area_cap: { residential_sqm: number; commercial_sqm: number; reg_basis: string } | null;
+  max_far_confidence: "authoritative" | "derived" | "unresolved";
+  reason: string | null;
+  next_action: string | null;
+  notes: string[];
+}
+
+export interface RoadWidthInput {
+  zone?: string;
+  sub_zone?: string | null;
+  plot_area_sqm?: number;
+  /** distance drawn across the road on the measurement overlay (default tier). */
+  measured_width_m?: number;
+  /** user-entered surveyed width — the only authoritative tier. */
+  surveyed_width_m?: number;
+  service_road_widths_m?: number[];
+  frontage_roads_m?: number[];
+  saleable_value_per_sqm?: number;
+  survey_cost?: number;
+}
+
+export async function resolveRoadWidth(input: RoadWidthInput): Promise<RoadWidthResult> {
+  return svcFetch<RoadWidthResult>(SVC.planning, "/planning/road-width", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Map a RoadWidthResult to visibly-distinct qualitative rows: surveyed=good,
+ *  inferred=warn, unresolved=bad, edge-straddle=warn with the survey option value. */
+export function roadWidthQualitative(
+  r: RoadWidthResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  const bandStr = (b: RoadWidthBand | null) =>
+    b ? `${b.min}–${b.max ?? "∞"}m` : "—";
+
+  if (r.status === "unresolved") {
+    out.push({
+      label: "⚠ Road Width Unresolved",
+      value: `${r.reason ?? "No road-width input."} Next: ${r.next_action ?? "measure on the map or enter a surveyed width."}`,
+      tone: "bad",
+    });
+    return out;
+  }
+
+  if (r.survey_required && r.band_range) {
+    const ov = r.option_value;
+    const gain = ov?.extra_value != null
+      ? `≈ ₹${ov.extra_value.toLocaleString()} extra saleable value`
+      : ov?.extra_buildable_sqm != null
+        ? `+${ov.extra_buildable_sqm.toLocaleString()} sqm buildable`
+        : "FAR gain PENDING";
+    out.push({
+      label: "⚠ Survey Required — Band Edge",
+      value: `Width ${r.value_m}m straddles two FAR bands (${bandStr(r.band_range[0])} vs ${bandStr(r.band_range[1])}). Surveying resolves ${gain}${ov?.survey_cost != null ? ` vs ₹${ov.survey_cost.toLocaleString()} survey cost` : ""}. Not picking a side.`,
+      tone: "warn",
+    });
+  } else if (r.confidence === "authoritative") {
+    out.push({ label: "Road Width (surveyed)", value: `${r.value_m}m → band ${bandStr(r.band)} (authoritative)`, tone: "good" });
+  } else if (r.confidence === "inferred") {
+    const eb = r.error_band_m ? ` ±${r.error_band_m[0]}–${r.error_band_m[1]}m` : "";
+    out.push({ label: "⚠ Road Width (inferred)", value: `${r.value_m}m${eb} → band ${bandStr(r.band)}. ${r.data_source ?? ""} — verify with a survey (an inferred width yields at most a derived FAR).`, tone: "warn" });
+  }
+
+  if (r.floor_area_cap) {
+    out.push({
+      label: "⚠ Narrow Access — Floor-Area Cap",
+      value: `Access <3.5m → ${r.floor_area_cap.residential_sqm} sqm residential / ${r.floor_area_cap.commercial_sqm} sqm commercial cap (${r.floor_area_cap.reg_basis}).`,
+      tone: "bad",
+    });
+  }
+  return out;
+}
+
+// ─── FAR assembly — POST /planning/far (US-084 permissible vs achievable) ─────
+// Gated by feature.planning.far-assembly. Always two numbers; achievable <= permissible.
+
+export interface FarValue {
+  value: number | null;
+  confidence: "authoritative" | "derived" | "inferred" | "unresolved";
+  data_source: string | null;
+  data_vintage: string | null;
+  rule_citation: string;
+  notes: string[];
+  disclaimer: string;
+  modifier_pending?: boolean | null;
+  road_width_m?: number | null;
+  error_band_m?: number[] | null;
+  next_action?: string | null;
+}
+export interface EntitlementLabel {
+  name: string;
+  additional_far: number | null;
+  status: "applied" | "conditional" | "pending";
+  condition: string;
+  citation?: string | null;
+}
+export interface FarBandOption {
+  band: RoadWidthBand;
+  achievable_base: FarValue;
+  achievable_with_entitlements: FarValue;
+}
+export interface FarAssemblyResult {
+  status: "resolved" | "unresolved";
+  permissible_far: FarValue | null;
+  achievable_base: FarValue | null;
+  achievable_with_entitlements: FarValue | null;
+  achievable_matrix: { rows: FarBandOption[]; option_value: RoadWidthResult["option_value"] } | null;
+  entitlements: EntitlementLabel[];
+  ground_coverage: { value: number; rule_citation: string; disclaimer: string } | null;
+  setbacks: Record<string, number | string> | null;
+  road_width: RoadWidthResult | null;
+  invariant_ok: boolean;
+  reason: string | null;
+  next_action: string | null;
+  notes: string[];
+  disclaimer: string;
+}
+
+export interface FarAssemblyInput extends RoadWidthInput {
+  zone_confidence?: "authoritative" | "inferred";
+  ring?: "I" | "II" | "III" | null;
+  site_dim_m?: number;
+  building_height_m?: number;
+  additional_far_eligible?: boolean;
+  within_metro_150m?: boolean;
+  metro_bmrcl_confirmed?: boolean;
+}
+
+export async function assembleFar(input: FarAssemblyInput): Promise<FarAssemblyResult> {
+  return svcFetch<FarAssemblyResult>(SVC.planning, "/planning/far", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// ─── Development obligations — POST /planning/obligations (US-083) ──────────────────────────────
+// Mixed-use % + parking ECS + access adequacy (COMPUTED + cited) and a checklist of what RMP-2015
+// does not quantify (TIA thresholds, uncovered uses). Computed and checklist are rendered distinctly.
+
+export type ObligationUse =
+  | "residential_multi_dwelling" | "retail" | "office" | "restaurant" | "hotel" | "hospital"
+  | "nursing_home" | "educational" | "industrial" | "other_public_semipublic"
+  | "commercial_mutation_corridor" | "integrated_township";
+
+export interface ObligationsInput extends RoadWidthInput {
+  use_type?: ObligationUse;
+  achievable_far?: number;
+  built_up_area_sqm?: number;
+  avg_dwelling_size_sqm?: number;
+}
+export interface ParkingECS {
+  status: "resolved" | "unresolved";
+  use: string; ecs_total: number | null; ecs_main: number | null; ecs_visitor: number | null;
+  basis: string | null; confidence: "authoritative" | "derived" | "unresolved";
+  citation: string; built_up_area_sqm: number | null; notes: string[]; next_action: string | null;
+}
+export interface MixedUseShare {
+  status: "resolved"; zone: string | null; sub_zone: string | null;
+  non_residential_max_pct: number; non_residential_max_sqm: number | null;
+  residential_pct: number | null; split: Record<string, number> | null;
+  basis: string | null; confidence: "authoritative"; citation: string | null;
+}
+export interface AccessAdequacy {
+  status: "resolved" | "unresolved"; width_m: number | null;
+  confidence: "authoritative" | "inferred" | "unresolved"; adequate: boolean | null;
+  min_required_m: number; min_citation: string; reason: string | null; next_action: string | null;
+}
+export interface ObligationChecklistItem {
+  item: string; status: "unverified"; reason: string; citation_gap: string; next_action: string;
+}
+export interface DevelopmentObligationsResult {
+  status: "resolved"; built_up_area_sqm: number | null;
+  parking: ParkingECS | null; mixed_use: MixedUseShare | null; access_adequacy: AccessAdequacy;
+  checklist: ObligationChecklistItem[]; computed_count: number; checklist_count: number;
+  data_source: string; disclaimer: string;
+}
+
+export async function getObligations(input: ObligationsInput): Promise<DevelopmentObligationsResult> {
+  return svcFetch<DevelopmentObligationsResult>(SVC.planning, "/planning/obligations", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// COMPUTED items (with citation + confidence) render as good/warn; CHECKLIST items render distinctly
+// as "unverified — confirm" and are NEVER shown as a computed value.
+export function obligationsQualitative(
+  r: DevelopmentObligationsResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  if (r.parking && r.parking.status === "resolved") {
+    out.push({
+      label: `Parking (COMPUTED · ${r.parking.confidence})`,
+      value: `${r.parking.ecs_total} ECS (${r.parking.ecs_main} + ${r.parking.ecs_visitor} visitor) · ${r.parking.citation}`,
+      tone: "good" as QualitativeTone,
+    });
+  }
+  if (r.mixed_use) {
+    out.push({
+      label: `Mixed-use max non-residential (COMPUTED · ${r.mixed_use.confidence})`,
+      value: `${(r.mixed_use.non_residential_max_pct * 100).toFixed(0)}%${r.mixed_use.non_residential_max_sqm ? ` (${r.mixed_use.non_residential_max_sqm} sqm)` : ""} · ${r.mixed_use.citation}`,
+      tone: "good" as QualitativeTone,
+    });
+  }
+  const a = r.access_adequacy;
+  out.push({
+    label: `Access road adequacy (min ${a.min_required_m} m)`,
+    value: a.adequate === null ? "Unresolved — width unknown, cannot judge (absence is not adequacy)."
+      : a.adequate ? `Adequate — ${a.width_m} m ≥ ${a.min_required_m} m` : (a.reason ?? "Below minimum"),
+    tone: (a.adequate === false ? "bad" : a.adequate === null ? "warn" : "good") as QualitativeTone,
+  });
+  // checklist — visibly distinct, unverified, no number
+  for (const c of r.checklist) {
+    out.push({
+      label: `☐ ${c.item} (UNVERIFIED — confirm)`,
+      value: `${c.reason} · ${c.next_action}`,
+      tone: "warn" as QualitativeTone,
+    });
+  }
+  out.push({ label: "⚠ Disclaimer", value: r.disclaimer, tone: "warn" as QualitativeTone });
+  return out;
+}
+
+/** permissible + TWO-LINE achievable (base / with-entitlements) as distinct lines; each
+ *  entitlement tagged with its condition; band-edge matrix; inferred/authoritative/conditional
+ *  visibly distinct; citations + sanction disclaimer. */
+export function farAssemblyQualitative(
+  r: FarAssemblyResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  const tone = (c: FarValue["confidence"]) =>
+    c === "authoritative" ? "good" : c === "unresolved" ? "bad" : "warn";
+  const far = (v: FarValue) => (v.value == null ? "—" : v.value.toFixed(2));
+
+  if (r.status === "unresolved") {
+    out.push({ label: "⚠ FAR Unresolved", value: `${r.reason ?? ""} Next: ${r.next_action ?? "confirm zone + inputs."}`, tone: "bad" });
+    return out;
+  }
+
+  const p = r.permissible_far;
+  if (p) {
+    out.push({
+      label: `Permissible FAR (${p.confidence})`,
+      value: `${far(p)}${p.modifier_pending ? " — upper bound INCOMPLETE (a modifier is PENDING; confirm with authority)" : ""}. ${p.rule_citation}.`,
+      tone: p.modifier_pending ? "warn" : tone(p.confidence),
+    });
+  }
+
+  const eb = (v: FarValue) => (v.error_band_m ? ` (road ±${v.error_band_m[0]}–${v.error_band_m[1]}m)` : "");
+
+  if (r.achievable_matrix) {
+    const rows = r.achievable_matrix.rows
+      .map((m) => `${m.band.min}–${m.band.max ?? "∞"}m → by-right ${m.achievable_base.value?.toFixed(2)} / with-entitlements ${m.achievable_with_entitlements.value?.toFixed(2)}`)
+      .join("  |  ");
+    const ov = r.achievable_matrix.option_value;
+    out.push({
+      label: "⚠ Achievable FAR — Survey Required (band edge)",
+      value: `Two candidates, both lines, no side picked: ${rows}. ${ov?.extra_buildable_sqm != null ? `Surveying resolves +${ov.extra_buildable_sqm.toLocaleString()} sqm buildable.` : ""}`,
+      tone: "warn",
+    });
+  } else {
+    const b = r.achievable_base;
+    if (b) {
+      out.push({
+        label: `Achievable FAR — by right (${b.confidence})`,
+        value: b.value == null
+          ? `Unresolved${b.next_action ? ` — ${b.next_action}` : ""}.`
+          : `${far(b)}${eb(b)} — after road-band + envelope. ${b.confidence !== "authoritative" ? "Inferred inputs → not authoritative." : ""}`,
+        tone: tone(b.confidence),
+      });
+    }
+    const w = r.achievable_with_entitlements;
+    if (w && w.value != null && b && w.value !== b.value) {
+      out.push({
+        label: `Achievable FAR — with entitlements (${w.confidence})`,
+        value: `${far(w)}${w.modifier_pending ? " — a qualifying modifier is PENDING (excluded; confirm with authority)" : ""}. Requires the conditions below.`,
+        tone: w.modifier_pending ? "warn" : tone(w.confidence),
+      });
+    }
+  }
+
+  for (const e of r.entitlements) {
+    out.push({
+      label: `${e.status === "applied" ? "Entitlement" : e.status === "conditional" ? "⚠ Conditional entitlement" : "⚠ Pending entitlement"}: ${e.name}${e.additional_far != null ? ` (+${e.additional_far})` : ""}`,
+      value: `${e.condition}${e.citation ? ` [${e.citation}]` : ""}`,
+      tone: e.status === "applied" ? "neutral" : "warn",
+    });
+  }
+
+  out.push({ label: "⚠ Disclaimer", value: r.disclaimer, tone: "warn" });
+  return out;
+}
+
+// ─── Ring + tiered zone resolver — GET /geo/ring, /geo/zone-resolve (US-082) ──
+// Gated by feature.geo.zone-resolver. Ring is ALWAYS inferred (OSM-derived). The zone resolver
+// tiers RMP (authoritative) > user-confirmed (authoritative-on-attestation, kept DISTINCT) >
+// OSM (inferred HINT, unverified) > unresolved. On user confirmation the FAR confidence lifts.
+
+export interface RingResult {
+  status: "resolved" | "unresolved";
+  ring: "I" | "II" | "III" | null;
+  tdr_zone: "A" | "B" | "C" | null;
+  confidence: "inferred";
+  data_source: string;
+  data_vintage: string | null;
+  reg_basis: string;
+  reason: string | null;
+  next_action: string | null;
+  notes: string[];
+}
+
+export interface ZoneResolution {
+  status: "resolved" | "unresolved";
+  zone: string | null;
+  sub_zone: string | null;
+  confidence: "authoritative" | "derived" | "inferred" | "unresolved";
+  source: string | null; // "BDA-RMP-2015" | "user-confirmed" | "OSM/Bhuvan (inferred)"
+  data_source: string | null;
+  data_vintage: string | null;
+  unverified: boolean;
+  attested: boolean;
+  proposed_zone: string | null;
+  proposed_sub_zone: string | null;
+  reason: string | null;
+  next_action: string | null;
+  notes: string[];
+  far_zone_confidence: "authoritative" | "inferred";
+  sub_zone_status: "resolved" | "unresolved";
+  sub_zone_reason: string | null;
+}
+
+export async function getRing(lat: number, lon: number): Promise<RingResult> {
+  return svcFetch<RingResult>(SVC.zone, `/geo/ring?lat=${lat}&lon=${lon}`);
+}
+
+export interface ResolveZoneInput {
+  lat: number;
+  lon: number;
+  user_zone?: string;
+  user_sub_zone?: string;
+  user_attested?: boolean;
+  user_confirmed_date?: string;
+  include_osm_hint?: boolean;
+}
+
+export async function resolveZone(input: ResolveZoneInput): Promise<ZoneResolution> {
+  const q = new URLSearchParams({ lat: String(input.lat), lon: String(input.lon) });
+  if (input.user_zone) q.set("user_zone", input.user_zone);
+  if (input.user_sub_zone) q.set("user_sub_zone", input.user_sub_zone);
+  if (input.user_attested != null) q.set("user_attested", String(input.user_attested));
+  if (input.user_confirmed_date) q.set("user_confirmed_date", input.user_confirmed_date);
+  if (input.include_osm_hint != null) q.set("include_osm_hint", String(input.include_osm_hint));
+  return svcFetch<ZoneResolution>(SVC.zone, `/geo/zone-resolve?${q.toString()}`);
+}
+
+/** The three zone provenance badges the UI must render VISIBLY DISTINCT — an RMP read, a
+ *  user-attested zone, and an unverified OSM hint must never look identical. */
+export type ZoneBadge = "rmp-authoritative" | "user-confirmed" | "osm-unverified" | "unresolved";
+
+export function zoneBadge(z: ZoneResolution): ZoneBadge {
+  if (z.status === "unresolved") return "unresolved";
+  if (z.source === "BDA-RMP-2015") return "rmp-authoritative";
+  if (z.source === "user-confirmed") return "user-confirmed";
+  return "osm-unverified";
+}
+
+/** Deep-links for the confirm-your-zone interaction: the official land-use + khata + DC-conversion
+ *  routes a builder uses to verify (or convert) the parcel's zone. */
+export function zoneVerificationLinks(): Array<{ label: string; href: string; note: string }> {
+  return [
+    { label: "BDA / GBA land-use (RMP-2015 district map)", href: "https://bdabangalore.org/",
+      note: "Confirm the official RMP land-use zone + sub-zone for the parcel." },
+    { label: "Khata — e-Aasthi (urban, BBMP/GBA)", href: "https://eaasthi.karnataka.gov.in/",
+      note: "Verify the property record / khata for urban parcels." },
+    { label: "Khata — e-Swathu (rural / gram panchayat)", href: "https://eswathu.karnataka.gov.in/",
+      note: "Verify the property record for rural / GP parcels." },
+    { label: "DC land conversion (Bhoomi / revenue)", href: "https://landrecords.karnataka.gov.in/",
+      note: "For agricultural land, confirm / apply for NA (non-agricultural) conversion." },
+  ];
+}
+
+/** The display model for the confirm-your-zone card: the badge, whether it is unverified, the
+ *  headline confidence, the OSM hint to confirm/correct, and the FAR confidence it will drive.
+ *  Pure — the React component renders this; no backend behaviour changes. */
+export function zoneConfirmationView(z: ZoneResolution): {
+  badge: ZoneBadge;
+  tone: QualitativeTone;
+  headline: string;
+  unverified: boolean;
+  proposedZone: string | null;
+  farConfidence: "authoritative" | "inferred";
+  subZoneNeeded: boolean;
+  action: string | null;
+  links: Array<{ label: string; href: string; note: string }>;
+} {
+  const badge = zoneBadge(z);
+  const tone: QualitativeTone =
+    badge === "rmp-authoritative" ? "good"
+    : badge === "user-confirmed" ? "good"
+    : badge === "osm-unverified" ? "warn"
+    : "bad";
+  const headline =
+    badge === "rmp-authoritative" ? `${z.zone ?? "—"} — authoritative (BDA RMP-2015)`
+    : badge === "user-confirmed" ? `${z.zone ?? "—"} — user-confirmed (attested; not an RMP read)`
+    : badge === "osm-unverified" ? `${z.zone ?? "—"} — UNVERIFIED OSM hint, confirm before relying`
+    : "Zone unresolved — confirm before any FAR";
+  return {
+    badge,
+    tone,
+    headline,
+    unverified: z.unverified,
+    proposedZone: z.proposed_zone,
+    farConfidence: z.far_zone_confidence,
+    subZoneNeeded: z.sub_zone_status === "unresolved",
+    action: z.next_action,
+    links: zoneVerificationLinks(),
+  };
+}
+
+/** Close the loop into FAR: an inferred/unverified zone caps FAR confidence at inferred; only an
+ *  RMP or attested user zone lifts it to authoritative (the US-088 anti-laundering contract). */
+export function farInputFromZone(
+  z: ZoneResolution, ring: RingResult | null,
+): Pick<FarAssemblyInput, "zone" | "sub_zone" | "zone_confidence" | "ring"> {
+  return {
+    zone: z.zone ?? undefined,
+    sub_zone: z.sub_zone ?? undefined,
+    zone_confidence: z.far_zone_confidence,
+    ring: ring?.ring ?? null,
+  };
+}
+
+// ─── Terrain — POST /flood/terrain (US-089 slope/HAND/cut-fill/geotech) ───────
+// Gated by feature.flood.terrain. Slope is DEM-derived (GLO-30, inferred); nodata>20% ->
+// unresolved (never a fake 0.0). Bearing capacity is authoritative ONLY from a manual geotech
+// value, never inferred from soil type.
+
+export interface SlopeResult {
+  status: "resolved" | "unresolved";
+  confidence: "authoritative" | "inferred" | "unresolved";
+  slope_pct_mean: number | null; slope_pct_max: number | null; slope_deg_mean: number | null;
+  nodata_pct: number | null; dem_source: string | null; crs: string | null;
+  reason: string | null; next_action: string | null;
+}
+export interface CutFillResult {
+  status: "resolved" | "unresolved"; confidence: string;
+  target_pad_m: number | null; target_source: string | null;
+  cut_m3: number | null; fill_m3: number | null; net_m3: number | null;
+  cell_area_m2: number | null; reason: string | null; next_action: string | null;
+}
+export interface BearingCapacityResult {
+  status: "resolved" | "unresolved";
+  confidence: "authoritative" | "inferred" | "unresolved";
+  value_kpa: number | null; method: string | null; source: string | null;
+  reason: string | null; next_action: string | null;
+}
+export interface TerrainResult {
+  status: "resolved" | "unresolved";
+  slope: SlopeResult;
+  hand: { status: string; confidence: string; hand_m_mean: number | null; hand_m_max: number | null; drainage_elev_m: number | null; method_note: string | null; reason: string | null; next_action: string | null };
+  cut_fill: CutFillResult;
+  bearing_capacity: BearingCapacityResult;
+  dem_source: string;
+  notes: string[];
+  data_disclaimer: string;
+}
+export interface TerrainInput {
+  parcel_geojson: Record<string, unknown>;   // GeoJSON Polygon (WGS84)
+  target_pad_m?: number;
+  bearing_capacity_kpa?: number;
+  geotech_method?: string;
+  geotech_source?: string;
+}
+
+export async function getTerrain(input: TerrainInput): Promise<TerrainResult> {
+  return svcFetch<TerrainResult>(SVC.flood, "/flood/terrain", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Terrain display rows — slope/HAND/cut-fill/bearing, each showing resolved vs unresolved
+ *  honestly (an unresolved slope is a warning, NOT a 0.0). */
+export function terrainQualitative(r: TerrainResult): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  const s = r.slope;
+  out.push(s.status === "resolved"
+    ? { label: "Slope (GLO-30 DEM)", value: `${s.slope_pct_mean}% mean / ${s.slope_pct_max}% max (${s.slope_deg_mean}°). Inferred — verify vs surveyed contours.`, tone: "warn" }
+    : { label: "⚠ Slope Unresolved", value: `${s.reason ?? ""} Next: ${s.next_action ?? "supply a surveyed slope."}`, tone: "bad" });
+  if (r.hand.status === "resolved")
+    out.push({ label: "HAND (parcel-window approx)", value: `${r.hand.hand_m_mean} m mean above drainage. ${r.hand.method_note ?? ""}`, tone: "neutral" });
+  const cf = r.cut_fill;
+  if (cf.status === "resolved")
+    out.push({ label: "Cut / Fill", value: `cut ${cf.cut_m3} m³, fill ${cf.fill_m3} m³ (net ${cf.net_m3} m³) vs ${cf.target_source}.`, tone: "neutral" });
+  const b = r.bearing_capacity;
+  out.push(b.status === "resolved"
+    ? { label: "Bearing Capacity (geotech)", value: `${b.value_kpa} kPa — ${b.method} (${b.source}). Authoritative.`, tone: "good" }
+    : { label: "⚠ Bearing Capacity Unresolved", value: `${b.reason ?? ""} Next: ${b.next_action ?? "supply a geotechnical report."}`, tone: "warn" });
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
+}
+
+// ─── Deal-killer overlays — GET /geo/overlays (US-088) ────────────────────────
+// Gated by feature.geo.overlays. CARDINAL RULE: `unresolved` is NOT clear — it renders
+// distinct from green. Any RED → hard NO-GO; any unresolved → blocks a clean GO.
+
+export type OverlayStatus = "R" | "A" | "G" | "unresolved";
+export interface OverlayProvenance {
+  source: string;
+  confidence: "authoritative" | "inferred" | "unresolved";
+  vintage: string | null;
+}
+export interface OverlayItem {
+  name: string;
+  status: OverlayStatus;
+  distance_m: number | null;
+  buffer_m: number | null;
+  buffer_range_m: number[] | null;
+  reference_point: "centre" | "periphery" | null;
+  rule_citation: string | null;
+  effective_date: string | null;
+  litigation_status: string | null;
+  as_of: string;
+  provenance: OverlayProvenance;
+  reason: string | null;
+  next_action: string | null;
+  crs: string;
+}
+export interface OverlayVerdict {
+  hard_no_go: boolean;
+  blocks_clean_go: boolean;
+  red_overlays: string[];
+  unresolved_overlays: string[];
+}
+export interface OverlayNocChecklistItem {
+  name: string;
+  authority: string;
+  requirement: string;
+  rule_citation: string;
+  typical_validity: string | null;
+  deep_link: string | null;
+  reclass_reason: string;
+  mandatory: boolean;
+}
+
+export interface OverlayResult {
+  lat: number;
+  lon: number;
+  crs: string;
+  overlays: OverlayItem[];
+  verdict: OverlayVerdict;
+  live_overlays: string[];
+  pending_overlays: string[];
+  // US-087: obligations with no obtainable public geometry (gas, HT-distribution) — surfaced but
+  // NOT scored and NOT verdict blockers.
+  noc_checklist: OverlayNocChecklistItem[];
+  data_disclaimer: string;
+}
+
+export async function getOverlays(
+  lat: number, lon: number, buildingHeightM?: number,
+): Promise<OverlayResult> {
+  const q = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+  if (buildingHeightM != null) q.set("building_height_m", String(buildingHeightM));
+  return svcFetch<OverlayResult>(SVC.zone, `/geo/overlays?${q.toString()}`);
+}
+
+/** Map overlays to visibly-distinct rows. RED=bad, unresolved=warn (NEVER good — it is
+ *  explicitly NOT a clear), AMBER=warn, GREEN=good. The verdict banner leads. */
+export function overlaysQualitative(
+  r: OverlayResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+
+  // Verdict banner — the deal-killer summary first.
+  if (r.verdict.hard_no_go) {
+    out.push({
+      label: "⛔ NO-GO — deal-killer overlay",
+      value: `RED: ${r.verdict.red_overlays.join(", ")}. A red overlay is a hard NO-GO.`,
+      tone: "bad",
+    });
+  }
+  if (r.verdict.blocks_clean_go) {
+    out.push({
+      label: "⚠ Cannot clear — data unavailable",
+      value: `UNRESOLVED (not clear — absence of data is NOT absence of hazard): ${r.verdict.unresolved_overlays.join(", ")}. Blocks a clean GO until each layer is verified.`,
+      tone: "warn",
+    });
+  }
+  if (!r.verdict.hard_no_go && !r.verdict.blocks_clean_go) {
+    out.push({ label: "Overlays clear", value: "No red or unresolved overlay.", tone: "good" });
+  }
+
+  const km = (m: number | null) => (m == null ? "—" : m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
+  const bufStr = (o: OverlayItem) =>
+    o.buffer_range_m ? `${o.buffer_range_m[0]}–${o.buffer_range_m[1]} m (${o.buffer_m} m governs${o.litigation_status ? `, ${o.litigation_status}` : ""})`
+                     : o.buffer_m != null ? `${o.buffer_m} m` : "—";
+
+  for (const o of r.overlays) {
+    if (o.status === "unresolved") {
+      out.push({
+        label: `⚠ ${o.name} — UNRESOLVED`,
+        value: `${o.reason ?? "No clearing layer."} Next: ${o.next_action ?? "verify on site."} (buffer ${bufStr(o)} from ${o.reference_point ?? "?"})`,
+        tone: "warn",
+      });
+    } else if (o.status === "R") {
+      out.push({
+        label: `⛔ ${o.name} — INSIDE BUFFER`,
+        value: `${km(o.distance_m)} away · strictest buffer ${bufStr(o)} from ${o.reference_point ?? "?"} · ${o.rule_citation ?? ""} [EPSG:32643, as of ${o.as_of}]`,
+        tone: "bad",
+      });
+    } else if (o.status === "A") {
+      out.push({
+        label: `⚠ ${o.name} — restricted`,
+        value: `${km(o.distance_m)} away · ${o.rule_citation ?? ""} · buffer ${bufStr(o)}. ${o.reason ?? ""} ${o.next_action ?? ""}`.trim(),
+        tone: "warn",
+      });
+    } else {
+      out.push({
+        label: `${o.name} — clear`,
+        value: `${km(o.distance_m)} away (> ${o.buffer_m} m buffer, ${o.provenance.confidence}) · ${o.rule_citation ?? ""}`,
+        tone: "good",
+      });
+    }
+  }
+
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
 }
 
 // ─── Zoning — unified zone + planning synthesis ───────────────────────────────
@@ -1093,6 +1891,7 @@ export async function getZoningAnalysis(
     lulcClass: lulcClass ?? null,
     lulcVintage: lulcVintage ?? null,
     sourceConfidence: srcConf ?? "community",
+    zoneAuthority: (z.zone_authority as string | null) ?? null,
     naRequired,
     forestRequired: forestReq,
     dgcaNocRequired: Boolean(ar.dgca_noc_required),
@@ -1112,7 +1911,7 @@ export async function getZoningAnalysis(
     setbackRearM: p.setback_rear_m != null ? num(p.setback_rear_m) : null,
     setbackSideM: p.setback_side_m != null ? num(p.setback_side_m) : null,
     airportName: String(ar.nearest_airport ?? "—"),
-    airportDistanceKm: num(ar.distance_km),
+    airportDistanceKm: ar.distance_km != null ? num(ar.distance_km) : null,  // moved to connectivity
     airportSurface: String(ar.restriction_surface ?? "—"),
     airportLat: ar.lat != null ? num(ar.lat) : null,
     airportLon: ar.lon != null ? num(ar.lon) : null,
@@ -1131,6 +1930,7 @@ export async function getZoningAnalysis(
           taluk: (kgisRaw.taluk as string) ?? null,
           hobli: (kgisRaw.hobli as string) ?? null,
           village: (kgisRaw.village as string) ?? null,
+          villageCode: (kgisRaw.village_code as string) ?? null,
           surveyNumber: (kgisRaw.survey_number as string) ?? null,
         }
       : null,
@@ -1295,6 +2095,188 @@ export async function getInfraAnalysis(lat: number, lon: number): Promise<Module
   };
 }
 
+// ─── Connectivity — POST /infrastructure/connectivity (US-086) ────────────────
+// Gated by feature.infrastructure.connectivity. Infrastructure OWNS airport/metro/rail/highway
+// distance + access-road width. Distances labelled straight-line vs network; un-fetchable sources
+// return unresolved (never fabricated). Emits connectivity_signal for US-092.
+
+export interface TransportDistance {
+  mode: string; status: "resolved" | "unresolved";
+  name: string | null; ref: string | null;
+  distance_m: number | null; distance_type: "straight-line" | "network" | null;
+  confidence: "authoritative" | "inferred" | "unresolved"; crs: string;
+  data_source: string | null; reason: string | null; next_action: string | null;
+}
+// US-092 C2: one unresolved decision-relevant input surfaced as a "confirm this" item.
+export interface SignalUnknown { name: string; next_action: string }
+export type SignalStatus = "resolved" | "partial" | "unresolved";
+export type LadderConfidence = "authoritative" | "derived" | "inferred" | "unresolved";
+export interface ConnectivitySignal {
+  airport_km: number | null; airport_distance_type: string | null;
+  metro_status: "resolved" | "unresolved"; road_width_confidence: string | null;
+  access_flags: string[]; overall: "good" | "partial" | "unknown";
+  // C2 known-vs-unknown
+  status: SignalStatus; resolved_score: number | null; unresolved_count: number;
+  unknowns: SignalUnknown[]; confidence: LadderConfidence; notes: string[];
+}
+export interface ConnectivityResult {
+  airport: TransportDistance; metro: TransportDistance; rail: TransportDistance;
+  highway: TransportDistance;
+  road_width: { status: string; value_m: number | null; band: Record<string, number> | null; confidence: string; source: string; reason: string | null; next_action: string | null };
+  connectivity_score: number | null; access_flags: string[];   // C2: null when unresolved
+  connectivity_signal: ConnectivitySignal; data_source: string; data_disclaimer: string;
+}
+
+export async function getConnectivity(
+  lat: number, lon: number,
+  roadWidth?: { surveyed_width_m?: number; measured_width_m?: number; lane_count?: number },
+): Promise<ConnectivityResult> {
+  return svcFetch<ConnectivityResult>(SVC.infrastructure, "/infrastructure/connectivity", {
+    method: "POST",
+    body: JSON.stringify({ latitude: lat, longitude: lon, ...roadWidth }),
+  });
+}
+
+/** Connectivity rows — distances labelled straight-line/network; unresolved shown as a warning,
+ *  never a fake distance. */
+export function connectivityQualitative(r: ConnectivityResult): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  for (const m of [r.airport, r.metro, r.rail, r.highway]) {
+    out.push(m.status === "resolved"
+      ? { label: `${m.mode} — ${m.name ?? ""}`, value: `${((m.distance_m ?? 0) / 1000).toFixed(2)} km (${m.distance_type}, ${m.confidence}).`, tone: "neutral" }
+      : { label: `⚠ ${m.mode} unresolved`, value: `${m.reason ?? ""} ${m.next_action ?? ""}`, tone: "warn" });
+  }
+  const rw = r.road_width;
+  out.push(rw.status === "resolved"
+    ? { label: "Access road width", value: `${rw.value_m ?? "—"} m (${rw.confidence}, ${rw.source}).`, tone: "neutral" }
+    : { label: "⚠ Access road width unresolved", value: `${rw.reason ?? ""} ${rw.next_action ?? ""}`, tone: "warn" });
+  // C2: an unresolved signal shows NO score (never a misleading number) + the unknowns to confirm.
+  const sig = r.connectivity_signal;
+  if (sig.status === "unresolved" || r.connectivity_score === null) {
+    out.push({ label: "⚠ Connectivity UNRESOLVED", value: `Not scored — ${sig.unresolved_count} decision inputs unresolved: ${sig.unknowns.map((u) => u.name).join(", ")}. Confirm before relying on connectivity.`, tone: "warn" });
+  } else {
+    out.push({ label: `Connectivity score (${sig.status})`, value: `${r.connectivity_score}/100 over KNOWN inputs${sig.unresolved_count ? ` · ${sig.unresolved_count} unresolved: ${sig.unknowns.map((u) => u.name).join(", ")}` : ""} · flags: ${r.access_flags.join(", ") || "none"} · ${sig.confidence}`, tone: sig.status === "resolved" && sig.overall === "good" ? "good" : "neutral" });
+  }
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
+}
+
+// ─── Utilities + NOC checklist — POST /infrastructure/utilities (US-087) ──────
+// Gated by feature.infrastructure.utilities. Water main presence is authoritative-only ('unknown'
+// without a BWSSB layer); availability is an inferred OSM proxy; NOC items are mandatory
+// obligations, not scored. infra_readiness feeds the US-092 verdict.
+
+export interface UtilityMain {
+  name: string;
+  present: "present" | "absent" | "unknown";
+  confidence: "authoritative" | "inferred" | "unresolved";
+  distance_m: number | null; diameter_mm: number | null;
+  data_source: string | null; reason: string | null; next_action: string | null;
+}
+export interface UtilityAvailability {
+  name: string; score: number; confidence: "authoritative" | "inferred" | "unresolved";
+  nearest_m: number | null; detected: boolean; note: string | null;
+}
+export interface InfraNocChecklistItem {
+  authority: string; requirement: string; rule_citation: string;
+  typical_validity: string | null; deep_link: string | null;
+  applies_when: string | null; mandatory: boolean;
+}
+export interface InfraReadiness {
+  water_status: "present" | "absent" | "unknown";
+  water_confidence: "authoritative" | "inferred" | "unresolved";
+  telecom_score: number; power_score: number | null; road_score: number | null;
+  noc_pending: number; overall: "ready" | "partial" | "unknown";
+  // C2 known-vs-unknown
+  status: SignalStatus; resolved_score: number | null; unresolved_count: number;
+  unknowns: SignalUnknown[]; confidence: LadderConfidence; notes: string[];
+}
+export interface UtilitiesResult {
+  water_main: UtilityMain; sewer_main: UtilityMain;
+  water_availability: UtilityAvailability; telecom_availability: UtilityAvailability;
+  storm_water_note: string; noc_checklist: InfraNocChecklistItem[];
+  infra_readiness: InfraReadiness; data_source: string; data_disclaimer: string;
+}
+
+export async function getUtilities(lat: number, lon: number, radiusM = 3000): Promise<UtilitiesResult> {
+  return svcFetch<UtilitiesResult>(SVC.infrastructure, "/infrastructure/utilities", {
+    method: "POST",
+    body: JSON.stringify({ latitude: lat, longitude: lon, radius_m: radiusM }),
+  });
+}
+
+// ─── Power Grid — GET /infrastructure/power-grid ──────────────────────────────
+// Gated by feature.infrastructure.power-grid. OSM Overpass: KPTCL transmission (≥66kV) +
+// BESCOM distribution (11-33kV) + substations. Emits connection-feasibility flags.
+
+export interface PowerLine {
+  voltage_kv: number | null;
+  operator: string | null;
+  distance_m: number;
+  classification: "transmission" | "distribution_ht" | "distribution_lt" | "unknown";
+  confidence: string;
+}
+
+export interface PowerSubstation {
+  name: string | null;
+  voltage_kv: number | null;
+  operator: string | null;
+  distance_m: number;
+  lat: number;
+  lon: number;
+  confidence: string;
+}
+
+export interface PowerGridResult {
+  nearest_ht_line: PowerLine | null;
+  nearest_distribution_line: PowerLine | null;
+  nearest_substation: PowerSubstation | null;
+  bescom_lt_within_200m: boolean;
+  bescom_ht_within_2km: boolean;
+  kptcl_ht_within_5km: boolean;
+  radius_m: number;
+  data_source: string;
+  data_disclaimer: string;
+}
+
+export async function fetchPowerGrid(
+  lat: number,
+  lon: number,
+  radiusM = 10_000,
+): Promise<PowerGridResult | null> {
+  try {
+    return await svcFetch<PowerGridResult>(
+      SVC.infrastructure,
+      `/infrastructure/power-grid?lat=${lat}&lon=${lon}&radius_m=${radiusM}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Utilities rows — main presence shown honestly (unknown != absent), NOC checklist surfaced. */
+export function utilitiesQualitative(r: UtilitiesResult): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  for (const m of [r.water_main, r.sewer_main]) {
+    out.push(m.present === "present"
+      ? { label: `${m.name}`, value: `present (${m.confidence})${m.diameter_mm ? `, Ø${m.diameter_mm}mm` : ""}.`, tone: "good" }
+      : { label: `⚠ ${m.name}`, value: `${m.present.toUpperCase()} — ${m.reason ?? ""} ${m.next_action ?? ""}`, tone: "warn" });
+  }
+  out.push({ label: "Water availability (OSM proxy)", value: `${r.water_availability.score}/100 (inferred — not a connection).`, tone: "neutral" });
+  out.push({ label: "Telecom availability (OSM proxy)", value: `${r.telecom_availability.score}/100 (inferred).`, tone: "neutral" });
+  const rd = r.infra_readiness;
+  // C2: unresolved readiness shows NO resolved_score + surfaces the unknowns to confirm.
+  out.push(rd.status === "unresolved"
+    ? { label: "⚠ Infra readiness UNRESOLVED (US-092)", value: `Not scored — confirm: ${rd.unknowns.map((u) => u.name).join(", ") || "water main"}. ${rd.noc_pending} NOC obligations pending.`, tone: "warn" }
+    : { label: `Infra readiness (${rd.status}, US-092)`, value: `score ${rd.resolved_score}/100 over KNOWN inputs${rd.unresolved_count ? ` · ${rd.unresolved_count} unresolved: ${rd.unknowns.map((u) => u.name).join(", ")}` : ""} · water ${rd.water_status} · ${rd.noc_pending} NOC pending · ${rd.confidence}`, tone: rd.status === "resolved" ? "good" : "neutral" });
+  for (const c of r.noc_checklist) {
+    out.push({ label: `NOC — ${c.authority}`, value: `${c.requirement}. ${c.rule_citation}.${c.typical_validity ? ` Validity: ${c.typical_validity}.` : ""}${c.applies_when ? ` Applies: ${c.applies_when}.` : ""}`, tone: "warn" });
+  }
+  out.push({ label: "Storm water", value: r.storm_water_note, tone: "neutral" });
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
+}
+
 // ─── Soil Profile — GET /geo/soil ─────────────────────────────────────────────
 
 export async function getSoilAnalysis(lat: number, lon: number): Promise<ModuleResult> {
@@ -1377,12 +2359,18 @@ export async function getWaterConstraintsAnalysis(lat: number, lon: number): Pro
 
 export async function getGrowthAnalysis(lat: number, lon: number): Promise<ModuleResult> {
   const d = await svcFetch<Record<string, unknown>>(SVC.growth, `/future-infra/pipeline?lat=${lat}&lon=${lon}&radius_km=10`);
-  const items = (d.pipeline_items ?? []) as Array<{ type: string; name: string; status: string; distance_km: number; source: string; source_date: string; description?: string }>;
+  const items = (d.pipeline_items ?? []) as Array<{ type: string; name: string; status: string; distance_km: number; source: string; source_date: string; status_as_of?: string; contributes_to_upside?: boolean; description?: string }>;
   const underConstruction = items.filter((p) => p.status === "Under Construction").length;
+  const cancelled = items.filter((p) => p.status === "Cancelled" || p.status === "Tendered").length;
+  // US-090: a Cancelled/Tendered project is shown in RED and must never read as positive.
+  const statusTone = (s: string): QualitativeTone =>
+    s === "Cancelled" || s === "Tendered" ? "bad"
+      : s === "Operational" || s === "Under Construction" ? "good"
+      : "neutral";
   return {
     score: num(d.score, 50),
     severity: (d.severity ?? "moderate") as ModuleResult["severity"],
-    summary: `${items.length} projects within 10km — ${underConstruction} under construction`,
+    summary: `${items.length} projects within 10km — ${underConstruction} under construction${cancelled ? `, ${cancelled} cancelled (excluded)` : ""}`,
     data_source: `${d.data_source ?? "Curated pipeline"} (${d.data_as_of ?? "2024-Q4"})`,
     indicators: [
       { label: "Total Projects", value: String(items.length), unit: "", barFraction: clamp01(items.length / 10), citation: "Curated" },
@@ -1397,8 +2385,8 @@ export async function getGrowthAnalysis(lat: number, lon: number): Promise<Modul
       },
       ...items.map((p) => ({
         label: `${p.name} (${p.source ?? "Curated"})`,
-        value: `${p.status} · ${p.distance_km.toFixed(1)}km · ${p.source_date ?? "2024-Q4"}`,
-        tone: (p.status === "Under Construction" || p.status === "Operational" ? "good" : "neutral") as QualitativeTone,
+        value: `${p.status}${p.status === "Cancelled" ? " — NOT counted" : ""} · ${p.distance_km.toFixed(1)}km · as of ${p.status_as_of ?? p.source_date ?? "2024-Q4"}`,
+        tone: statusTone(p.status),
       })),
     ],
     detailMetrics: [{ group: "Pipeline (curated 2024-Q4 — verify at source)", rows: items.map((p) => ({ label: `[${p.type}] ${p.name}`, value: `${p.status} · ${p.distance_km.toFixed(1)}km · ${p.source ?? ""}` })) }],
@@ -1413,6 +2401,64 @@ export async function getGrowthAnalysis(lat: number, lon: number): Promise<Modul
   };
 }
 
+// ─── Indicative price upside — POST /future-infra/price-upside (US-090) ────────────────────────
+// A RANGE, never a scalar. Absent guidance value -> unresolved (not 0).
+
+export interface PriceUpsideRange {
+  low: number;
+  high: number;
+  unit: string;
+  node_name: string | null;
+  node_type: string | null;
+  node_status: string | null;
+  node_distance_m: number | null;
+  premium_low_pct: number | null;
+  premium_high_pct: number | null;
+  method: string;
+  confidence: "inferred";
+  as_of: string;
+}
+export interface PriceUpsideResult {
+  status: "resolved" | "unresolved";
+  upside: PriceUpsideRange | null;
+  guidance_value_per_sqm: number | null;
+  reason: string | null;
+  disclaimer: string;
+}
+
+export async function getPriceUpside(
+  lat: number, lon: number, guidanceValuePerSqm: number | null,
+): Promise<PriceUpsideResult> {
+  return svcFetch<PriceUpsideResult>(SVC.growth, "/future-infra/price-upside", {
+    method: "POST",
+    body: JSON.stringify({ lat, lon, guidance_value_per_sqm: guidanceValuePerSqm }),
+  });
+}
+
+// Render the upside strictly as a RANGE + disclaimer; unresolved is shown as a warn, never as ₹0.
+export function priceUpsideQualitative(
+  r: PriceUpsideResult,
+): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  if (r.status === "unresolved" || !r.upside) {
+    out.push({
+      label: "Indicative price upside",
+      value: r.reason ?? "Unresolved — supply the Kaveri guidance value (₹/sqm) to estimate.",
+      tone: "warn" as QualitativeTone,
+    });
+  } else {
+    const u = r.upside;
+    const node = u.node_name ? `${u.node_name} (${u.node_status}, ${(u.node_distance_m ?? 0).toFixed(0)} m)` : "no operational/UC node in range";
+    out.push({
+      label: "Indicative price upside (RANGE — not a valuation)",
+      value: `₹${u.low.toLocaleString()}–₹${u.high.toLocaleString()} /sqm uplift (${u.premium_low_pct}–${u.premium_high_pct}%) vs guidance · nearest node: ${node}`,
+      tone: (u.high > 0 ? "good" : "neutral") as QualitativeTone,
+    });
+  }
+  out.push({ label: "⚠ Disclaimer", value: r.disclaimer, tone: "warn" as QualitativeTone });
+  return out;
+}
+
 // NOTE: Land records module requires user input — called manually, not on page load
 export async function getLandRecordsAnalysis(
   district: string, taluk: string, hobli: string, village: string, surveyNumber: string
@@ -1421,6 +2467,35 @@ export async function getLandRecordsAnalysis(
     method: "POST",
     body: JSON.stringify({ district, taluk, hobli, village, survey_number: surveyNumber }),
   });
+}
+
+// ─── Parcel geometry — GET /geo/parcel (SAT-19, KGIS geomForSurveyNum) ────────
+
+export interface ParcelGeometry {
+  survey_number: string;
+  village_code: string | null;
+  kgis_village_id: string | null;
+  ulpin: string | null;
+  resolved: boolean;                 // true only when KGIS returned a real polygon
+  geometry: GeoJSON.Polygon | null;  // WGS84 (lng, lat); null when unresolved
+  crs: string;
+  data_source: string;
+  data_disclaimer: string;
+}
+
+// Survey number → parcel polygon. Flag-gated server-side (feature.geo.parcel-geometry):
+// a 403 surfaces as an Error whose message contains "Feature flag disabled".
+export async function getParcel(opts: {
+  surveyNo: string;
+  villageCode?: string | null;
+  kgisVillageId?: string | null;
+  crs?: "DD" | "UTM";
+}): Promise<ParcelGeometry> {
+  const q = new URLSearchParams({ survey_no: opts.surveyNo });
+  if (opts.villageCode) q.set("village_code", opts.villageCode);
+  if (opts.kgisVillageId) q.set("kgis_village_id", opts.kgisVillageId);
+  if (opts.crs) q.set("crs", opts.crs);
+  return svcFetch<ParcelGeometry>(SVC.zone, `/geo/parcel?${q.toString()}`);
 }
 
 // ─── Amenities — GET /geo/amenities ──────────────────────────────────────────
@@ -1519,6 +2594,190 @@ export async function getAmenitiesAnalysis(lat: number, lon: number, radiusM = 2
   };
 }
 
+// ─── Ownership snapshot — POST /land-records/ownership (US-091) ────────────────
+// Gated by feature.land.ownership. SCREENING ONLY — no owner is fetched/inferred. Kharab/restricted
+// flags derived only when the parcel resolved; else unresolved (never 'clean'). ownership_feasibility
+// feeds US-092.
+
+export interface OwnershipFlag {
+  status: "resolved" | "unresolved" | "checklist";
+  is_kharab?: boolean | null; kharab_type?: string | null; non_saleable?: boolean | null;
+  area_affected?: string | null; is_restricted?: boolean | null; restriction_type?: string | null;
+  source: string; note: string; next_action: string | null;
+}
+export interface OwnershipFeasibility {
+  kharab_flag: boolean | null; restricted_flag: boolean | null;
+  title_verification: "manual-required";
+  confidence: "authoritative" | "inferred" | "unresolved"; next_action: string;
+}
+export interface OwnershipSnapshot {
+  kharab: OwnershipFlag; restricted: OwnershipFlag;
+  ownership_feasibility: OwnershipFeasibility;
+  deep_links: { label: string; url: string; description: string }[];
+  handoff_note: string; data_source: string; data_disclaimer: string;
+}
+export interface OwnershipInput {
+  district: string; taluk: string; hobli: string; village: string; survey_number: string;
+  parcel_resolved?: boolean; cadastral_l5?: string; dishaank_class?: string;
+}
+
+export async function getOwnership(input: OwnershipInput): Promise<OwnershipSnapshot> {
+  return svcFetch<OwnershipSnapshot>(SVC.land, "/land-records/ownership", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Ownership rows — Kharab-B non-saleable is a hard warning; unresolved shown as such (never
+ *  'clean'); deep-links + hand-off note surfaced. No owner name is ever displayed. */
+export function ownershipQualitative(r: OwnershipSnapshot): import("../stores/analysis").QualitativeStat[] {
+  const out: import("../stores/analysis").QualitativeStat[] = [];
+  const k = r.kharab;
+  out.push(k.status === "unresolved"
+    ? { label: "⚠ Kharab unresolved", value: `${k.note} ${k.next_action ?? ""}`, tone: "warn" }
+    : k.non_saleable
+      ? { label: "⛔ Kharab-B (NON-SALEABLE)", value: `${k.note} ${k.next_action ?? ""}`, tone: "bad" }
+      : k.is_kharab
+        ? { label: "⚠ Kharab-A", value: `${k.note} ${k.next_action ?? ""}`, tone: "warn" }
+        : { label: "Kharab", value: k.note, tone: "good" });
+  const rs = r.restricted;
+  out.push(rs.status === "resolved" && rs.is_restricted
+    ? { label: "⚠ Restricted tenure", value: `${rs.restriction_type ?? ""} — ${rs.note}`, tone: "bad" }
+    : rs.status === "checklist"
+      ? { label: "☑ Restricted: confirm", value: rs.note, tone: "warn" }
+      : rs.status === "unresolved"
+        ? { label: "⚠ Restricted unresolved", value: rs.note, tone: "warn" }
+        : { label: "Restricted tenure", value: rs.note, tone: "good" });
+  const f = r.ownership_feasibility;
+  out.push({ label: "Ownership feasibility (US-092)", value: `title: ${f.title_verification}; confidence ${f.confidence}. ${f.next_action}`, tone: f.confidence === "unresolved" ? "warn" : "neutral" });
+  out.push({ label: "Hand-off", value: r.handoff_note, tone: "warn" });
+  out.push({ label: "⚠ Disclaimer", value: r.data_disclaimer, tone: "warn" });
+  return out;
+}
+
+// ─── US-092 Job A — signal → ModuleResult adapters ────────────────────────────
+// Each epic signal is packed into the universal ModuleResult so the existing generic
+// AnalysisModuleSection renders it (qualitative via QualitativeChips). The honesty lives in the
+// per-signal formatters (two-line FAR, C2 unknowns, R/A/G overlays, unresolved-not-a-pass); the
+// adapter adds the C4 `confidence` (badge) and an honest summary. Score is left 0 + hidden (the
+// header suppresses it whenever `confidence` is set — an epic signal is triage, not a number).
+
+function sevFromStats(stats: QualitativeStat[]): Severity {
+  if (stats.some((s) => s.tone === "bad")) return "high";
+  if (stats.some((s) => s.tone === "warn")) return "moderate";
+  return "low";
+}
+
+function signalModule(
+  qualitative: QualitativeStat[], confidence: LadderConfidence, data_source: string, summary: string,
+): ModuleResult {
+  return {
+    score: 0, severity: sevFromStats(qualitative), summary,
+    indicators: [], chart_data: [], qualitative, confidence, data_source,
+    loading: false, error: null,
+  };
+}
+
+/** US-082 — tiered zone (RMP > user-confirmed > OSM-hint > unresolved) + planning ring. */
+export async function zoneRingModule(lat: number, lon: number): Promise<ModuleResult> {
+  const [z, ring] = await Promise.all([
+    resolveZone({ lat, lon, include_osm_hint: true }),
+    getRing(lat, lon).catch(() => null),
+  ]);
+  const view = zoneConfirmationView(z);
+  const stats: QualitativeStat[] = [{ label: `Zone — ${view.badge}`, value: view.headline, tone: view.tone }];
+  if (z.next_action) stats.push({ label: "☑ Confirm your zone", value: z.next_action, tone: "warn" });
+  if (ring && ring.status === "resolved") stats.push({ label: `Ring ${ring.ring} (TDR ${ring.tdr_zone})`, value: `${ring.reg_basis} — ${ring.confidence}.`, tone: "neutral" });
+  else if (ring) stats.push({ label: "⚠ Ring unresolved", value: `${ring.reason ?? ""} ${ring.next_action ?? ""}`.trim(), tone: "warn" });
+  return signalModule(stats, z.confidence, z.data_source ?? "geo /geo/zone-resolve + /geo/ring", view.headline);
+}
+
+/** US-084/085 — permissible vs two-line achievable FAR (band-edge matrix when present). Chains the
+ *  zone resolution (its confidence CAPS FAR — an inferred zone can never mint an authoritative FAR). */
+export async function farModule(lat: number, lon: number, plotAreaSqm: number): Promise<ModuleResult> {
+  const [z, ring] = await Promise.all([
+    resolveZone({ lat, lon, include_osm_hint: true }),
+    getRing(lat, lon).catch(() => null),
+  ]);
+  const r = await assembleFar({ ...farInputFromZone(z, ring), plot_area_sqm: plotAreaSqm });
+  const conf: LadderConfidence = r.status === "unresolved" ? "unresolved" : (r.permissible_far?.confidence ?? "inferred");
+  const summary = r.status === "unresolved"
+    ? (r.reason ?? "FAR unresolved — confirm zone + road width")
+    : `Permissible ${r.permissible_far?.value ?? "—"} · ${r.achievable_matrix ? "achievable = band-edge matrix (survey required)" : `achievable ${(r.achievable_with_entitlements ?? r.achievable_base)?.value ?? "—"}`}`;
+  return signalModule(farAssemblyQualitative(r), conf, "planning /planning/far", summary);
+}
+
+/** US-083 — mixed-use % + parking ECS + TIA obligations (chains zone + achievable FAR). */
+export async function obligationsModule(lat: number, lon: number, plotAreaSqm: number): Promise<ModuleResult> {
+  const z = await resolveZone({ lat, lon, include_osm_hint: true });
+  const ring = await getRing(lat, lon).catch(() => null);
+  const far = await assembleFar({ ...farInputFromZone(z, ring), plot_area_sqm: plotAreaSqm }).catch(() => null);
+  const achievable = far?.achievable_with_entitlements?.value ?? far?.achievable_base?.value ?? undefined;
+  const r = await getObligations({
+    zone: z.zone ?? undefined, sub_zone: z.sub_zone ?? undefined,
+    plot_area_sqm: plotAreaSqm, use_type: "residential_multi_dwelling", achievable_far: achievable,
+  });
+  const conf: LadderConfidence = (r.parking?.confidence as LadderConfidence | undefined) ?? "inferred";
+  return signalModule(obligationsQualitative(r), conf, r.data_source, `${r.computed_count} computed, ${r.checklist_count} to confirm (incl TIA)`);
+}
+
+/** US-086 — connectivity (C2 known-vs-unknown; unresolved never a fake score). */
+export async function connectivityModule(lat: number, lon: number): Promise<ModuleResult> {
+  const r = await getConnectivity(lat, lon);
+  const sig = r.connectivity_signal;
+  const summary = sig.status === "unresolved"
+    ? `UNRESOLVED — not scored; confirm ${sig.unknowns.map((u) => u.name).join(", ")}`
+    : `${sig.status} · score ${sig.resolved_score}/100 over known inputs`;
+  return signalModule(connectivityQualitative(r), sig.confidence, r.data_source, summary);
+}
+
+/** US-087 — utilities availability + BWSSB main + NOC checklist (C2 readiness). */
+export async function utilitiesModule(lat: number, lon: number): Promise<ModuleResult> {
+  const r = await getUtilities(lat, lon);
+  const rd = r.infra_readiness;
+  const summary = rd.status === "unresolved"
+    ? `UNRESOLVED — confirm ${rd.unknowns.map((u) => u.name).join(", ") || "water main"}`
+    : `readiness ${rd.status} · ${rd.noc_pending} NOC obligations`;
+  return signalModule(utilitiesQualitative(r), rd.confidence, r.data_source, summary);
+}
+
+/** US-088 — deal-killer overlays (R/A/G/unresolved; RED = hard NO-GO). */
+export async function overlaysModule(lat: number, lon: number, buildingHeightM?: number): Promise<ModuleResult> {
+  const r = await getOverlays(lat, lon, buildingHeightM);
+  const conf: LadderConfidence = r.verdict.blocks_clean_go && !r.verdict.hard_no_go ? "unresolved" : "authoritative";
+  const summary = r.verdict.hard_no_go
+    ? `NO-GO — RED: ${r.verdict.red_overlays.join(", ")}`
+    : r.verdict.blocks_clean_go
+      ? `Blocks clean GO — unresolved: ${r.verdict.unresolved_overlays.join(", ")}`
+      : "All overlays clear";
+  return signalModule(overlaysQualitative(r), conf, "geo /geo/overlays", summary);
+}
+
+/** US-089 — terrain slope/HAND/cut-fill/geotech. Needs the drawn parcel polygon ([lat,lng][]); a
+ *  slope is NEVER assumed 0 — without the polygon it is honestly unresolved. */
+export async function terrainModule(lat: number, lon: number, polygon?: [number, number][] | null): Promise<ModuleResult> {
+  if (!polygon || polygon.length < 3) {
+    return signalModule(
+      [{ label: "⚠ Terrain — draw the parcel", value: "Draw the parcel boundary on the map to resolve slope / HAND / cut-fill. Terrain is NOT assumed flat — it stays unresolved until the polygon is supplied.", tone: "warn" }],
+      "unresolved", "flood /flood/terrain (GLO-30 DEM)", "Draw the parcel to resolve terrain",
+    );
+  }
+  const ring = [...polygon.map(([la, lo]) => [lo, la]), [polygon[0][1], polygon[0][0]]];
+  const r = await getTerrain({ parcel_geojson: { type: "Polygon", coordinates: [ring] } });
+  const conf: LadderConfidence = r.status === "unresolved" ? "unresolved" : (r.slope.confidence as LadderConfidence);
+  return signalModule(terrainQualitative(r), conf, r.dem_source, r.status === "unresolved" ? "Terrain unresolved (no DEM/GEE)" : "Slope / HAND / cut-fill / geotech");
+}
+
+/** US-090 — indicative price upside RANGE. No guidance value → unresolved (never blank/zero). */
+export async function priceUpsideModule(lat: number, lon: number, guidanceValuePerSqm: number | null = null): Promise<ModuleResult> {
+  const r = await getPriceUpside(lat, lon, guidanceValuePerSqm);
+  const conf: LadderConfidence = r.status === "unresolved" ? "unresolved" : (r.upside?.confidence ?? "inferred");
+  const summary = r.status === "unresolved"
+    ? "Provide the Kaveri guidance value (₹/sqm) to see indicative upside"
+    : `₹${r.upside?.low}–₹${r.upside?.high}/sqm (indicative range)`;
+  return signalModule(priceUpsideQualitative(r), conf, "future-infra /price-upside", summary);
+}
+
 // ─── Site score — computed from resolved module results ───────────────────────
 // No dedicated endpoint exists; the composite is derived client-side.
 
@@ -1529,6 +2788,11 @@ const MODULE_LABEL: Record<ModuleId, string> = {
   infrastructure: "Connectivity",
   soil: "Soil Profile", waterConstraints: "Water Constraints", growth: "Growth Context", land: "Title & Documents",
   amenities: "Amenities",
+  // US-092 Job A signal panels
+  zoneRing: "Zone & Ring (RMP)", farAssembly: "FAR — Permissible vs Achievable",
+  obligations: "Mixed-Use, Parking & TIA", connectivitySignal: "Connectivity — Airport/Metro/Road",
+  utilities: "Utilities & NOC", overlays: "Deal-Killer Overlays", terrain: "Terrain — Slope/Geotech",
+  priceUpside: "Price Upside (Indicative)",
 };
 
 export function computeSiteScore(

@@ -1,0 +1,158 @@
+# Production overlay for builder.qnit.site deployment.
+# Merge with base: docker compose -f docker-compose.yml -f docker-compose.prod.builder.yml up -d
+#
+# Changes from dev base:
+#   - All host port bindings removed (Caddy routes internally via Docker DNS)
+#   - --reload removed from uvicorn commands
+#   - CORS_ORIGINS set to https://builder.qnit.site
+#   - Keycloak set to production hostname + proxy=edge
+#   - Overpass set to OVERPASS_MODE=run (DB assumed already initialised)
+#   - Caddy service added (auto TLS via Let's Encrypt)
+#   - Data volumes for cadastral, IMD, GEE key read from host paths
+#     populated by deploy-builder.sh from S3
+
+services:
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+
+  keycloak:
+    command: start --import-realm
+    environment:
+      KC_HOSTNAME: auth.builder.qnit.site
+      KC_PROXY: edge
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    ports: !reset []
+
+  # ── Reverse proxy ─────────────────────────────────────────────────────────────
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infra/Caddyfile.builder:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    depends_on:
+      - keycloak
+      - temperature
+      - sunpath
+      - flood
+      - wind
+      - rainfall
+      - geo
+      - planning
+      - infrastructure
+      - future-infra
+      - land-records
+      - report
+      - cadastral
+
+  # ── Backend services — prod overrides ────────────────────────────────────────
+  # All: remove host port bindings, drop --reload, set prod CORS + Keycloak URL.
+
+  temperature:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  sunpath:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8001
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  flood:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8002
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  wind:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8003
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  rainfall:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8004
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  geo:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8005
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  planning:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8006
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  infrastructure:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8007
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  future-infra:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8008
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  land-records:
+    ports: !reset []
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8009
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  report:
+    ports: !reset []
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8010
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+
+  cadastral:
+    ports: !reset []
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8011
+    environment:
+      CORS_ORIGINS: https://builder.qnit.site
+      KEYCLOAK_URL: http://keycloak:8080
+
+  # ── Overpass ─────────────────────────────────────────────────────────────────
+
+  overpass:
+    ports: !reset []
+    environment:
+      OVERPASS_MODE: run
+
+  # ── Observability — keep ports off host in prod ──────────────────────────────
+
+  otel-collector:
+    ports: !reset []
+
+  jaeger:
+    ports: !reset []
+
+volumes:
+  caddy-data:
+  caddy-config:

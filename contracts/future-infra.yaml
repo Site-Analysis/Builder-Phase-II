@@ -1,11 +1,13 @@
 openapi: "3.1.0"
 info:
   title: Future Infrastructure (Growth Pipeline) Service
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     Planned and under-construction infrastructure near a site — metro, expressways,
     ring roads, IT parks, SEZs, townships, etc. Curated from public agency announcements
     (BMRCL, BDA, NHAI, KIADB, MoCI) bundled as JSON. No live data; verify with agency.
+    US-090 adds status auditing (Cancelled/Tendered never count), a curated metro-nearest
+    seam (fills the US-086 metro gap), and an INDICATIVE price-upside RANGE (never a scalar).
 
 servers:
   - url: http://localhost:8008
@@ -69,6 +71,64 @@ paths:
         "422":
           description: Validation error
 
+  /future-infra/metro-nearest:
+    get:
+      operationId: getMetroNearest
+      summary: Nearest curated metro-corridor node (US-090 — fills the US-086 metro seam)
+      description: >
+        Straight-line distance in EPSG:32643 to the nearest curated metro alignment vertex.
+        INFERRED confidence — approximate curated alignment, NOT live BMRCL GTFS station points.
+        Cancelled corridors are skipped. Consumed by `/infrastructure/connectivity` as `metro_fetched`.
+        Gated by `feature.context.growth-pipeline`.
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: { type: number, format: float }
+        - name: lon
+          in: query
+          required: true
+          schema: { type: number, format: float }
+      responses:
+        "200":
+          description: Nearest metro node (or unresolved)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetroNearest"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
+  /future-infra/price-upside:
+    post:
+      operationId: getPriceUpside
+      summary: Indicative price-upside RANGE (US-090 — never a scalar)
+      description: >
+        Kaveri guidance value × hedonic distance-decay premium off the nearest OPERATIONAL /
+        UNDER-CONSTRUCTION node (MPRA 124686 method). Returns a {low, high} RANGE — the schema has NO
+        scalar price field. Absent guidance value -> `unresolved` (NOT zero). Cancelled/Tendered and
+        Approved/Planned nodes contribute nothing. Confidence `inferred` (a model, not a valuation).
+        Gated by `feature.context.growth-pipeline`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PriceUpsideRequest"
+      responses:
+        "200":
+          description: Price-upside range (or unresolved)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceUpsideResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
 components:
   schemas:
     PipelineType:
@@ -78,7 +138,7 @@ components:
 
     PipelineStatus:
       type: string
-      enum: ["Operational", "Under Construction", "Approved", "Planned", "Proposed"]
+      enum: ["Operational", "Under Construction", "Approved", "Planned", "Proposed", "Tendered", "Cancelled"]
 
     Severity:
       type: string
@@ -106,6 +166,102 @@ components:
         source:
           type: string
         source_date:
+          type: string
+        status_as_of:
+          type: string
+          nullable: true
+        contributes_to_upside:
+          type: boolean
+          default: false
+
+    MetroNearest:
+      type: object
+      required: [status, distance_type, confidence, crs, data_source]
+      properties:
+        status:
+          type: string
+          enum: ["resolved", "unresolved"]
+        name:
+          type: string
+          nullable: true
+        ref:
+          type: string
+          nullable: true
+        corridor_status:
+          type: string
+          nullable: true
+        distance_m:
+          type: number
+          format: float
+          nullable: true
+        distance_type:
+          type: string
+          enum: ["straight-line"]
+        confidence:
+          type: string
+          enum: ["inferred", "unresolved"]
+        crs:
+          type: string
+          enum: ["EPSG:32643"]
+        data_source:
+          type: string
+        vintage:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+
+    PriceUpsideRequest:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat: { type: number, format: float }
+        lon: { type: number, format: float }
+        guidance_value_per_sqm:
+          type: number
+          format: float
+          nullable: true
+
+    PriceUpside:
+      type: object
+      description: >
+        Indicative price-upside RANGE. DELIBERATELY has no scalar price field — both `low` and `high`
+        are required and low <= high is enforced server-side.
+      required: [low, high, unit, method, confidence, as_of]
+      properties:
+        low: { type: number, format: float }
+        high: { type: number, format: float }
+        unit: { type: string }
+        node_name: { type: string, nullable: true }
+        node_type: { type: string, nullable: true }
+        node_status: { type: string, nullable: true }
+        node_distance_m: { type: number, format: float, nullable: true }
+        premium_low_pct: { type: number, format: float, nullable: true }
+        premium_high_pct: { type: number, format: float, nullable: true }
+        method: { type: string }
+        confidence: { type: string, enum: ["inferred"] }
+        as_of: { type: string }
+
+    PriceUpsideResult:
+      type: object
+      required: [status, disclaimer]
+      properties:
+        status:
+          type: string
+          enum: ["resolved", "unresolved"]
+        upside:
+          oneOf:
+            - $ref: "#/components/schemas/PriceUpside"
+            - type: "null"
+        guidance_value_per_sqm:
+          type: number
+          format: float
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        disclaimer:
           type: string
 
     PipelineResult:

@@ -1,0 +1,291 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Fullstack",
+      "detail": "All services (8 analysis + cadastral + report) + frontend",
+      "dependsOn": ["Backend", "Frontend", "svc: cadastral", "svc: report"],
+      "dependsOrder": "parallel",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run All",
+      "detail": "Start backend (8 services) + frontend",
+      "dependsOn": ["Backend", "Frontend"],
+      "dependsOrder": "parallel",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend",
+      "detail": "Next.js dev server (apps/web) on :3000",
+      "type": "shell",
+      "command": "$p = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue; Start-Sleep 1 }; npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/apps/web",
+        "env": {
+          "NODE_PATH": "${workspaceFolder}/node_modules;${workspaceFolder}/apps/web/node_modules"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "Backend",
+      "detail": "All 10 analysis services (8000-8009)",
+      "dependsOn": [
+        "svc: temperature",
+        "svc: sunpath",
+        "svc: flood",
+        "svc: wind",
+        "svc: rainfall",
+        "svc: geo",
+        "svc: planning",
+        "svc: infrastructure",
+        "svc: future-infra",
+        "svc: land-records"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+
+    {
+      "label": "svc: temperature",
+      "detail": ":8000 thermal-profile",
+      "type": "process",
+      "command": "${workspaceFolder}/services/temperature/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8000"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/temperature",
+        "env": {
+          "FLAGS": "feature.temperature.thermal-profile",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: sunpath",
+      "detail": ":8001 sunpath diagram",
+      "type": "process",
+      "command": "${workspaceFolder}/services/sunpath/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8001"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/sunpath",
+        "env": {
+          "FLAGS": "feature.sunpath.diagram,feature.sunpath.solar-day",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: flood",
+      "detail": ":8002 flood risk",
+      "type": "process",
+      "command": "${workspaceFolder}/services/flood/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8002"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/flood",
+        "env": {
+          "FLAGS": "feature.flood.risk-analysis",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: wind",
+      "detail": ":8003 wind analysis",
+      "type": "process",
+      "command": "${workspaceFolder}/services/wind/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8003"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/wind",
+        "env": {
+          "FLAGS": "feature.wind.analysis",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: rainfall",
+      "detail": ":8004 rainfall summary + archive",
+      "type": "process",
+      "command": "${workspaceFolder}/services/rainfall/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8004"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/rainfall",
+        "env": {
+          "FLAGS": "feature.rainfall.summary,feature.rainfall.archive",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: geo",
+      "detail": ":8005 zone, soil, water-constraints, amenities, parcel",
+      "type": "process",
+      "command": "${workspaceFolder}/services/geo/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8005"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/geo",
+        "env": {
+          "FLAGS": "feature.zoning.land-use,feature.environment.soil,feature.environment.water-constraints,feature.geo.amenities,feature.geo.kgis-context,feature.geo.parcel-geometry,feature.geo.zone-resolver,feature.geo.transport-access,feature.geo.authority",
+          "OVERPASS_URL": "https://overpass.openstreetmap.fr/api/interpreter",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: planning",
+      "detail": ":8006 FAR, setbacks, height, TOD, ICAO",
+      "type": "process",
+      "command": "${workspaceFolder}/services/planning/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8006"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/planning",
+        "env": {
+          "FLAGS": "feature.planning.site-capacity,feature.planning.road-width-resolver,feature.planning.far-assembly,feature.planning.mixed-use",
+          "OVERPASS_URL": "https://overpass.openstreetmap.fr/api/interpreter",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: infrastructure",
+      "detail": ":8007 road, transit, power (OSM)",
+      "type": "process",
+      "command": "${workspaceFolder}/services/infrastructure/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8007"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/infrastructure",
+        "env": {
+          "FLAGS": "feature.infrastructure.connectivity,feature.infrastructure.utilities,feature.infrastructure.power-grid",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: future-infra",
+      "detail": ":8008 growth pipeline + future infrastructure context",
+      "type": "process",
+      "command": "${workspaceFolder}/services/future-infra/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8008"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/future-infra",
+        "env": {
+          "FLAGS": "feature.context.growth-pipeline",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: land-records",
+      "detail": ":8009 land ownership + records",
+      "type": "process",
+      "command": "${workspaceFolder}/services/land-records/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8009"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/land-records",
+        "env": {
+          "FLAGS": "feature.land.records,feature.land.ownership",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+
+    {
+      "label": "svc: cadastral",
+      "detail": ":8011 cadastral land records + overlays",
+      "type": "process",
+      "command": "${workspaceFolder}/services/cadastral/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--host", "0.0.0.0", "--port", "8011", "--reload"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/cadastral",
+        "env": {
+          "CADASTRAL_REPO_ROOT": "${workspaceFolder}/services/cadastral/cadastral-data",
+          "CADASTRAL_DATA_DIR": "${workspaceFolder}/services/cadastral/cadastral-data/data/cadastral_lake_v2",
+          "CADASTRAL_DB_PATH": "${workspaceFolder}/services/cadastral/cadastral-data/db/karnataka_lands_full.db",
+          "WRIS_LAKES_PATH": "C:\\Users\\tanny\\Downloads\\wris_lakes (1).parquet",
+          "FLAGS": "feature.cadastral.land-records,feature.cadastral.overlays",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: report",
+      "detail": ":8010 GO/NO-GO verdict aggregator (no auth)",
+      "type": "process",
+      "command": "${workspaceFolder}/services/report/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8010"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/report",
+        "env": {
+          "FLAGS": "feature.report.go-no-go"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+
+    {
+      "label": "Build (web)",
+      "detail": "next build (apps/web) with NODE_PATH set for OneDrive checkouts",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/apps/web",
+        "env": {
+          "NODE_PATH": "${workspaceFolder}/node_modules;${workspaceFolder}/apps/web/node_modules"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": { "group": "build", "panel": "dedicated", "reveal": "always" }
+    }
+  ]
+}

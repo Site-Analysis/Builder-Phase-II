@@ -28,7 +28,7 @@ export function ZoningCapacityHUD({ result, variant = "full", corner = "br" }: Z
   return (
     <HudCard
       title="Development Capacity"
-      subtitle={`${z.airportName} · ${z.airportDistanceKm.toFixed(1)} km`}
+      subtitle={`${z.airportName}${z.airportDistanceKm != null ? ` · ${z.airportDistanceKm.toFixed(1)} km` : ""}`}
       corner={corner}
       width={full ? 304 : 220}
       maxHeight={full ? "calc(50% - 20px)" : undefined}

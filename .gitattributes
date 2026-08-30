@@ -1,0 +1,7 @@
+# Normalize line endings so the fixture/config layer stops churning LF<->CRLF.
+* text=auto
+
+# Data + config layers are LF-only (loaders/fixtures compare bytes; keep them stable
+# across Windows/macOS/Linux checkouts).
+*.json     text eol=lf
+*.geojson  text eol=lf

@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Infrastructure Service
-  version: "1.0.0"
+  version: "1.4.0"
   description: >
     Site connectivity analysis from OpenStreetMap. Scores road access, public transit
     proximity, and power infrastructure within a radius. Water/sewage/telecom are
@@ -55,8 +55,260 @@ paths:
         "422":
           description: Validation error
 
+  /infrastructure/utilities:
+    post:
+      operationId: analyzeUtilities
+      summary: Utilities availability + NOC checklist + infra_readiness (US-087)
+      description: >
+        Water/telecom AVAILABILITY as an inferred OSM proximity proxy (never a connection claim);
+        BWSSB water/sewer trunk-main presence at AUTHORITATIVE confidence only (an official
+        BWSSB/KGIS mains layer) — otherwise `unknown` + "verify with BWSSB" (OSM cannot assert a
+        main exists). A structured NOC checklist of mandatory obligations (BWSSB, BESCOM/CEA-2010,
+        KSPCB CTE/CTO, Fire per RMP reg 3.12, AAI NOCAS, PNGRB gas, telecom RoW), each with its
+        authority + rule citation + typical validity + deep link. Emits `infra_readiness` for the
+        US-092 GO/NO-GO engine. Gated by `feature.infrastructure.utilities`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InfraRequest"
+      responses:
+        "200":
+          description: Utilities + NOC checklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UtilitiesResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
+  /infrastructure/connectivity:
+    post:
+      operationId: analyzeConnectivity
+      summary: Connectivity — airport/metro/rail/highway distance + access road (US-086)
+      description: >
+        The connectivity OWNER (airport distance consolidated OUT of planning, which keeps only the
+        ICAO height cap). Airport distance is STRAIGHT-LINE in EPSG:32643 from the bundled AAI ARP;
+        metro/rail/highway resolve only from real sources and return `unresolved` when a source is
+        not fetchable (never a fabricated distance); every distance is labelled straight-line vs
+        network. Access-road width comes from the planning road_width_resolver (reused, not
+        reimplemented). Emits `connectivity_signal` + access flags for the US-092 GO/NO-GO engine.
+        Gated by `feature.infrastructure.connectivity`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectivityRequest"
+      responses:
+        "200":
+          description: Connectivity result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectivityResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
+  /infrastructure/power-grid:
+    get:
+      operationId: getPowerGrid
+      summary: Power grid proximity — KPTCL transmission + BESCOM distribution + substations
+      description: >
+        OSM Overpass query for `power=line` ways and `power=substation` nodes within `radius_m`.
+        Classifies lines by voltage: ≥66kV → transmission (KPTCL jurisdiction); 11-33kV →
+        distribution_ht (BESCOM HT); <11kV → distribution_lt (BESCOM LT). Emits three connection-
+        feasibility flags: `bescom_lt_within_200m`, `bescom_ht_within_2km`, `kptcl_ht_within_5km`.
+        Distances are straight-line to nearest OSM geometry node — indicative only.
+        Gated by `feature.infrastructure.power-grid`.
+      parameters:
+        - in: query
+          name: lat
+          required: true
+          schema: { type: number, format: float }
+        - in: query
+          name: lon
+          required: true
+          schema: { type: number, format: float }
+        - in: query
+          name: radius_m
+          required: false
+          schema: { type: integer, default: 10000, minimum: 500, maximum: 25000 }
+      responses:
+        "200":
+          description: Power grid proximity result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PowerGridResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
 components:
   schemas:
+    ConnectivityRequest:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, format: float }
+        longitude: { type: number, format: float }
+        radius_m: { type: number, format: float, default: 2000 }
+        surveyed_width_m: { type: number, format: float, nullable: true }
+        measured_width_m: { type: number, format: float, nullable: true }
+        lane_count: { type: integer, nullable: true }
+    TransportDistance:
+      type: object
+      required: [mode, status, confidence]
+      properties:
+        mode: { type: string }
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        name: { type: string, nullable: true }
+        ref: { type: string, nullable: true }
+        distance_m: { type: number, format: float, nullable: true }
+        distance_type: { type: string, nullable: true, enum: ["straight-line", "network"] }
+        confidence: { $ref: "#/components/schemas/UtilityConfidence" }
+        crs: { type: string, default: "EPSG:32643" }
+        data_source: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    RoadWidthConn:
+      type: object
+      required: [status, confidence]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        value_m: { type: number, format: float, nullable: true }
+        band: { type: object, nullable: true }
+        confidence: { type: string }
+        source: { type: string }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    SignalUnknown:
+      type: object
+      description: "US-092 C2 — one unresolved decision-relevant input surfaced as a 'confirm this' item."
+      required: [name, next_action]
+      properties:
+        name: { type: string }
+        next_action: { type: string }
+    ConnectivitySignal:
+      type: object
+      required: [metro_status, overall, status, unresolved_count, confidence]
+      properties:
+        airport_km: { type: number, format: float, nullable: true }
+        airport_distance_type: { type: string, nullable: true }
+        metro_status: { type: string, enum: ["resolved", "unresolved"] }
+        road_width_confidence: { type: string, nullable: true }
+        access_flags: { type: array, items: { type: string } }
+        overall: { type: string, enum: ["good", "partial", "unknown"] }
+        # US-092 C2 known-vs-unknown structure
+        status: { type: string, enum: ["resolved", "partial", "unresolved"] }
+        resolved_score:
+          type: number
+          format: float
+          nullable: true
+          description: "over KNOWN decision inputs only; null when only the bundled airport is known"
+        unresolved_count: { type: integer }
+        unknowns: { type: array, items: { $ref: "#/components/schemas/SignalUnknown" } }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
+        notes: { type: array, items: { type: string } }
+    ConnectivityResult:
+      type: object
+      required: [airport, metro, rail, highway, road_width, connectivity_score, connectivity_signal, data_source]
+      properties:
+        airport: { $ref: "#/components/schemas/TransportDistance" }
+        metro: { $ref: "#/components/schemas/TransportDistance" }
+        rail: { $ref: "#/components/schemas/TransportDistance" }
+        highway: { $ref: "#/components/schemas/TransportDistance" }
+        road_width: { $ref: "#/components/schemas/RoadWidthConn" }
+        connectivity_score:
+          type: number
+          format: float
+          nullable: true
+          description: "US-092 C2: null when the signal is unresolved (only the bundled airport known)"
+        access_flags: { type: array, items: { type: string } }
+        connectivity_signal: { $ref: "#/components/schemas/ConnectivitySignal" }
+        data_source: { type: string }
+        data_disclaimer: { type: string }
+    UtilityConfidence:
+      type: string
+      enum: ["authoritative", "inferred", "unresolved"]
+    Presence:
+      type: string
+      enum: ["present", "absent", "unknown"]
+    UtilityMain:
+      type: object
+      required: [name, present, confidence]
+      properties:
+        name: { type: string }
+        present: { $ref: "#/components/schemas/Presence" }
+        confidence: { $ref: "#/components/schemas/UtilityConfidence" }
+        distance_m: { type: number, format: float, nullable: true }
+        diameter_mm: { type: number, format: float, nullable: true }
+        data_source: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    UtilityAvailability:
+      type: object
+      required: [name, score, confidence]
+      properties:
+        name: { type: string }
+        score: { type: number, format: float }
+        confidence: { $ref: "#/components/schemas/UtilityConfidence" }
+        nearest_m: { type: number, format: float, nullable: true }
+        detected: { type: boolean }
+        note: { type: string, nullable: true }
+    NocChecklistItem:
+      type: object
+      required: [authority, requirement, rule_citation]
+      properties:
+        authority: { type: string }
+        requirement: { type: string }
+        rule_citation: { type: string }
+        typical_validity: { type: string, nullable: true }
+        deep_link: { type: string, nullable: true }
+        applies_when: { type: string, nullable: true }
+        mandatory: { type: boolean, default: true }
+    InfraReadiness:
+      type: object
+      required: [water_status, water_confidence, telecom_score, noc_pending, overall, status, unresolved_count, confidence]
+      properties:
+        water_status: { $ref: "#/components/schemas/Presence" }
+        water_confidence: { $ref: "#/components/schemas/UtilityConfidence" }
+        telecom_score: { type: number, format: float }
+        power_score: { type: number, format: float, nullable: true }
+        road_score: { type: number, format: float, nullable: true }
+        noc_pending: { type: integer }
+        overall: { type: string, enum: ["ready", "partial", "unknown"] }
+        # US-092 C2 known-vs-unknown structure
+        status: { type: string, enum: ["resolved", "partial", "unresolved"] }
+        resolved_score:
+          type: number
+          format: float
+          nullable: true
+          description: "mean over KNOWN inputs only; null when fewer than 2 are known"
+        unresolved_count: { type: integer }
+        unknowns: { type: array, items: { $ref: "#/components/schemas/SignalUnknown" } }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
+        notes: { type: array, items: { type: string } }
+    UtilitiesResult:
+      type: object
+      required: [water_main, sewer_main, water_availability, telecom_availability, storm_water_note, noc_checklist, infra_readiness, data_source]
+      properties:
+        water_main: { $ref: "#/components/schemas/UtilityMain" }
+        sewer_main: { $ref: "#/components/schemas/UtilityMain" }
+        water_availability: { $ref: "#/components/schemas/UtilityAvailability" }
+        telecom_availability: { $ref: "#/components/schemas/UtilityAvailability" }
+        storm_water_note: { type: string }
+        noc_checklist: { type: array, items: { $ref: "#/components/schemas/NocChecklistItem" } }
+        infra_readiness: { $ref: "#/components/schemas/InfraReadiness" }
+        data_source: { type: string }
+        data_disclaimer: { type: string }
     Severity:
       type: string
       enum: ["low", "moderate", "high", "none"]
@@ -202,6 +454,82 @@ components:
           maximum: 100
         severity:
           $ref: "#/components/schemas/Severity"
+        data_source:
+          type: string
+        data_disclaimer:
+          type: string
+
+    PowerLine:
+      type: object
+      required: [distance_m, classification, confidence]
+      properties:
+        voltage_kv:
+          type: integer
+          nullable: true
+        operator:
+          type: string
+          nullable: true
+          example: "KPTCL"
+        distance_m:
+          type: number
+          format: float
+        classification:
+          type: string
+          enum: [transmission, distribution_ht, distribution_lt, unknown]
+        confidence:
+          type: string
+          enum: [derived, inferred, unresolved]
+
+    PowerSubstation:
+      type: object
+      required: [distance_m, lat, lon, confidence]
+      properties:
+        name:
+          type: string
+          nullable: true
+        voltage_kv:
+          type: integer
+          nullable: true
+        operator:
+          type: string
+          nullable: true
+        distance_m:
+          type: number
+          format: float
+        lat:
+          type: number
+          format: float
+        lon:
+          type: number
+          format: float
+        confidence:
+          type: string
+          enum: [derived, inferred, unresolved]
+
+    PowerGridResult:
+      type: object
+      required: [bescom_lt_within_200m, bescom_ht_within_2km, kptcl_ht_within_5km, radius_m, data_source, data_disclaimer]
+      properties:
+        nearest_ht_line:
+          oneOf:
+            - $ref: "#/components/schemas/PowerLine"
+            - type: "null"
+        nearest_distribution_line:
+          oneOf:
+            - $ref: "#/components/schemas/PowerLine"
+            - type: "null"
+        nearest_substation:
+          oneOf:
+            - $ref: "#/components/schemas/PowerSubstation"
+            - type: "null"
+        bescom_lt_within_200m:
+          type: boolean
+        bescom_ht_within_2km:
+          type: boolean
+        kptcl_ht_within_5km:
+          type: boolean
+        radius_m:
+          type: integer
         data_source:
           type: string
         data_disclaimer:

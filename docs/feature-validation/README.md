@@ -22,5 +22,9 @@ Naming: `SAT-XX_<feature>.md` where XX matches the Feature Registry story number
 | SAT-16 | Realtime Collaboration & Sharing | — (create) | E1 🔵 |
 | SAT-17 | Wind Analysis V3 (updated reference) | SAT-4 | E1 🟢 |
 | SAT-18 | Rainfall & Water Management | — | E1 🟡 |
+| SAT-19 | Survey-Number Parcel Search (US-080) | SAT-19 | E2 🟡 |
+| SAT-20 | Authoritative RMP-2015 Land-Use | confirm # | E2 🟢 |
+| SAT-21 | Cadastral Parcel Overlay (US-081) | confirm # | E2 🟡 |
+| SAT-22 | Authority Auto-Detect scaffold (US-093) | confirm # | E2 🟡 |
 
 Color: 🟢 Green (migrate as-is) · 🔵 Blue (major review) · 🟡 Yellow (clarify first) · 🔴 Red (build from scratch)

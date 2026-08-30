@@ -1,0 +1,251 @@
+{
+  "config_version": "rmp-2015.1",
+  "plan_name": "BDA Revised Master Plan 2015 (Vol-III Zoning Regulations)",
+  "ruleset_name": "RMP-2015 Vol-III Zoning Regulations",
+  "status": "partial-verified",
+  "regulatory_source": {
+    "doc": "RMP-2015 Vol-III (Zoning Regulations)",
+    "page_ref": "G.O. UDD 540 BEM AA SE 2004 dated 22-06-2007",
+    "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015"
+  },
+  "transcription_origin": {
+    "source": "RMP-2015 Vol-III PDF (primary), pymupdf positioned text extraction",
+    "confidence": "authoritative",
+    "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015"
+  },
+  "source_note": "Base FAR/GC/setbacks transcribed by reading the primary RMP-2015 Vol-III PDF via pymupdf positioned extraction (each value verified against its printed table, NOT from any secondary/pasted copy). G.O. UDD 540 BEM AA SE 2004 confirmed present in the extracted text (grounds the version identity: RMP-2015, not the draft RMP-2031). Ring is modelled as a MODIFIER (far_modifiers), not a base-FAR axis; setbacks are a separate height/plot-keyed system (setback_rules). The two 2025 amendments could NOT be read (see amendments[]) and do NOT govern.",
+  "fallback_ruleset": "nbcs_2026",
+  "cells": [],
+  "far_tables": [
+    {
+      "zone": "Residential", "sub_zone": "Main", "key_type": "plot_size",
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 10, p.27", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "rows": [
+        { "plot_size_band_sqm": { "min": 0, "max": 360 }, "far": 1.75, "ground_coverage": 0.75, "road_width_band_m": { "min": 0, "max": 12 } },
+        { "plot_size_band_sqm": { "min": 360, "max": 1000 }, "far": 2.25, "ground_coverage": 0.65, "road_width_band_m": { "min": 12, "max": 18 } },
+        { "plot_size_band_sqm": { "min": 1000, "max": 2000 }, "far": 2.50, "ground_coverage": 0.60, "road_width_band_m": { "min": 18, "max": 24 } },
+        { "plot_size_band_sqm": { "min": 2000, "max": 4000 }, "far": 3.00, "ground_coverage": 0.55, "road_width_band_m": { "min": 24, "max": 30 } },
+        { "plot_size_band_sqm": { "min": 4000, "max": 20000 }, "far": 3.25, "ground_coverage": 0.50, "road_width_band_m": { "min": 30, "max": null } }
+      ]
+    },
+    {
+      "zone": "Residential", "sub_zone": "Mixed", "key_type": "road_width",
+      "plot_cap_sqm": 20000,
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 12, p.28", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "rows": [
+        { "road_width_band_m": { "min": 0, "max": 12 }, "far": 1.75, "ground_coverage": 0.70 },
+        { "road_width_band_m": { "min": 12, "max": 18 }, "far": 2.25, "ground_coverage": 0.65 },
+        { "road_width_band_m": { "min": 18, "max": 24 }, "far": 2.50, "ground_coverage": 0.60 },
+        { "road_width_band_m": { "min": 24, "max": 30 }, "far": 3.00, "ground_coverage": 0.55 },
+        { "road_width_band_m": { "min": 30, "max": null }, "far": 3.25, "ground_coverage": 0.50 }
+      ]
+    },
+    {
+      "zone": "Commercial", "sub_zone": "Central", "key_type": "flat",
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 13, p.30", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "notes": "Flat value. Setbacks not insisted up to 150 sqm (front only); 150-500 sqm no rear/side setback; else Table 8/9.",
+      "rows": [
+        { "far": 2.50, "ground_coverage": 0.75 }
+      ]
+    },
+    {
+      "zone": "Commercial", "sub_zone": "Business", "key_type": "road_width",
+      "plot_cap_sqm": 12000,
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 14, p.31", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "rows": [
+        { "road_width_band_m": { "min": 0, "max": 9 }, "far": 1.50, "ground_coverage": 0.55 },
+        { "road_width_band_m": { "min": 9, "max": 12 }, "far": 1.75, "ground_coverage": 0.50 },
+        { "road_width_band_m": { "min": 12, "max": 18 }, "far": 2.25, "ground_coverage": 0.50 },
+        { "road_width_band_m": { "min": 18, "max": 24 }, "far": 2.50, "ground_coverage": 0.45 },
+        { "road_width_band_m": { "min": 24, "max": 30 }, "far": 3.00, "ground_coverage": 0.40 },
+        { "road_width_band_m": { "min": 30, "max": null }, "far": 3.25, "ground_coverage": 0.40 }
+      ]
+    },
+    {
+      "zone": "Commercial", "sub_zone": "Mutation Corridor", "key_type": "road_width",
+      "plot_cap_sqm": 12000, "min_frontage_m": 12,
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 15, p.32", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "notes": "Base plot_cap 12000 sqm; the (unreadable) Aug-2025 amendment reportedly lowers this to 10000 sqm — see amendments[] (non-governing until read).",
+      "rows": [
+        { "road_width_band_m": { "min": 0, "max": 30 }, "far": 2.75, "ground_coverage": 0.55 },
+        { "road_width_band_m": { "min": 30, "max": null }, "far": 3.25, "ground_coverage": 0.50 }
+      ]
+    },
+    {
+      "zone": "Industrial", "sub_zone": "General", "key_type": "plot_size",
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 16, p.34", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "notes": "Table 16 carries its OWN setbacks (front / rear-and-sides), captured inline; Table 8/9 only if the remaining plot is unusable.",
+      "rows": [
+        { "plot_size_band_sqm": { "min": 0, "max": 500 }, "far": 1.50, "ground_coverage": 0.75, "setbacks_inline": { "front": 4.50, "rear_and_sides": 4.50 } },
+        { "plot_size_band_sqm": { "min": 500, "max": 1000 }, "far": 1.25, "ground_coverage": 0.60, "setbacks_inline": { "front": 4.50, "rear_and_sides": 4.50 } },
+        { "plot_size_band_sqm": { "min": 1000, "max": 3000 }, "far": 1.00, "ground_coverage": 0.50, "setbacks_inline": { "front": 6.00, "rear_and_sides": 6.00 } },
+        { "plot_size_band_sqm": { "min": 3000, "max": null }, "far": 1.00, "ground_coverage": 0.45, "setbacks_inline": { "front": 10.0, "rear_and_sides": 8.00 } }
+      ]
+    },
+    {
+      "zone": "Industrial", "sub_zone": "Hi-Tech", "key_type": "plot_size",
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 17, p.35", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "rows": [
+        { "plot_size_band_sqm": { "min": 0, "max": 1000 }, "far": 2.00, "ground_coverage": 0.55, "road_width_band_m": { "min": 0, "max": 12 } },
+        { "plot_size_band_sqm": { "min": 1000, "max": 2000 }, "far": 2.25, "ground_coverage": 0.50, "road_width_band_m": { "min": 12, "max": 18 } },
+        { "plot_size_band_sqm": { "min": 2000, "max": 4000 }, "far": 2.50, "ground_coverage": 0.50, "road_width_band_m": { "min": 18, "max": 24 } },
+        { "plot_size_band_sqm": { "min": 4000, "max": 6000 }, "far": 3.00, "ground_coverage": 0.45, "road_width_band_m": { "min": 24, "max": 30 } },
+        { "plot_size_band_sqm": { "min": 6000, "max": 12000 }, "far": 3.25, "ground_coverage": 0.45, "road_width_band_m": { "min": 30, "max": null } }
+      ]
+    },
+    {
+      "zone": "Public & Semi-Public", "sub_zone": "P&SP", "key_type": "plot_size",
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 18, p.36", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "notes": "Row 2 prints 'Up to 1000'; boundary confirmed as 500-1000 from adjacent-row sequence (row 1 '<=500', row 3 'Above 1000 up to 2000'), p.36. Setbacks per Table 8/9.",
+      "rows": [
+        { "plot_size_band_sqm": { "min": 0, "max": 500 }, "far": 1.50, "ground_coverage": 0.60 },
+        { "plot_size_band_sqm": { "min": 500, "max": 1000 }, "far": 1.75, "ground_coverage": 0.55 },
+        { "plot_size_band_sqm": { "min": 1000, "max": 2000 }, "far": 2.00, "ground_coverage": 0.50 },
+        { "plot_size_band_sqm": { "min": 2000, "max": null }, "far": 2.25, "ground_coverage": 0.45 }
+      ]
+    },
+    {
+      "zone": "Traffic & Transportation", "sub_zone": "T&T", "key_type": "plot_size",
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 19, p.37", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "notes": "Row 2 prints 'Up to 1000'; boundary confirmed as 500-1000 from adjacent-row sequence (row 1 '<=500', row 3 'Above 1000 up to 2000'), p.37. MLCP as independent activity has no FAR/height limit (note i, p.37). Setbacks per Table 8/9.",
+      "rows": [
+        { "plot_size_band_sqm": { "min": 0, "max": 500 }, "far": 1.00, "ground_coverage": 0.60 },
+        { "plot_size_band_sqm": { "min": 500, "max": 1000 }, "far": 1.25, "ground_coverage": 0.55 },
+        { "plot_size_band_sqm": { "min": 1000, "max": 2000 }, "far": 1.50, "ground_coverage": 0.50 },
+        { "plot_size_band_sqm": { "min": 2000, "max": null }, "far": 1.50, "ground_coverage": 0.45 }
+      ]
+    }
+  ],
+  "far_modifiers": {
+    "additional_far_by_ring": {
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "reg 3.4.v, p.21", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "eligibility": "Properties within Ring I & II (100 & 200 series planning-district plans) amalgamated/reconstituted only AFTER the date of approval of RMP-2015. Additional FAR is OVER the existing (base) FAR.",
+      "rows": [
+        { "ring": "I", "plot_size_band_sqm": { "min": 0, "max": 360 }, "additional_far": 0.0, "note": "as per existing FAR" },
+        { "ring": "I", "plot_size_band_sqm": { "min": 360, "max": 4000 }, "additional_far": 0.25 },
+        { "ring": "I", "plot_size_band_sqm": { "min": 4000, "max": null }, "additional_far": 0.50 },
+        { "ring": "II", "plot_size_band_sqm": { "min": 0, "max": 360 }, "additional_far": 0.0, "note": "as per existing FAR" },
+        { "ring": "II", "plot_size_band_sqm": { "min": 360, "max": 4000 }, "additional_far": 0.25 }
+      ],
+      "unspecified": "Ring II above 4000 sqm: source cell is blank (not specified) — PENDING. Ring III: 'as per existing FAR and Norms' (no additional FAR)."
+    },
+    "metro_terminal_override": {
+      "confidence": "authoritative",
+      "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "reg 3.16.ix, p.25", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+      "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+      "radius_m": 150,
+      "max_far": 4.0,
+      "condition": "Within 150 m radius of a metro TERMINAL, max FAR 4 for all permissible uses, irrespective of the table FAR — but ONLY after the metro stations are completed AND confirmed by BMRCL; till then existing regulations apply. (TDR permitted only till station completion; FAR never exceeds 4.)"
+    }
+  },
+  "setback_rules": {
+    "base": {
+      "table8_low_rise": {
+        "confidence": "authoritative",
+        "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 8, p.19", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+        "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+        "applies": "Building height up to 11.5 m AND plot size up to 4000 sqm. Keyed by site width/depth. Front/rear reference depth; left/right reference width. >9 m band is a PERCENT of the site dimension.",
+        "rows": [
+          { "site_dim_band_m": { "min": 0, "max": 6 }, "front": 1.0, "rear": 0, "left": 0, "right": 1.0 },
+          { "site_dim_band_m": { "min": 6, "max": 9 }, "front": 1.0, "rear": 1.0, "left": 1.0, "right": 1.0 },
+          { "site_dim_band_m": { "min": 9, "max": null }, "front": "12%", "rear": "8%", "left": "8%", "right": "8%" }
+        ],
+        "over_4000_sqm_all_sides_m": 5.0
+      },
+      "table9_by_height": {
+        "confidence": "authoritative",
+        "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 9, p.20", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+        "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf", "confidence": "authoritative" },
+        "applies": "Buildings above 11.5 m height. Uniform all-around min setback (front/rear/side).",
+        "rows": [
+          { "height_band_m": { "min": 11.5, "max": 15 }, "all_around_m": 5.00 },
+          { "height_band_m": { "min": 15, "max": 18 }, "all_around_m": 6.00 },
+          { "height_band_m": { "min": 18, "max": 21 }, "all_around_m": 7.00 },
+          { "height_band_m": { "min": 21, "max": 24 }, "all_around_m": 8.00 },
+          { "height_band_m": { "min": 24, "max": 27 }, "all_around_m": 9.00 },
+          { "height_band_m": { "min": 27, "max": 30 }, "all_around_m": 10.00 },
+          { "height_band_m": { "min": 30, "max": 35 }, "all_around_m": 11.00 },
+          { "height_band_m": { "min": 35, "max": 40 }, "all_around_m": 12.00 },
+          { "height_band_m": { "min": 40, "max": 45 }, "all_around_m": 13.00 },
+          { "height_band_m": { "min": 45, "max": 50 }, "all_around_m": 14.00 },
+          { "height_band_m": { "min": 50, "max": null }, "all_around_m": 16.00 }
+        ]
+      }
+    }
+  },
+  "amendments": [
+    {
+      "id": "aug-2025-stilt-parking",
+      "effective_date": "2025-08-01",
+      "applies_to": "Table 8 threshold 11.5m->12m; Table 9 rewrite (stilt-floor brackets; stilt height <=3m excluded from height); Mutation Corridor plot cap 12000->10000 sqm",
+      "supersedes": "setback_rules.base + far_tables Mutation Corridor plot_cap",
+      "status": "final-unreadable",
+      "governing": false,
+      "confidence": "inferred",
+      "transcription_origin": { "source": "d7b00660-a3bc-49cf-b35a-3d70283ace0a.pdf (UDD 31 MNJ 2022(E), 01.08.2025) — Type0/CID fonts with no ToUnicode map; pymupdf extracts glyph codes, no readable text", "confidence": "inferred" },
+      "transcription_blocker": "No usable text layer (CID/no-ToUnicode). Needs OCR of the rendered pages or a searchable copy before any value is transcribed. FINAL per header but VALUES UNREAD -> does not govern."
+    },
+    {
+      "id": "nov-2025-small-plot-setback",
+      "effective_date": "2025-11-11",
+      "applies_to": "Table 8 full replacement for small plots (<=60, 60-150, 150-4000 sqm brackets)",
+      "supersedes": "setback_rules.base.table8_low_rise",
+      "status": "draft",
+      "governing": false,
+      "confidence": "inferred",
+      "transcription_origin": { "source": "revised-setback-gazette-copy.pdf (UDD 235 MNJ 2025(E), 11.11.2025) — raster scan, 0 text streams", "confidence": "inferred" },
+      "transcription_blocker": "Header says 'DRAFT REGULATIONS' AND the PDF is a scan with no text layer. In-force status UNCONFIRMED + values UNREAD -> does not govern; a draft never supersedes the notified base. Needs a searchable/notified copy + OCR."
+    }
+  ],
+  "parking_norms": {
+    "confidence": "authoritative",
+    "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "Table 23, Ch.8 (Parking), p.48", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+    "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf text + 2.3x pixel-verified (p.48)", "confidence": "authoritative" },
+    "unit_dimensions_m": { "car": "2.5 x 5.5", "lorry": "3.5 x 7.5" },
+    "note": "One car space per the floor-area / dwelling-unit basis below. Stilt-floor and MLCP parking are exempt from FAR (reg 8.1, p.49). 'Additional parking for part area when the part exceeds 50% of the prescribed limit' (Table 23 note).",
+    "uses": [
+      { "use": "residential_multi_dwelling", "key": "per_dwelling_unit", "du_band_sqm": { "min": 50, "max": 150 }, "ecs_per_unit": 1, "visitor_pct": 0.10, "per_area_proxy_sqm": 100, "table_row": 13, "proxy_confidence": "derived", "note": "Row 13: 1 ECS per DU of 50-150 sqm (A); DU < 50 sqm -> 1 ECS per 2 DU (B); +10% visitor (C). The ~1 ECS/100 sqm floor-area figure is a DERIVED proxy of the per-DU rule (DU midpoint ~100 sqm); the 10% visitor share is authoritative." },
+      { "use": "retail", "key": "per_floor_area_sqm", "per_sqm": 50, "table_row": 2, "label": "Retail business (shops, complexes, malls)" },
+      { "use": "office", "key": "per_floor_area_sqm", "per_sqm": 50, "table_row": 8, "label": "Office (Govt/Semi-Govt/Pvt)" },
+      { "use": "restaurant", "key": "per_floor_area_sqm", "per_sqm": 75, "table_row": 5, "label": "Restaurant (food & drink)" },
+      { "use": "hotel", "key": "per_floor_area_sqm", "per_sqm": 80, "table_row": 6, "label": "Lodging / hotels / tourist homes" },
+      { "use": "hospital", "key": "per_floor_area_sqm", "per_sqm": 100, "table_row": 12, "label": "Hospitals" },
+      { "use": "nursing_home", "key": "per_floor_area_sqm", "per_sqm": 50, "table_row": 11, "label": "Nursing homes" },
+      { "use": "educational", "key": "per_floor_area_sqm", "per_sqm": 150, "table_row": 17, "label": "Educational buildings" },
+      { "use": "industrial", "key": "per_floor_area_sqm", "per_sqm": 100, "table_row": 10, "label": "Industrial buildings", "note": "plus 1 lorry space (3.5 x 7.5 m) for every 1000 sqm or part thereof" },
+      { "use": "other_public_semipublic", "key": "per_floor_area_sqm", "per_sqm": 100, "table_row": 18, "label": "Other Public & Semi-Public buildings" }
+    ],
+    "visitor_default_pct": 0.10
+  },
+  "mixed_use_shares": {
+    "confidence": "authoritative",
+    "regulatory_source": { "doc": "RMP-2015 Vol-III", "page_ref": "reg 4.1.2 p.27 / reg 4.2.2 p.28 / reg 7.3 p.47", "url": "https://data.opencity.in/dataset/bda-revised-master-plan-2015" },
+    "transcription_origin": { "source": "RMP-2015 Vol-III PDF (primary), pymupdf text + pixel-verified (p.27/28/47)", "confidence": "authoritative" },
+    "note": "Zone-permitted NON-RESIDENTIAL (ancillary/mixed) share of built-up area, where the RMP states one. Zones NOT listed here (a dedicated 'Mixed Use' land-use zone, commercial-with-residential) have NO fixed RMP split -> checklist, never a fabricated %.",
+    "zones": [
+      { "zone": "Residential", "sub_zone": "Main", "non_residential_max_pct": 0.20, "basis": "ancillary use allowable up to 20% of total built-up area (or 50 sqm, whichever higher)", "citation": "reg 4.1.2, p.27" },
+      { "zone": "Residential", "sub_zone": "Mixed", "non_residential_max_pct": 0.30, "basis": "ancillary land use permissible up to 30% of total built-up area", "citation": "reg 4.2.2, p.28" },
+      { "zone": "Integrated Township", "sub_zone": null, "residential_pct": 0.40, "non_residential_max_pct": 0.60, "split": { "hi_tech": 0.55, "commercial": 0.05 }, "basis": "Residential 40% / Non-Residential 60% (Hi-Tech 55% + Commercial 5%)", "citation": "reg 7.3, p.47" }
+    ]
+  }
+}

@@ -101,3 +101,65 @@ def test_analyze_flag_on(monkeypatch):
     assert body["score"] == 85.0
     assert body["sub_scores"]["road"] == 45.0
     assert body["transit"][0]["type"] == "metro"
+
+
+@skip_no_app
+def test_power_grid_flag_off(monkeypatch):
+    monkeypatch.setenv("FLAGS", "")
+    resp = CLIENT.get("/infrastructure/power-grid", params={"lat": 12.9716, "lon": 77.5946})
+    assert resp.status_code == 403
+
+
+@skip_no_app
+def test_power_grid_flag_on(monkeypatch):
+    from app.models.infrastructure import PowerGridResult, PowerLine, PowerSubstation
+    import app.routers.infrastructure as infra_router_mod
+
+    monkeypatch.setenv("FLAGS", "feature.infrastructure.power-grid")
+
+    async def _fake_fetch_power_grid(lat, lon, radius_m=10_000):
+        return PowerGridResult(
+            nearest_ht_line=PowerLine(
+                voltage_kv=110,
+                operator="KPTCL",
+                distance_m=2300.0,
+                classification="transmission",
+                confidence="derived",
+            ),
+            nearest_distribution_line=PowerLine(
+                voltage_kv=11,
+                operator="BESCOM",
+                distance_m=85.0,
+                classification="distribution_ht",
+                confidence="derived",
+            ),
+            nearest_substation=PowerSubstation(
+                name="Koramangala 66kV",
+                voltage_kv=66,
+                operator="KPTCL",
+                distance_m=1800.0,
+                lat=12.9335,
+                lon=77.6273,
+                confidence="derived",
+            ),
+            bescom_lt_within_200m=False,
+            bescom_ht_within_2km=True,
+            kptcl_ht_within_5km=True,
+            radius_m=radius_m,
+            data_source="OSM Overpass (power=line, power=substation)",
+            data_disclaimer="Indicative only.",
+        )
+
+    import app.services.power_service as ps_mod
+    monkeypatch.setattr(ps_mod, "fetch_power_grid", _fake_fetch_power_grid)
+
+    resp = CLIENT.get("/infrastructure/power-grid", params={"lat": 12.9716, "lon": 77.5946})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["nearest_ht_line"]["voltage_kv"] == 110
+    assert body["nearest_ht_line"]["classification"] == "transmission"
+    assert body["nearest_distribution_line"]["distance_m"] == 85.0
+    assert body["nearest_substation"]["name"] == "Koramangala 66kV"
+    assert body["kptcl_ht_within_5km"] is True
+    assert body["bescom_ht_within_2km"] is True
+    assert body["bescom_lt_within_200m"] is False

@@ -15,9 +15,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import verify_token
 from app.routers import buildings, health, shadow, sunpath
 from app.services.gee_service import GEEService
 
@@ -77,7 +78,8 @@ app.add_middleware(
 )
 
 # Root-mounted routers (no /api/v1 prefix) — matches the contract.
+# health.router stays public; data routers require Keycloak Bearer token.
 app.include_router(health.router)
-app.include_router(sunpath.router)
-app.include_router(shadow.router)
-app.include_router(buildings.router)
+app.include_router(sunpath.router, dependencies=[Depends(verify_token)])
+app.include_router(shadow.router, dependencies=[Depends(verify_token)])
+app.include_router(buildings.router, dependencies=[Depends(verify_token)])

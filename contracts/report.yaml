@@ -1,0 +1,163 @@
+openapi: "3.1.0"
+info:
+  title: Report Service (US-092 GO / CAUTION / NO-GO verdict)
+  version: "1.0.0"
+  description: >
+    One-screen HONEST-TRIAGE verdict + shareable report. Two-tier: Tier-1 gate booleans (any tripped
+    -> hard NO-GO); Tier-2 (gate-clear) -> GO only if no unresolved decision input, else CAUTION with
+    a confirm-to-upgrade list. The verdict carries its OWN confidence (weakest decision input, C4
+    ladder) — an inferred zone yields an inferred verdict. Aggregates the LIVE signal outputs; renders
+    a PDF (WeasyPrint seam) and persists a read-only snapshot + signed link (Supabase seam). Replaces
+    the client-side html2canvas export stub (GH#54). No synthetic data; unresolved never silently passes.
+
+servers:
+  - url: http://localhost:8010
+    description: Local dev
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      responses:
+        "200":
+          description: Service running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status: { type: string, example: "ok" }
+                  service: { type: string, example: "report" }
+
+  /report/go-no-go:
+    post:
+      operationId: goNoGo
+      summary: GO / CAUTION / NO-GO verdict + shareable report for a parcel
+      description: >
+        Aggregates the already-fetched LIVE signal outputs into a two-tier verdict. Gated by
+        `feature.report.go-no-go`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportRequest"
+      responses:
+        "200":
+          description: Verdict + PDF + share result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportResponse"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
+components:
+  schemas:
+    LadderConfidence:
+      type: string
+      enum: ["authoritative", "derived", "inferred", "unresolved"]
+    VerdictLevel:
+      type: string
+      enum: ["GO", "CAUTION", "NO_GO"]
+
+    ParcelRef:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat: { type: number, format: float }
+        lon: { type: number, format: float }
+        survey_number: { type: string, nullable: true }
+        village: { type: string, nullable: true }
+        label: { type: string, nullable: true }
+
+    SignalBundle:
+      type: object
+      description: >
+        The already-fetched LIVE signal outputs to aggregate. Each is optional — an absent signal is
+        treated as an UNRESOLVED decision input (forces CAUTION), never a silent pass. Held as open
+        objects; the aggregator reads the C1 gate booleans + C2 status/confidence fields it needs.
+      properties:
+        overlays: { type: object, nullable: true, additionalProperties: true }
+        ownership: { type: object, nullable: true, additionalProperties: true }
+        far: { type: object, nullable: true, additionalProperties: true }
+        connectivity: { type: object, nullable: true, additionalProperties: true }
+        infra_readiness: { type: object, nullable: true, additionalProperties: true }
+        price: { type: object, nullable: true, additionalProperties: true }
+        terrain: { type: object, nullable: true, additionalProperties: true }
+        zone: { type: object, nullable: true, additionalProperties: true }
+        authority: { type: object, nullable: true, additionalProperties: true }
+
+    ReportRequest:
+      type: object
+      required: [parcel]
+      properties:
+        parcel: { $ref: "#/components/schemas/ParcelRef" }
+        signals: { $ref: "#/components/schemas/SignalBundle" }
+        generated_at: { type: string, nullable: true }
+        persist: { type: boolean, default: true }
+        render_pdf: { type: boolean, default: true }
+
+    ReportRow:
+      type: object
+      required: [section, label, value, confidence, sanction_note]
+      properties:
+        section: { type: string, enum: ["red_flag", "confirmed_clear", "confirm_to_upgrade"] }
+        label: { type: string }
+        value: { type: string }
+        citation: { type: string, nullable: true }
+        confidence: { $ref: "#/components/schemas/LadderConfidence" }
+        data_vintage: { type: string, nullable: true }
+        as_of: { type: string, nullable: true }
+        severity: { type: string, nullable: true, enum: ["critical", "high", "moderate", "low", null] }
+        next_action: { type: string, nullable: true }
+        sanction_note: { type: string }
+
+    ReportVerdict:
+      type: object
+      required: [verdict, confidence, headline, confidence_note, rows, generated_at, parcel]
+      properties:
+        verdict: { $ref: "#/components/schemas/VerdictLevel" }
+        confidence: { $ref: "#/components/schemas/LadderConfidence" }
+        headline: { type: string }
+        confidence_note: { type: string }
+        red_flags: { type: array, items: { $ref: "#/components/schemas/ReportRow" } }
+        confirmed_clear: { type: array, items: { $ref: "#/components/schemas/ReportRow" } }
+        confirm_to_upgrade: { type: array, items: { $ref: "#/components/schemas/ReportRow" } }
+        rows: { type: array, items: { $ref: "#/components/schemas/ReportRow" } }
+        generated_at: { type: string }
+        parcel: { $ref: "#/components/schemas/ParcelRef" }
+        disclaimer: { type: string }
+
+    ShareResult:
+      type: object
+      required: [status, report_id]
+      properties:
+        status: { type: string, enum: ["ready", "pending-supabase", "disabled"] }
+        report_id: { type: string }
+        share_link: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+
+    PdfResult:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: ["rendered", "unavailable", "disabled"] }
+        media_type: { type: string, nullable: true }
+        byte_len: { type: integer, nullable: true }
+        html_fallback: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+
+    ReportResponse:
+      type: object
+      required: [report_id, verdict, share, pdf]
+      properties:
+        report_id: { type: string }
+        verdict: { $ref: "#/components/schemas/ReportVerdict" }
+        share: { $ref: "#/components/schemas/ShareResult" }
+        pdf: { $ref: "#/components/schemas/PdfResult" }
+        data_source: { type: string }

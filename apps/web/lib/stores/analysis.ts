@@ -5,8 +5,14 @@
 
 import { create } from "zustand";
 
-export type ModuleId = "flood" | "rainfall" | "sunpath" | "wind" | "temperature" | "zone" | "planning" | "zoning" | "infrastructure" | "soil" | "waterConstraints" | "growth" | "land" | "amenities";
+export type ModuleId = "flood" | "rainfall" | "sunpath" | "wind" | "temperature" | "zone" | "planning" | "zoning" | "infrastructure" | "soil" | "waterConstraints" | "growth" | "land" | "amenities"
+  // US-092 Job A — Builder-feasibility signal panels (each honest-by-shape: C4 ladder confidence,
+  // C2 unresolved never scored as pass, C1 gate booleans, two-line FAR).
+  | "zoneRing" | "farAssembly" | "obligations" | "connectivitySignal" | "utilities" | "overlays" | "terrain" | "priceUpside";
 export type Severity = "high" | "moderate" | "low" | "none";
+// The canonical C4 confidence ladder, surfaced as a per-signal badge (inferred must look visibly
+// weaker than authoritative; unresolved must look distinct from a pass).
+export type LadderConfidence = "authoritative" | "derived" | "inferred" | "unresolved";
 
 export interface Indicator {
   label: string;
@@ -83,6 +89,7 @@ export interface ZoningKgis {
   taluk: string | null;
   hobli: string | null;
   village: string | null;
+  villageCode: string | null;   // KGIS villageCode (e.g. "2905030017_1"), rural only
   surveyNumber: string | null;
 }
 
@@ -112,6 +119,7 @@ export interface ZoningData {
   lulcClass: string | null;
   lulcVintage: string | null;
   sourceConfidence: string;    // "authoritative" | "community"
+  zoneAuthority: string | null; // "BDA-RMP-2015" (authoritative) | "OSM-inferred" (SAT-20)
   // Compliance flags
   naRequired: boolean;
   forestRequired: boolean;
@@ -134,7 +142,9 @@ export interface ZoningData {
   setbackSideM: number | null;
   // Context (airport + metro + nearby features by distance)
   airportName: string;
-  airportDistanceKm: number;
+  // US-086: airport DISTANCE moved to the infrastructure connectivity endpoint; planning now only
+  // carries the height cap. null here means "see connectivity" (never 0 = fabricated proximity).
+  airportDistanceKm: number | null;
   airportSurface: string;
   airportLat: number | null;
   airportLon: number | null;
@@ -164,6 +174,9 @@ export interface ModuleResult {
   solar?: SolarData;
   zoning?: ZoningData;
   amenityPoints?: AmenityPoint[];
+  // US-092 Job A — C4 ladder confidence for the signal panels. When set, the module header shows a
+  // LadderBadge and hides the 0-100 score (an epic signal is not a weighted score).
+  confidence?: LadderConfidence;
   loading: boolean;
   error: string | null;
 }

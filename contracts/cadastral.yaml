@@ -1,0 +1,573 @@
+openapi: "3.1.0"
+info:
+  title: Cadastral Service
+  version: "1.0.0"
+  description: >
+    Karnataka e-Chawadi (Bhoomi) cadastral data service. Exposes parcel geometries scraped from
+    the official Karnataka Bhoomi portal, RCCMS court cases, mutation (land transfer) records,
+    administrative hierarchy, road widths (BBMP + OSM), rajakaluve encroachment flags, and
+    infrastructure overlay layers. Primary source for Karnataka land records — preferred over
+    KGIS digitization where coverage exists (96% of 32k villages).
+
+    All parcel geometry is EPSG:4326 (WGS84). The source parquets store EPSG:32643 with X/Y
+    swapped — the service fixes this at read time via affine transform.
+
+    Gated by `feature.cadastral.land-records` (core land record endpoints) and
+    `feature.cadastral.overlays` (infrastructure overlay endpoints).
+
+servers:
+  - url: http://localhost:8011
+    description: Local dev
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      responses:
+        "200":
+          description: Service running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  service:
+                    type: string
+                    example: "cadastral"
+
+  /search:
+    get:
+      operationId: searchSurveyNumber
+      summary: Survey number prefix search across all indexed Karnataka villages
+      description: >
+        Prefix-matches the survey number (digits before first `/`). Returns up to 25 results
+        ordered by numeric value with named villages first. Gated by `feature.cadastral.land-records`.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+          description: Survey number prefix (e.g. "309")
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SurveySearchResult"
+        "403":
+          description: Feature flag disabled
+
+  /rccms:
+    get:
+      operationId: getRccmsCases
+      summary: RCCMS court cases for a village
+      description: >
+        Returns all RCCMS (mutation/encumbrance court) cases for the given village. All four
+        hierarchy params required. Gated by `feature.cadastral.land-records`.
+      parameters:
+        - { name: dist,  in: query, required: true,  schema: { type: string } }
+        - { name: taluk, in: query, required: true,  schema: { type: string } }
+        - { name: hobli, in: query, required: true,  schema: { type: string } }
+        - { name: vlg,   in: query, required: true,  schema: { type: string } }
+      responses:
+        "200":
+          description: RCCMS cases for village
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RccmsCase"
+        "400":
+          description: Missing required query parameters
+        "403":
+          description: Feature flag disabled
+
+  /mutations:
+    get:
+      operationId: getMutations
+      summary: Mutation (land transfer) records for a village
+      description: >
+        Returns all mutation records for the given village. All four hierarchy params required.
+        Gated by `feature.cadastral.land-records`.
+      parameters:
+        - { name: dist,  in: query, required: true,  schema: { type: string } }
+        - { name: taluk, in: query, required: true,  schema: { type: string } }
+        - { name: hobli, in: query, required: true,  schema: { type: string } }
+        - { name: vlg,   in: query, required: true,  schema: { type: string } }
+      responses:
+        "200":
+          description: Mutation records for village
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MutationRecord"
+        "400":
+          description: Missing required query parameters
+        "403":
+          description: Feature flag disabled
+
+  /village-info:
+    get:
+      operationId: getVillageInfo
+      summary: Village metadata by hierarchy codes
+      parameters:
+        - { name: dist,  in: query, required: true,  schema: { type: string } }
+        - { name: taluk, in: query, required: true,  schema: { type: string } }
+        - { name: hobli, in: query, required: true,  schema: { type: string } }
+        - { name: vlg,   in: query, required: true,  schema: { type: string } }
+      responses:
+        "200":
+          description: Village info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VillageInfo"
+        "403":
+          description: Feature flag disabled
+
+  /village-by-lgd:
+    get:
+      operationId: getVillageByLgd
+      summary: Village metadata by LGD code
+      description: Used to resolve KGIS parcels (which carry LGD_VillageCode) to e-Chawadi hierarchy.
+      parameters:
+        - name: lgd
+          in: query
+          required: true
+          schema:
+            type: string
+          description: LGD village code (e.g. "598350")
+      responses:
+        "200":
+          description: Village info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VillageByLgd"
+        "403":
+          description: Feature flag disabled
+
+  /data:
+    get:
+      operationId: getParcelData
+      summary: Parcel polygon GeoJSON for a village
+      description: >
+        Returns GeoJSON FeatureCollection of survey parcels. Always provide all four hierarchy
+        params — unscoped calls load the full 1.7 GB lake. Feature properties include
+        village_code, village_name, survey_no. Gated by `feature.cadastral.land-records`.
+      parameters:
+        - { name: dist,   in: query, required: false, schema: { type: string } }
+        - { name: taluk,  in: query, required: false, schema: { type: string } }
+        - { name: hobli,  in: query, required: false, schema: { type: string } }
+        - { name: vlg,    in: query, required: false, schema: { type: string } }
+        - { name: survey, in: query, required: false, schema: { type: string }, description: "Filter to exact survey_no" }
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection of parcels
+          content:
+            application/json:
+              schema:
+                type: object
+                description: GeoJSON FeatureCollection
+        "403":
+          description: Feature flag disabled
+
+  /lgd-villages:
+    get:
+      operationId: getLgdVillages
+      summary: LGD administrative village boundaries with coverage flag
+      description: >
+        GeoJSON FeatureCollection of Karnataka village polygons (LGD source). Each feature
+        carries `covered=true` if e-Chawadi parcel data exists for that village.
+        Used by frontend to decide whether to show e-Chawadi parcels vs fall back to KGIS.
+        Gated by `feature.cadastral.overlays`.
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+                description: GeoJSON FeatureCollection
+        "403":
+          description: Feature flag disabled
+
+  /road-width:
+    get:
+      operationId: getRoadWidth
+      summary: Road widths (BBMP + OSM) with RMP FAR mapping
+      description: >
+        Returns road polylines within the bbox. Each feature carries `width_m`, `width_built_m`,
+        `road_hier`, `highway`, `source` (BBMP | OSM_measured | OSM_derived), and client-side
+        FAR tier per RMP: <9→1.5, 9-12→1.75, 12-18→2.25, 18-24→2.75, 24-30→3.25, ≥30→3.75.
+        Gated by `feature.cadastral.overlays`.
+      parameters:
+        - name: bbox
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "minlng,minlat,maxlng,maxlat (WGS84)"
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection of road segments
+          content:
+            application/json:
+              schema:
+                type: object
+                description: GeoJSON FeatureCollection
+        "403":
+          description: Feature flag disabled
+
+  /encroachment:
+    get:
+      operationId: getEncroachment
+      summary: Rajakaluve (storm-water channel) encroachment parcels
+      description: >
+        Returns parcel polygons flagged as encroaching on Rajakaluve channels by BBMP or
+        Revenue Dept. Each feature carries survey_no, village_name, bbmp_notified,
+        revenue_flagged, near_drain, near_lake. Gated by `feature.cadastral.overlays`.
+      parameters:
+        - name: bbox
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "minlng,minlat,maxlng,maxlat (WGS84)"
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection of encroachment parcels
+          content:
+            application/json:
+              schema:
+                type: object
+                description: GeoJSON FeatureCollection
+        "404":
+          description: Encroachment dataset not built yet (graceful error)
+        "403":
+          description: Feature flag disabled
+
+  /bwssb-sewerage:
+    get:
+      operationId: getBwssbSewerage
+      summary: BWSSB sewerage network (BBMP opencity.in source)
+      parameters:
+        - { name: bbox, in: query, required: false, schema: { type: string } }
+        - name: tier
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["300+", "150-300", "<150"]
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: Feature flag disabled
+
+  /osm-powerlines:
+    get:
+      operationId: getOsmPowerlines
+      summary: OSM power line network classified by voltage
+      parameters:
+        - { name: bbox, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: Feature flag disabled
+
+  /gas-pipelines:
+    get:
+      operationId: getGasPipelines
+      summary: OSM gas pipeline network
+      parameters:
+        - { name: bbox, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: Feature flag disabled
+
+  /gas-nodes:
+    get:
+      operationId: getGasNodes
+      summary: OSM gas infrastructure nodes (compressors, CNG/LNG stations, GAIL facilities)
+      parameters:
+        - { name: bbox, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: Feature flag disabled
+
+  /drainage:
+    get:
+      operationId: getDrainage
+      summary: OSM waterways only (drains, canals, streams, ditches). HydroRIVERS now at /hydrorivers.
+      parameters:
+        - { name: bbox, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: Feature flag disabled
+
+  /hydrorivers:
+    get:
+      operationId: getHydroRivers
+      summary: HydroRIVERS river network (strahler order, discharge_cms, length_km)
+      description: >
+        strahler ≥3 = major river, <3 = minor. Gated by feature.cadastral.overlays.
+      parameters:
+        - { name: bbox, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: Feature flag disabled
+
+  /bbmp-swd:
+    get:
+      operationId: getBbmpStormDrains
+      summary: BBMP storm water drain network
+      description: >
+        tier property: primary/secondary/tertiary. Gated by feature.cadastral.overlays.
+      parameters:
+        - { name: bbox, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: Feature flag disabled
+
+  /cgd-zones:
+    get:
+      operationId: getCgdZones
+      summary: PNGRB City Gas Distribution zone boundaries
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: GeoJSON file not available
+        "403":
+          description: Feature flag disabled
+
+  /districts:
+    get:
+      operationId: listDistricts
+      summary: Districts with human-readable names (from village_roster, falls back to parquet dirs)
+      description: Gated by feature.cadastral.land-records.
+      responses:
+        "200":
+          description: Sorted list of {code, name} objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code: { type: string }
+                    name: { type: string }
+                  required: [code, name]
+        "403":
+          description: Feature flag disabled
+
+  /taluks:
+    get:
+      operationId: listTaluks
+      summary: Taluks with names for a given district
+      parameters:
+        - { name: dist, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Sorted list of {code, name} objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code: { type: string }
+                    name: { type: string }
+                  required: [code, name]
+        "403":
+          description: Feature flag disabled
+
+  /hoblis:
+    get:
+      operationId: listHoblis
+      summary: Hoblis with names for a given district + taluk
+      parameters:
+        - { name: dist, in: query, required: true, schema: { type: string } }
+        - { name: taluk, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Sorted list of {code, name} objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code: { type: string }
+                    name: { type: string }
+                  required: [code, name]
+        "403":
+          description: Feature flag disabled
+
+  /villages:
+    get:
+      operationId: listVillages
+      summary: Villages with names for a given district + taluk + hobli
+      parameters:
+        - { name: dist, in: query, required: true, schema: { type: string } }
+        - { name: taluk, in: query, required: true, schema: { type: string } }
+        - { name: hobli, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Sorted list of {code, name} objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code: { type: string }
+                    name: { type: string }
+                  required: [code, name]
+        "403":
+          description: Feature flag disabled
+
+  /wris-lakes:
+    get:
+      operationId: getWrisLakes
+      summary: WRIS water bodies (Govt of India Water Resources Information System)
+      parameters:
+        - { name: bbox, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: Feature flag disabled
+
+  /bescom-boundaries:
+    get:
+      operationId: getBescomBoundaries
+      summary: BESCOM electricity distribution boundaries (division/section/subdivision)
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: Feature flag disabled
+
+components:
+  schemas:
+    SurveySearchResult:
+      type: object
+      required: [survey_no, village_name, dist, taluk, hobli, vlg]
+      properties:
+        survey_no:    { type: string, example: "309/*/*" }
+        village_name: { type: string, example: "Krishnarajapura" }
+        dist:         { type: string, example: "1" }
+        taluk:        { type: string, example: "9" }
+        hobli:        { type: string, example: "3" }
+        vlg:          { type: string, example: "46" }
+
+    RccmsCase:
+      type: object
+      required: [ack_no, case_id, applicant_name, survey_no, case_status]
+      properties:
+        ack_no:         { type: string }
+        case_id:        { type: string }
+        applicant_name: { type: string }
+        survey_no:      { type: string }
+        case_status:    { type: string }
+
+    MutationRecord:
+      type: object
+      required: [tran_no, mr_number, applicant, transaction_type, survey_numbers, status, acquisition_type]
+      properties:
+        tran_no:          { type: string }
+        mr_number:        { type: string }
+        applicant:        { type: string }
+        transaction_type: { type: string }
+        survey_numbers:   { type: string, description: "Comma-separated survey numbers" }
+        status:           { type: string }
+        acquisition_type: { type: string }
+
+    VillageInfo:
+      type: object
+      required: [village_name, has_parcel_data]
+      properties:
+        village_name:    { type: string }
+        lgd_code:        { type: string, nullable: true }
+        has_parcel_data: { type: boolean }
+
+    VillageByLgd:
+      type: object
+      required: [lgd_code, covered]
+      properties:
+        lgd_code:      { type: string }
+        village_name:  { type: string }
+        hobli_name:    { type: string }
+        taluk_name:    { type: string }
+        district_name: { type: string }
+        covered:       { type: boolean, description: "true if e-Chawadi parcel data exists" }

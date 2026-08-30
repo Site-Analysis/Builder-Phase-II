@@ -1,3 +1,5 @@
+services/cadastral/cadastral-data/
+
 # Node
 node_modules/
 dist/
@@ -34,6 +36,35 @@ venv/
 # Secrets
 /services/service-account.json
 gee-sa.json
+frontend-env-handoff.txt
 
 # IMD test download artifacts
 stn/
+
+# Graphify knowledge-graph output (local tool artifact)
+graphify-out/
+
+# Dev-only tunnel tooling — never committed
+infra/Caddyfile.local
+docker-compose.override.yml
+
+# Spike / build-plan working docs (binary .docx working notes — not repo source-of-record).
+# Keep docs/feature-validation/ and all other docs tracked; only this path is ignored.
+docs/spikes/
+
+# Large fallback data blobs — download-on-setup, NOT committed (reproducible open data).
+# Fetch/verify via scripts/fetch_fallback_data.py; provenance in
+# services/geo/app/data/FALLBACK_SOURCES.md. The small wards file (2.9 MB, ODbL) is NOT
+# ignored — it stays committable.
+/services/geo/app/data/lgd_villages.geojson
+
+# US-088 deal-killer overlay layers — derived KA slices (prep-on-setup via
+# scripts/prep_overlay_layers.py from the raw MoEFCC/SOI/WRIS sources, NOT committed).
+# The big three are gitignored; the two small ones (eco_sensitive_zones_ka 1.1 MB,
+# ramsar_wetlands_ka 0.1 MB) stay committable.
+/services/geo/app/data/wetlands_ka.geojson
+/services/geo/app/data/lakes_ka.geojson
+/services/geo/app/data/forests_ka.geojson
+# US-089 Part 1 — NDEM flood inundation KA slice (87 MB India-wide source; KA slice is large,
+# derived, prep-on-setup). NEVER committed.
+/services/geo/app/data/flood_inundation_ka.geojson

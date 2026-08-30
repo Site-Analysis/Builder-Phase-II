@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Flood Risk Service
-  version: "1.7.0"
+  version: "1.8.0"
   description: >
     Flood risk scoring from live data — Open-Meteo SRTM elevation + 5-year ERA5 daily
     precipitation, and OSM Overpass water-body proximity. Composite 0–100 score across
@@ -55,8 +55,126 @@ paths:
         "422":
           description: Validation error
 
+  /flood/terrain:
+    post:
+      operationId: analyzeTerrain
+      summary: Slope / HAND / cut-fill + geotech from a DEM window (US-089)
+      description: >
+        Slope %, HAND, and cut/fill volumes computed from a Copernicus GLO-30 DEM window over the
+        parcel polygon (reprojected to EPSG:32643 — metric CRS, never degree-spaced). NODATA is
+        masked; a window >20% nodata returns `unresolved`, never a phantom 0.0. Bearing capacity is
+        a MANUAL tier only — authoritative when a geotechnical value is supplied, otherwise
+        `unresolved` (never inferred from soil type). FABDEM (non-commercial) is not used. Gated by
+        `feature.flood.terrain`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerrainRequest"
+      responses:
+        "200":
+          description: Terrain analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerrainResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
 components:
   schemas:
+    TerrainRequest:
+      type: object
+      required: [parcel_geojson]
+      properties:
+        parcel_geojson:
+          type: object
+          description: GeoJSON Polygon (WGS84) of the parcel
+        target_pad_m:
+          type: number
+          format: float
+          nullable: true
+          description: cut-fill target pad level (m); defaults to the parcel mean elevation
+        bearing_capacity_kpa:
+          type: number
+          format: float
+          nullable: true
+          description: manual geotechnical safe bearing capacity (kPa)
+        geotech_method:
+          type: string
+          nullable: true
+        geotech_source:
+          type: string
+          nullable: true
+    Confidence:
+      type: string
+      enum: ["authoritative", "inferred", "unresolved"]
+    SlopeResult:
+      type: object
+      required: [status, confidence]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        slope_pct_mean: { type: number, format: float, nullable: true }
+        slope_pct_max: { type: number, format: float, nullable: true }
+        slope_deg_mean: { type: number, format: float, nullable: true }
+        nodata_pct: { type: number, format: float, nullable: true }
+        dem_source: { type: string, nullable: true }
+        crs: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    HandResult:
+      type: object
+      required: [status, confidence]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        hand_m_mean: { type: number, format: float, nullable: true }
+        hand_m_max: { type: number, format: float, nullable: true }
+        drainage_elev_m: { type: number, format: float, nullable: true }
+        method_note: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    CutFillResult:
+      type: object
+      required: [status, confidence]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        target_pad_m: { type: number, format: float, nullable: true }
+        target_source: { type: string, nullable: true }
+        cut_m3: { type: number, format: float, nullable: true }
+        fill_m3: { type: number, format: float, nullable: true }
+        net_m3: { type: number, format: float, nullable: true }
+        cell_area_m2: { type: number, format: float, nullable: true }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    BearingCapacityResult:
+      type: object
+      required: [status, confidence]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        value_kpa: { type: number, format: float, nullable: true }
+        method: { type: string, nullable: true }
+        source: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+    TerrainResult:
+      type: object
+      required: [status, slope, hand, cut_fill, bearing_capacity, dem_source]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        slope: { $ref: "#/components/schemas/SlopeResult" }
+        hand: { $ref: "#/components/schemas/HandResult" }
+        cut_fill: { $ref: "#/components/schemas/CutFillResult" }
+        bearing_capacity: { $ref: "#/components/schemas/BearingCapacityResult" }
+        dem_source: { type: string }
+        notes: { type: array, items: { type: string } }
+        data_disclaimer: { type: string }
     FloodRequest:
       type: object
       required: [latitude, longitude]
@@ -104,7 +222,7 @@ components:
     ElevationAnalysis:
       type: object
       required:
-        [mean_m, min_m, max_m, range_m, slope_degrees, low_lying_area_pct, terrain_classification]
+        [mean_m, min_m, max_m, range_m, low_lying_area_pct, terrain_classification]
       properties:
         mean_m:
           type: number
@@ -121,6 +239,14 @@ components:
         slope_degrees:
           type: number
           format: float
+          nullable: true
+          description: >
+            US-089 bug fix — null at a single point (slope is undefined at a point). Was a
+            hardcoded 0.0 that read as "flat"; POST a parcel polygon to /flood/terrain for a
+            GLO-30 DEM-window slope.
+        slope_note:
+          type: string
+          nullable: true
         low_lying_area_pct:
           type: number
           format: float

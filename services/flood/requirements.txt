@@ -4,5 +4,14 @@ pydantic==2.13.4
 pydantic-settings==2.14.2
 python-dotenv==1.2.2
 httpx==0.28.1
+numpy==1.26.4              # US-089 terrain slope/HAND/cut-fill math
+earthengine-api==1.6.9    # US-089 GLO-30 DEM window (inert without gee-sa.json creds)
 pytest==9.0.3
 pytest-asyncio==1.4.0
+
+# OpenTelemetry (zero-code instrumentation)
+opentelemetry-distro>=0.50b0
+opentelemetry-exporter-otlp-proto-grpc>=1.29.0
+
+# Auth — Keycloak JWT validation
+python-jose[cryptography]>=3.3.0

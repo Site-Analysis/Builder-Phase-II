@@ -56,6 +56,212 @@ class InfraSubScores(BaseModel):
     telecom: float  # always 0 — OSM telecom coverage <20% in India, not scored
 
 
+Confidence = Literal["authoritative", "inferred", "unresolved"]
+# US-092 C4 ladder (adds `derived`); C2 signals carry it. Mirrors packages/confidence, locked by the
+# cross-service confidence guard.
+LadderConfidence = Literal["authoritative", "derived", "inferred", "unresolved"]
+Presence = Literal["present", "absent", "unknown"]
+SignalStatus = Literal["resolved", "partial", "unresolved"]
+
+
+class SignalUnknown(BaseModel):
+    """US-092 C2: one decision-relevant input that is UNRESOLVED — surfaced as a 'confirm this'
+    item so the verdict blocks a clean GO, never averages it into a passing score."""
+
+    name: str
+    next_action: str
+
+
+class UtilityMain(BaseModel):
+    """A trunk main (BWSSB water / sewer). `present="present"` is ONLY allowed at `authoritative`
+    confidence (an official BWSSB/KGIS mains layer) — OSM/inference can never assert a main exists,
+    so without an authoritative layer this is `present="unknown"` + "verify with BWSSB" (US-087)."""
+
+    name: str
+    present: Presence = "unknown"
+    confidence: Confidence = "unresolved"
+    distance_m: float | None = None
+    diameter_mm: float | None = None
+    data_source: str | None = None
+    reason: str | None = None
+    next_action: str | None = None
+
+
+class UtilityAvailability(BaseModel):
+    """A SCORED availability signal from an inferred proxy (OSM). Never asserts a connection."""
+
+    name: str
+    score: float                      # 0-100 inferred availability
+    confidence: Confidence = "inferred"
+    nearest_m: float | None = None
+    detected: bool = False
+    note: str | None = None
+
+
+class NocChecklistItem(BaseModel):
+    authority: str
+    requirement: str
+    rule_citation: str
+    typical_validity: str | None = None
+    deep_link: str | None = None
+    applies_when: str | None = None   # e.g. "building height >= 24 m" for Fire NOC
+    mandatory: bool = True
+
+
+class InfraReadiness(BaseModel):
+    """Compact signal the US-092 GO/NO-GO engine consumes. Water is `known`/`unknown` (never
+    fabricated); telecom + power are inferred scores; `noc_pending` counts mandatory obligations.
+
+    US-092 C2: `resolved_score` is computed over KNOWN inputs ONLY (null when too few are known), so
+    an unresolved input is NEVER averaged into a middling pass. `status=unresolved` + `unknowns`
+    surfaces exactly what must be confirmed; `confidence` is on the C4 ladder (`unresolved` when the
+    signal is)."""
+
+    water_status: Presence
+    water_confidence: Confidence
+    telecom_score: float
+    power_score: float | None = None
+    road_score: float | None = None
+    noc_pending: int
+    overall: Literal["ready", "partial", "unknown"]
+    # C2 known-vs-unknown structure
+    status: SignalStatus = "unresolved"
+    resolved_score: float | None = None      # over KNOWN inputs only; null if too few known
+    unresolved_count: int = 0
+    unknowns: list[SignalUnknown] = []
+    confidence: LadderConfidence = "unresolved"
+    notes: list[str] = []
+
+
+class UtilitiesResult(BaseModel):
+    water_main: UtilityMain
+    sewer_main: UtilityMain
+    water_availability: UtilityAvailability
+    telecom_availability: UtilityAvailability
+    storm_water_note: str
+    noc_checklist: list[NocChecklistItem]
+    infra_readiness: InfraReadiness
+    data_source: str
+    data_disclaimer: str = (
+        "Water/sewer trunk-main PRESENCE requires an authoritative BWSSB/KGIS mains layer — absent "
+        "that, presence is 'unknown' (OSM cannot assert a main exists). Telecom availability is an "
+        "inferred OSM proxy. Storm-water/rajakaluve proximity: see the geo /geo/overlays engine. "
+        "The NOC checklist items are mandatory obligations, not scored constraints — confirm each "
+        "with its authority."
+    )
+
+
+class ConnectivityRequest(BaseModel):
+    latitude: float
+    longitude: float
+    radius_m: float = Field(2000, ge=0)
+    # optional road-width tiers passed through to the planning road_width_resolver
+    surveyed_width_m: float | None = None
+    measured_width_m: float | None = None
+    lane_count: int | None = None
+
+
+class TransportDistance(BaseModel):
+    """One transport mode's distance. `distance_type` labels straight-line vs network — never
+    conflated. Unresolved (distance_m None) when the source is not fetchable — never fabricated."""
+
+    mode: str
+    status: Literal["resolved", "unresolved"]
+    name: str | None = None
+    ref: str | None = None
+    distance_m: float | None = None
+    distance_type: Literal["straight-line", "network"] | None = None
+    confidence: Confidence
+    crs: str = "EPSG:32643"
+    data_source: str | None = None
+    reason: str | None = None
+    next_action: str | None = None
+
+
+class RoadWidthConn(BaseModel):
+    """Access-road width from the planning road_width_resolver (NOT recomputed here)."""
+
+    status: Literal["resolved", "unresolved"]
+    value_m: float | None = None
+    band: dict | None = None
+    confidence: str
+    source: str = "planning road_width_resolver"
+    reason: str | None = None
+    next_action: str | None = None
+
+
+class ConnectivitySignal(BaseModel):
+    """Compact signal for the US-092 GO/NO-GO engine (same shape family as infra_readiness).
+
+    US-092 C2: `resolved_score` is over KNOWN decision inputs ONLY (null when only the always-bundled
+    airport is known), so an all-unresolved signal never reads as a middling pass. `status` +
+    `unknowns` surface what must be confirmed; `confidence` is on the C4 ladder."""
+
+    airport_km: float | None = None
+    airport_distance_type: str | None = None
+    metro_status: Literal["resolved", "unresolved"]
+    road_width_confidence: str | None = None
+    access_flags: list[str] = []
+    overall: Literal["good", "partial", "unknown"]
+    # C2 known-vs-unknown structure
+    status: SignalStatus = "unresolved"
+    resolved_score: float | None = None      # over KNOWN inputs only; null if too few known
+    unresolved_count: int = 0
+    unknowns: list[SignalUnknown] = []
+    confidence: LadderConfidence = "unresolved"
+    notes: list[str] = []
+
+
+class ConnectivityResult(BaseModel):
+    airport: TransportDistance
+    metro: TransportDistance
+    rail: TransportDistance
+    highway: TransportDistance
+    road_width: RoadWidthConn
+    # US-092 C2: null when the signal is unresolved (only the bundled airport is known) — a single
+    # misleading number is NEVER emitted for an all-unresolved connectivity read.
+    connectivity_score: float | None = None
+    access_flags: list[str] = []
+    connectivity_signal: ConnectivitySignal
+    data_source: str
+    data_disclaimer: str = (
+        "Airport distance is STRAIGHT-LINE from the AAI ARP (not a road-network distance). "
+        "Metro/rail/highway resolve only from real sources — 'unresolved' means the source was not "
+        "fetchable, NOT that the feature is absent/far. Access-road width comes from the planning "
+        "road_width_resolver tier chain. Airport HEIGHT limits are in the planning envelope."
+    )
+
+
+class PowerLine(BaseModel):
+    voltage_kv: int | None = None
+    operator: str | None = None
+    distance_m: float
+    classification: str  # "transmission"|"distribution_ht"|"distribution_lt"|"unknown"
+    confidence: str = "derived"
+
+
+class PowerSubstation(BaseModel):
+    name: str | None = None
+    voltage_kv: int | None = None
+    operator: str | None = None
+    distance_m: float
+    lat: float
+    lon: float
+    confidence: str = "derived"
+
+
+class PowerGridResult(BaseModel):
+    nearest_ht_line: PowerLine | None = None        # ≥66kV KPTCL transmission
+    nearest_distribution_line: PowerLine | None = None  # 11-33kV BESCOM
+    nearest_substation: PowerSubstation | None = None
+    bescom_lt_within_200m: bool = False
+    bescom_ht_within_2km: bool = False
+    kptcl_ht_within_5km: bool = False
+    radius_m: int
+    data_source: str
+    data_disclaimer: str
+
+
 class InfraResult(BaseModel):
     road_access: RoadAccess | None = None
     transit: list[TransitStop] = []

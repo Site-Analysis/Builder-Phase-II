@@ -127,6 +127,58 @@ def _road_score(nearest_road_m: float, road_type: str | None, surface: str | Non
 
 
 class InfrastructureService:
+    async def get_utilities(self, lat: float, lon: float, radius_m: float = 3000) -> dict:
+        """US-087 — water/telecom availability (OSM proxy) + BWSSB main tier (authoritative-only)
+        + NOC checklist + infra_readiness. Water/telecom are inferred proximity signals only; a
+        trunk-main presence claim requires the authoritative BWSSB layer (not wired -> 'unknown')."""
+        from app.services.utilities_service import build_utilities
+
+        water_q = f"""
+[out:json][timeout:20];
+(
+  node[amenity=water_works](around:{radius_m},{lat},{lon});
+  node[man_made=water_tower](around:{radius_m},{lat},{lon});
+  way[man_made=water_works](around:{radius_m},{lat},{lon});
+);
+out center 20;
+"""
+        telecom_q = f"""
+[out:json][timeout:20];
+(
+  node[man_made=mast](around:{radius_m},{lat},{lon});
+  node[man_made=communications_tower](around:{radius_m},{lat},{lon});
+  node[man_made=tower]["tower:type"=communication](around:{radius_m},{lat},{lon});
+);
+out center 20;
+"""
+        try:
+            async with httpx.AsyncClient(timeout=35) as c:
+                r_water = (await c.post(OVERPASS_URL, data={"data": water_q})).json()
+                r_telecom = (await c.post(OVERPASS_URL, data={"data": telecom_q})).json()
+        except Exception:
+            raise HTTPException(status_code=502, detail="OSM upstream unavailable")
+
+        def _nearest(elements: list[dict[str, Any]]) -> tuple[bool, float | None]:
+            best: float | None = None
+            for el in elements:
+                c_pos = _center(el)
+                if c_pos is None:
+                    continue
+                d = _haversine(lat, lon, c_pos[0], c_pos[1])
+                if best is None or d < best:
+                    best = round(d, 1)
+            return (best is not None, best)
+
+        water_det, water_near = _nearest(r_water.get("elements", []))
+        telecom_det, telecom_near = _nearest(r_telecom.get("elements", []))
+        # BWSSB authoritative mains layer is not wired (env BWSSB_MAINS_URL) -> hits None ->
+        # main presence stays 'unknown' (never inferred from the OSM proxy above).
+        return build_utilities(
+            water_detected=water_det, water_nearest_m=water_near,
+            telecom_detected=telecom_det, telecom_nearest_m=telecom_near,
+            bwssb_water_hit=None, bwssb_sewer_hit=None,
+        )
+
     async def analyze(self, lat: float, lon: float, radius_m: float = 2000) -> InfraResult:
         # Aerodromes excluded from transit — airport proximity is in Planning service.
         road_query = f"""

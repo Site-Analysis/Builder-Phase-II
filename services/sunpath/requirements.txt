@@ -33,3 +33,10 @@ python-dotenv==1.2.2
 # Tests
 pytest==9.0.3
 pytest-asyncio==1.4.0
+
+# OpenTelemetry (zero-code instrumentation)
+opentelemetry-distro>=0.50b0
+opentelemetry-exporter-otlp-proto-grpc>=1.29.0
+
+# Auth — Keycloak JWT validation
+python-jose[cryptography]>=3.3.0

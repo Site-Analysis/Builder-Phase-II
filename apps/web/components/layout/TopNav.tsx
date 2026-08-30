@@ -5,8 +5,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Settings, Upload, Plus, LogOut, MapPin } from "lucide-react";
+import { Settings, Upload, Plus, LogOut, MapPin, ArrowLeftRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useProfileStore } from "@/lib/stores/profile";
+import { useUIStore } from "@/lib/stores/ui";
 
 export interface Breadcrumb {
   label: string;
@@ -28,6 +31,8 @@ export interface TopNavProps {
   onNewAnalysisClick?: () => void;
   onCurrentLocationClick?: () => void;
   showCurrentLocation?: boolean;
+  viewProfile?: "architect" | "builder";
+  onSwitchProfile?: () => void;
   className?: string;
 }
 
@@ -46,8 +51,20 @@ export function TopNav({
   onNewAnalysisClick,
   onCurrentLocationClick,
   showCurrentLocation,
+  viewProfile,
+  onSwitchProfile,
   className,
 }: TopNavProps) {
+  const router = useRouter();
+  const storeProfile = useProfileStore((s) => s.profile);
+  const { nightMode, toggleNightMode } = useUIStore();
+  // Self-source the active profile + switch action so every TopNav page shows the
+  // badge without prop-threading; explicit props still override.
+  const effectiveProfile = viewProfile ?? storeProfile ?? undefined;
+  const switchProfile = onSwitchProfile ?? (() => router.push("/select-profile"));
+  const isBuilder = effectiveProfile === "builder";
+  const profileAccent = isBuilder ? "#C4865A" : "#306223";
+  const profileLabel = isBuilder ? "Builders" : "Architect";
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
@@ -178,6 +195,17 @@ export function TopNav({
         {/* Extra right content (e.g. layout toggle on Settings page) */}
         {rightContent}
 
+        {/* Global night/day toggle */}
+        <button
+          onClick={toggleNightMode}
+          title={nightMode ? "Switch to day mode" : "Switch to night mode"}
+          aria-label={nightMode ? "Day mode" : "Night mode"}
+          className="flex h-8 w-8 items-center justify-center rounded border border-neutral-border bg-neutral-surface hover:bg-neutral-bg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-secondary"
+          style={nightMode ? { background: "#1a1f2e", borderColor: "#3a4460" } : undefined}
+        >
+          <span style={{ fontSize: 15, lineHeight: 1 }}>{nightMode ? "☀️" : "🌙"}</span>
+        </button>
+
         {onSettingsClick && (
           <button
             onClick={onSettingsClick}
@@ -185,6 +213,20 @@ export function TopNav({
             className="flex h-8 w-8 items-center justify-center rounded border border-neutral-border bg-neutral-surface text-text-secondary hover:text-text-primary hover:bg-neutral-bg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-secondary"
           >
             <Settings size={15} aria-hidden />
+          </button>
+        )}
+
+        {/* View-profile badge → quick switch */}
+        {effectiveProfile && (
+          <button
+            onClick={switchProfile}
+            title="Switch profile"
+            aria-label={`Current profile: ${profileLabel} View. Switch profile.`}
+            className="flex items-center gap-1.5 h-8 px-2.5 rounded-full border text-[12px] font-semibold transition-opacity hover:opacity-80"
+            style={{ borderColor: `${profileAccent}55`, color: profileAccent, background: `${profileAccent}14` }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: 999, background: profileAccent }} />
+            {profileLabel}
           </button>
         )}
 
@@ -233,6 +275,14 @@ export function TopNav({
 
               {/* Actions */}
               <div className="py-1">
+                <button
+                  role="menuitem"
+                  onClick={() => { setProfileOpen(false); switchProfile(); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-text-primary hover:bg-neutral-bg transition-colors text-left"
+                >
+                  <ArrowLeftRight size={14} className="text-text-secondary shrink-0" aria-hidden />
+                  Switch profile{effectiveProfile ? ` · ${profileLabel}` : ""}
+                </button>
                 {onSettingsClick && (
                   <button
                     role="menuitem"

@@ -4,20 +4,31 @@
 "use client";
 
 import { create } from "zustand";
-import type { User, Session } from "@supabase/supabase-js";
+
+interface AuthUser {
+  id: string;
+  email?: string;
+  name?: string;
+  user_metadata?: {
+    studio_name?: string;
+    full_name?: string;
+    avatar_url?: string;
+    [key: string]: string | undefined;
+  };
+}
 
 interface AuthState {
-  user: User | null;
-  session: Session | null;
+  user: AuthUser | null;
+  accessToken: string | null;
   isAuthenticated: boolean;
-  setAuth: (user: User, session: Session) => void;
+  setAuth: (user: AuthUser, accessToken: string) => void;
   clearAuth: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  session: null,
+  accessToken: null,
   isAuthenticated: false,
-  setAuth: (user, session) => set({ user, session, isAuthenticated: true }),
-  clearAuth: () => set({ user: null, session: null, isAuthenticated: false }),
+  setAuth: (user, accessToken) => set({ user, accessToken, isAuthenticated: true }),
+  clearAuth: () => set({ user: null, accessToken: null, isAuthenticated: false }),
 }));

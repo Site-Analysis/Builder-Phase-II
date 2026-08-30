@@ -1,0 +1,39 @@
+{
+  "id": "sat",
+  "realm": "sat",
+  "displayName": "SAT Platform",
+  "enabled": true,
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "sslRequired": "external",
+  "defaultSignatureAlgorithm": "RS256",
+  "accessTokenLifespan": 3600,
+  "clients": [
+    {
+      "clientId": "sat-web",
+      "name": "SAT Web Frontend",
+      "description": "Next.js frontend (Vercel)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "https://*.vercel.app/*",
+        "https://builder.qnit.site/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "https://builder.qnit.site",
+        "+"
+      ],
+      "protocol": "openid-connect"
+    }
+  ]
+}

@@ -5,8 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase/client";
-import { useAuthStore } from "@/lib/stores/auth";
+import { signIn, useSession } from "next-auth/react";
 
 const MODULES = [
   { label: "Sun Path",    dot: "#F59E0B", bg: "rgba(245,158,11,0.10)",  text: "#8A6820", border: "rgba(245,158,11,0.22)" },
@@ -102,45 +101,23 @@ function SitePlanSVG() {
 
 export default function LoginPage() {
   const router = useRouter();
-  const setAuth = useAuthStore((s) => s.setAuth);
+  const { status } = useSession();
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState("");
 
-  const [email,    setEmail]    = useState("");
-  const [password, setPassword] = useState("");
-  const [error,    setError]    = useState("");
-  const [loading,  setLoading]  = useState(false);
-  const [mode,     setMode]     = useState<"signin" | "signup">("signin");
-
-  // Already signed in (localStorage session) → skip the form. Covers the
-  // qnit.site/ → /login middleware redirect for authenticated users.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace("/dashboard");
-    });
-  }, [router]);
+    if (status === "authenticated") router.replace("/dashboard");
+  }, [status, router]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
+  async function handleKeycloak() {
     setLoading(true);
-    const fn = mode === "signin"
-      ? supabase.auth.signInWithPassword({ email, password })
-      : supabase.auth.signUp({ email, password });
-    const { data, error: authError } = await fn;
-    setLoading(false);
-    if (authError) { setError(authError.message); return; }
-    if (data.user && data.session) {
-      setAuth(data.user, data.session);
-      router.push("/dashboard");
-    } else if (mode === "signup") {
-      setError("Check your email to confirm your account.");
+    setError("");
+    try {
+      await signIn("keycloak", { callbackUrl: "/dashboard" });
+    } catch {
+      setError("Sign-in failed. Please try again.");
+      setLoading(false);
     }
-  }
-
-  async function handleGoogle() {
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard` },
-    });
   }
 
   return (
@@ -234,7 +211,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ── Right: form panel ───────────────────────────────────────── */}
+      {/* ── Right: sign-in panel ─────────────────────────────────────── */}
       <div style={{
         flex: 1,
         background: "linear-gradient(160deg, #FDFCFB 0%, #F5F0EB 100%)",
@@ -244,138 +221,37 @@ export default function LoginPage() {
         <div style={{ width: "100%", maxWidth: 360 }}>
 
           <div style={{ fontSize: 22, fontWeight: 700, color: "#3A3F3B", letterSpacing: "-0.3px" }}>
-            {mode === "signin" ? "Sign in" : "Create account"}
+            Sign in
           </div>
-          <div style={{ fontSize: 13, color: "#7B8F83", marginTop: 4, marginBottom: 26 }}>
-            {mode === "signin"
-              ? "Welcome back — your projects are waiting."
-              : "Start analysing sites in minutes."}
+          <div style={{ fontSize: 13, color: "#7B8F83", marginTop: 4, marginBottom: 32 }}>
+            Welcome back — your projects are waiting.
           </div>
 
-          <form onSubmit={handleSubmit} noValidate>
-            {/* Email */}
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "#3A3F3B", marginBottom: 5, display: "block" }}>
-                Email address
-              </label>
-              <input
-                type="email" required value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@studio.com"
-                style={{
-                  width: "100%", height: 42, border: "1.5px solid #CFD6C4",
-                  borderRadius: 10, padding: "0 13px", fontSize: 13,
-                  fontFamily: "inherit", color: "#3A3F3B", background: "#FDFCFB", outline: "none",
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = "#99CDD8";
-                  e.target.style.boxShadow = "0 0 0 3px rgba(153,205,216,0.18)";
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = "#CFD6C4";
-                  e.target.style.boxShadow = "none";
-                }}
-              />
-            </div>
+          {error && (
+            <p style={{ fontSize: 12, color: "#C46A6A", marginBottom: 16 }}>{error}</p>
+          )}
 
-            {/* Password */}
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                <label style={{ fontSize: 12, fontWeight: 500, color: "#3A3F3B" }}>Password</label>
-                {mode === "signin" && (
-                  <span style={{ fontSize: 11, color: "#99CDD8", cursor: "pointer", fontWeight: 500 }}>
-                    Forgot password?
-                  </span>
-                )}
-              </div>
-              <input
-                type="password" required value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                style={{
-                  width: "100%", height: 42,
-                  border: `1.5px solid ${error ? "#C46A6A" : "#CFD6C4"}`,
-                  borderRadius: 10, padding: "0 13px", fontSize: 13,
-                  fontFamily: "inherit", color: "#3A3F3B", background: "#FDFCFB", outline: "none",
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = "#99CDD8";
-                  e.target.style.boxShadow = "0 0 0 3px rgba(153,205,216,0.18)";
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = error ? "#C46A6A" : "#CFD6C4";
-                  e.target.style.boxShadow = "none";
-                }}
-              />
-              {error && <p style={{ fontSize: 11, color: "#C46A6A", marginTop: 5 }}>{error}</p>}
-            </div>
-
-            {/* Submit */}
-            <button
-              type="submit" disabled={loading}
-              style={{
-                width: "100%", height: 42,
-                background: loading ? "#24491a" : "#306223",
-                color: "white", border: "none", borderRadius: 10,
-                fontSize: 13, fontWeight: 600,
-                cursor: loading ? "not-allowed" : "pointer",
-                fontFamily: "inherit", marginTop: 4, opacity: loading ? 0.8 : 1,
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) => { if (!loading) (e.target as HTMLButtonElement).style.background = "#24491a"; }}
-              onMouseLeave={(e) => { if (!loading) (e.target as HTMLButtonElement).style.background = "#306223"; }}
-            >
-              {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
-            </button>
-          </form>
-
-          {/* Divider */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "18px 0" }}>
-            <div style={{ flex: 1, height: 1, background: "#CFD6C4" }}/>
-            <span style={{ fontSize: 11, color: "#B8C4BB" }}>or</span>
-            <div style={{ flex: 1, height: 1, background: "#CFD6C4" }}/>
-          </div>
-
-          {/* Google */}
           <button
-            type="button" onClick={handleGoogle}
+            type="button"
+            onClick={handleKeycloak}
+            disabled={loading}
             style={{
-              width: "100%", height: 42, background: "#FDFCFB",
-              color: "#3A3F3B", border: "1.5px solid #CFD6C4",
-              borderRadius: 10, fontSize: 13, fontWeight: 500,
-              cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
-              transition: "background 0.12s",
+              width: "100%", height: 44,
+              background: loading ? "#24491a" : "#306223",
+              color: "white", border: "none", borderRadius: 10,
+              fontSize: 13, fontWeight: 600,
+              cursor: loading ? "not-allowed" : "pointer",
+              fontFamily: "inherit", opacity: loading ? 0.8 : 1,
+              transition: "background 0.15s",
             }}
-            onMouseEnter={(e) => { (e.currentTarget).style.background = "#F4F0EB"; }}
-            onMouseLeave={(e) => { (e.currentTarget).style.background = "#FDFCFB"; }}
+            onMouseEnter={(e) => { if (!loading) (e.target as HTMLButtonElement).style.background = "#24491a"; }}
+            onMouseLeave={(e) => { if (!loading) (e.target as HTMLButtonElement).style.background = "#306223"; }}
           >
-            <svg width="17" height="17" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-              <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z" fill="#4285F4"/>
-              <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18Z" fill="#34A853"/>
-              <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332Z" fill="#FBBC05"/>
-              <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58Z" fill="#EA4335"/>
-            </svg>
-            Continue with Google
+            {loading ? "Redirecting…" : "Sign in with Qnit account"}
           </button>
 
-          {/* Toggle sign-in / sign-up */}
-          <div style={{ textAlign: "center", marginTop: 18, fontSize: 12, color: "#7B8F83" }}>
-            {mode === "signin" ? (
-              <>Don&apos;t have an account?{" "}
-                <span
-                  onClick={() => { setMode("signup"); setError(""); }}
-                  style={{ color: "#99CDD8", fontWeight: 600, cursor: "pointer" }}
-                >Sign up free</span>
-              </>
-            ) : (
-              <>Already have an account?{" "}
-                <span
-                  onClick={() => { setMode("signin"); setError(""); }}
-                  style={{ color: "#99CDD8", fontWeight: 600, cursor: "pointer" }}
-                >Sign in</span>
-              </>
-            )}
+          <div style={{ textAlign: "center", marginTop: 20, fontSize: 11, color: "#B8C4BB" }}>
+            You&apos;ll be redirected to the Qnit identity portal.
           </div>
         </div>
       </div>

@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sat:planning/rmp-2015-config",
+  "title": "BDA RMP-2015 buildable-envelope lookup config",
+  "description": "Authoritative-tier. Cells transcribed from RMP-2015 Vol-III printed Zoning-Regulation tables (IndiaCode, zoning_regulations_rmp2015f.pdf; Table 22 = FAR & ground coverage, Table 8 = setbacks by height & plot size, + three-ring land-use classification) and verified against the plan's worked examples. Provenance is SPLIT: regulatory_source = PRIMARY citation (required + non-null for any 'authoritative' or 'derived' cell); transcription_origin = where the value was read THIS time (OpenCity = 'inferred'). A cell you cannot read from the primary PDF stays EMPTY + PENDING; NBCS-2026 fallback cells are 'derived' and carry karnataka_adoption_status. Dated overlays (e.g. 11-Nov-2025 UDD setback amendment) live in amendments[]. Enforced at load time by app/config/rmp_loader.py.",
+  "type": "object",
+  "required": ["config_version", "status", "cells", "transcription_origin"],
+  "properties": {
+    "config_version": { "type": "string" },
+    "plan_name": { "type": "string" },
+    "ruleset_name": { "type": "string" },
+    "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+    "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+    "karnataka_adoption_status": { "type": "string", "description": "e.g. 'not_adopted_as_of:2026-06' — required on derived (NBCS) cells; may be set at config level for inheritance" },
+    "enforceability_note": { "type": "string" },
+    "source_note": { "type": "string" },
+    "transcription_blocker": { "type": "string" },
+    "status": { "type": "string", "enum": ["template-empty", "partial-unverified", "partial-verified", "verified"] },
+    "fallback_ruleset": { "type": "string" },
+    "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" }, "description": "LEGACY rigid uniform-key block ([zone x ring x road x plot]). Retained for back-compat; the RMP-2015 config leaves this empty and uses far_tables[] instead (Gate-0: ring is a modifier, not a base-FAR axis; FAR keying differs per zone)." },
+    "far_tables": { "type": "array", "items": { "$ref": "#/$defs/far_table" }, "description": "Per-zone base FAR/GC tables with DIFFERENT key shapes (key_type: plot_size | road_width | flat)." },
+    "far_modifiers": { "$ref": "#/$defs/far_modifiers" },
+    "setback_rules": { "$ref": "#/$defs/setback_rules" },
+    "amendments": { "type": "array", "items": { "$ref": "#/$defs/amendment" } }
+  },
+  "$defs": {
+    "band": {
+      "type": "object",
+      "required": ["min", "max"],
+      "additionalProperties": false,
+      "properties": {
+        "min": { "type": "number", "minimum": 0 },
+        "max": { "type": ["number", "null"], "minimum": 0, "description": "null = open-ended upper band" }
+      }
+    },
+    "regulatory_source": {
+      "type": ["object", "null"],
+      "description": "PRIMARY citation. REQUIRED + non-null for any 'authoritative'/'derived' cell or config.",
+      "required": ["doc", "page_ref"],
+      "properties": {
+        "doc": { "type": "string", "minLength": 1, "description": "e.g. 'RMP-2015 Vol-III' or 'SP 7:2026 (NBCS 2026)'" },
+        "page_ref": { "type": "string", "minLength": 1, "description": "exact page/table, e.g. 'Table 22, p.NN'" },
+        "url": { "type": "string" }
+      }
+    },
+    "transcription_origin": {
+      "type": "object",
+      "description": "Where the digitized value was actually read THIS time. May be OpenCity ('inferred').",
+      "required": ["source", "confidence"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+        "url": { "type": "string" }
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["zone", "ring", "road_width_band_m", "plot_size_band_sqm", "far", "ground_coverage", "setbacks", "ecs", "mixed_use_pct", "confidence", "transcription_origin"],
+      "properties": {
+        "zone": { "enum": ["Residential", "Commercial", "Industrial", "Mixed Use", "Institutional", "Agricultural", "Green Belt", "Water Body", "Restricted"] },
+        "ring": { "enum": ["I", "II", "III"], "description": "I core / II core-ORR / III beyond (RMP-2015 three-ring classification)" },
+        "road_width_band_m": { "$ref": "#/$defs/band" },
+        "plot_size_band_sqm": { "$ref": "#/$defs/band" },
+        "far": { "type": "number", "exclusiveMinimum": 0 },
+        "ground_coverage": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "setbacks": {
+          "type": "object",
+          "required": ["front_m", "rear_m", "side_m"],
+          "additionalProperties": false,
+          "properties": {
+            "front_m": { "type": "number", "minimum": 0 },
+            "rear_m": { "type": "number", "minimum": 0 },
+            "side_m": { "type": "number", "minimum": 0 }
+          }
+        },
+        "ecs": {
+          "type": "object",
+          "required": ["basis", "value_per_100sqm"],
+          "properties": {
+            "basis": { "type": "string", "minLength": 1 },
+            "value_per_100sqm": { "type": "number", "minimum": 0 },
+            "visitor_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+          }
+        },
+        "mixed_use_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "confidence": { "enum": ["authoritative", "derived", "inferred"], "description": "'authoritative'/'derived' REQUIRE a non-null regulatory_source; 'derived' (NBCS fallback) also requires karnataka_adoption_status. OpenCity-only -> 'inferred'." },
+        "effective_date": { "type": "string", "description": "ISO date the base value takes effect (for dated bases; amendments live in amendments[])" },
+        "karnataka_adoption_status": { "type": "string", "description": "required on 'derived' NBCS cells, e.g. 'not_adopted_as_of:2026-06'" },
+        "enforceability_note": { "type": "string" },
+        "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+        "transcription_origin": { "$ref": "#/$defs/transcription_origin" }
+      }
+    },
+    "far_table": {
+      "type": "object",
+      "description": "One zone's base FAR/GC table (Gate-0). key_type declares the key shape: 'plot_size' rows carry plot_size_band_sqm; 'road_width' rows carry road_width_band_m; 'flat' is a single row keyed by neither. Ring is NOT a key here.",
+      "required": ["zone", "key_type", "confidence", "transcription_origin", "rows"],
+      "properties": {
+        "zone": { "type": "string", "minLength": 1 },
+        "sub_zone": { "type": "string" },
+        "key_type": { "enum": ["plot_size", "road_width", "flat"] },
+        "plot_cap_sqm": { "type": "number", "minimum": 0 },
+        "min_frontage_m": { "type": "number", "minimum": 0 },
+        "notes": { "type": "string" },
+        "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+        "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+        "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+        "rows": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["far", "ground_coverage"],
+            "properties": {
+              "far": { "type": "number", "exclusiveMinimum": 0 },
+              "ground_coverage": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+              "plot_size_band_sqm": { "$ref": "#/$defs/band" },
+              "road_width_band_m": { "$ref": "#/$defs/band" },
+              "setbacks_inline": { "type": "object", "description": "Table 16 (Industrial General) carries its own front / rear_and_sides setbacks (metres or 'NN%')." }
+            }
+          }
+        }
+      }
+    },
+    "far_modifiers": {
+      "type": "object",
+      "description": "Ring-keyed Additional-FAR incentive (reg 3.4.v) + metro-terminal override (reg 3.16.ix). Ring modifies; it does not set base FAR.",
+      "properties": {
+        "additional_far_by_ring": {
+          "type": "object",
+          "properties": {
+            "eligibility": { "type": "string" },
+            "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+            "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+            "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["ring", "plot_size_band_sqm", "additional_far"],
+                "properties": {
+                  "ring": { "enum": ["I", "II", "III"] },
+                  "plot_size_band_sqm": { "$ref": "#/$defs/band" },
+                  "additional_far": { "type": "number", "minimum": 0, "description": "OVER the base FAR; 0 = as-per-existing" },
+                  "note": { "type": "string" }
+                }
+              }
+            },
+            "unspecified": { "type": "string" }
+          }
+        },
+        "metro_terminal_override": {
+          "type": "object",
+          "properties": {
+            "radius_m": { "type": "number", "minimum": 0 },
+            "max_far": { "type": "number", "minimum": 0 },
+            "condition": { "type": "string" },
+            "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+            "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+            "transcription_origin": { "$ref": "#/$defs/transcription_origin" }
+          }
+        }
+      }
+    },
+    "setback_rules": {
+      "type": "object",
+      "description": "Setbacks decoupled from FAR cells (Gate-0). Table 8 = low-rise (<=11.5 m & <=4000 sqm) keyed by site width/depth (>9 m band is a '%'); Table 9 = by height band. Amendments in amendments[] with governing:false are NOT applied.",
+      "properties": {
+        "base": {
+          "type": "object",
+          "properties": {
+            "table8_low_rise": {
+              "type": "object",
+              "properties": {
+                "applies": { "type": "string" },
+                "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+                "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+                "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+                "over_4000_sqm_all_sides_m": { "type": "number", "minimum": 0 },
+                "rows": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["site_dim_band_m", "front", "rear", "left", "right"],
+                    "properties": {
+                      "site_dim_band_m": { "$ref": "#/$defs/band" },
+                      "front": { "type": ["number", "string"] },
+                      "rear": { "type": ["number", "string"] },
+                      "left": { "type": ["number", "string"] },
+                      "right": { "type": ["number", "string"] }
+                    }
+                  }
+                }
+              }
+            },
+            "table9_by_height": {
+              "type": "object",
+              "properties": {
+                "applies": { "type": "string" },
+                "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+                "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+                "transcription_origin": { "$ref": "#/$defs/transcription_origin" },
+                "rows": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["height_band_m", "all_around_m"],
+                    "properties": {
+                      "height_band_m": { "$ref": "#/$defs/band" },
+                      "all_around_m": { "type": "number", "minimum": 0 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "amendment": {
+      "type": "object",
+      "description": "A DATED overlay on a base cell (current/strictest IN-FORCE governs; base cell is never overwritten). governing:false + confidence:inferred when the amendment PDF could not be read.",
+      "required": ["effective_date", "applies_to", "supersedes", "status", "transcription_origin"],
+      "properties": {
+        "id": { "type": "string" },
+        "effective_date": { "type": "string", "description": "ISO date, e.g. '2025-11-11'" },
+        "applies_to": { "type": "string", "description": "e.g. 'plots <= 4000 sqm brackets'" },
+        "supersedes": { "type": "string", "description": "the base cell key/id this modifies" },
+        "status": { "type": "string", "description": "'draft' | 'notified' | 'final-unreadable' — confirm from primary" },
+        "governing": { "type": "boolean", "description": "false if not applied (draft, or values unread) — a draft never supersedes the notified base" },
+        "transcription_blocker": { "type": "string" },
+        "setbacks": {
+          "type": "object",
+          "properties": {
+            "front_m": { "type": "number", "minimum": 0 },
+            "rear_m": { "type": "number", "minimum": 0 },
+            "side_m": { "type": "number", "minimum": 0 }
+          }
+        },
+        "confidence": { "enum": ["authoritative", "derived", "inferred"] },
+        "regulatory_source": { "$ref": "#/$defs/regulatory_source" },
+        "transcription_origin": { "$ref": "#/$defs/transcription_origin" }
+      }
+    }
+  }
+}

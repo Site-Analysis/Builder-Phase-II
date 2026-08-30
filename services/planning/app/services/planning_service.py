@@ -13,33 +13,57 @@ from app.models.planning import AirportRestriction, PlanningRequest, PlanningRes
 
 OVERPASS_URL = os.getenv("OVERPASS_URL", "https://overpass.openstreetmap.fr/api/interpreter")
 
-# NBC 2016 Table 15 + BDA CDP 2031: zone → road_width_bracket → FAR
-NBC_FAR: dict[str, dict[tuple[float, float], float]] = {
+# BDA RMP-2015 Vol-III: zone → road_width_bracket → FAR
+# Road-width breakpoints at 9 / 12 / 18 / 24 / 30 m per RMP-2015 Tables 10,12,13,14,16,18.
+# Values reflect typical 500–1500 sqm plots; large plots (>3000 sqm) carry slightly lower FAR
+# on the same road — builders with larger plots should confirm via /planning/far (far_assembly).
+RMP_FAR: dict[str, dict[tuple[float, float], float]] = {
+    # Table 10 (Residential Main) + Table 12 (Residential Mixed)
     "Residential": {
-        (0, 7.5): 1.00,
-        (7.5, 12): 1.50,
-        (12, 18): 2.00,
-        (18, 24): 2.50,
-        (24, float("inf")): 3.00,
+        (0, 9):             1.75,
+        (9, 12):            2.00,
+        (12, 18):           2.25,
+        (18, 24):           2.50,
+        (24, 30):           3.00,
+        (30, float("inf")): 3.25,
     },
+    # Table 14 (Commercial Business) — Table 13 (Commercial Central) is flat 2.50 at any road
     "Commercial": {
-        (0, 7.5): 1.50,
-        (7.5, 12): 2.00,
-        (12, 18): 2.50,
-        (18, 24): 3.00,
-        (24, float("inf")): 3.50,
+        (0, 9):             1.50,
+        (9, 12):            1.75,
+        (12, 18):           2.25,
+        (18, 24):           2.50,
+        (24, 30):           3.00,
+        (30, float("inf")): 3.25,
     },
-    "Industrial": {(0, float("inf")): 1.50},
-    "Mixed Use": {(0, 7.5): 1.50, (7.5, 12): 2.00, (12, 18): 2.50, (18, float("inf")): 3.00},
-    "Institutional": {(0, float("inf")): 1.50},
+    # Table 16 (Industrial General) — conservative; Hi-Tech (Table 17) can reach 3.25
+    "Industrial": {
+        (0, 9):             1.00,
+        (9, float("inf")): 1.50,
+    },
+    # Table 12 (Residential Mixed) governs Mixed Use zones in BDA jurisdiction
+    "Mixed Use": {
+        (0, 9):             1.75,
+        (9, 12):            2.00,
+        (12, 18):           2.25,
+        (18, 24):           2.50,
+        (24, 30):           3.00,
+        (30, float("inf")): 3.25,
+    },
+    # Table 18 (Public & Semi-Public) — plot-size dependent; 1.75 for typical 500-2000 sqm
+    "Institutional": {
+        (0, float("inf")): 1.75,
+    },
 }
 
-NBC_GROUND_COVERAGE: dict[str, float] = {
-    "Residential": 0.55,
-    "Commercial": 0.60,
-    "Industrial": 0.65,
-    "Mixed Use": 0.55,
-    "Institutional": 0.45,
+# NBC 2016 Table 14 (buildings ≤7.5m) / BDA Bye-laws — ground coverage keyed by plot area.
+# Computed in _ground_coverage() below; these zone-level defaults are used as a fallback.
+_GC_FALLBACK: dict[str, float] = {
+    "Residential": 0.60,
+    "Commercial": 0.50,
+    "Industrial": 0.50,
+    "Mixed Use": 0.60,
+    "Institutional": 0.50,
 }
 
 NBC_MAX_HEIGHT: dict[str, float] = {
@@ -56,7 +80,7 @@ TOD_RADIUS_M = 500.0
 TOD_ELIGIBLE_ZONES = {"Residential", "Mixed Use"}
 
 AAI_AIRPORTS: list[dict[str, Any]] = [
-    {"name": "Kempegowda International", "iata": "BLR", "lat": 13.1979, "lon": 77.7063},
+    {"name": "Kempegowda International", "iata": "BLR", "lat": 13.1986, "lon": 77.7066},
     {"name": "HAL Airport Bengaluru", "iata": "BLR-HAL", "lat": 12.9500, "lon": 77.6632},
     {"name": "Mysuru Airport", "iata": "MYQ", "lat": 12.2333, "lon": 76.6500},
     {"name": "Mangaluru International", "iata": "IXE", "lat": 12.9613, "lon": 74.8900},
@@ -92,22 +116,53 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _lookup_far(zone: str, road_width: float) -> float:
-    brackets = NBC_FAR.get(zone, {(0, float("inf")): 1.0})
+    brackets = RMP_FAR.get(zone, {(0, float("inf")): 1.0})
     for (lo, hi), far in brackets.items():
         if lo <= road_width < hi:
             return far
     return 1.0
 
 
+def _ground_coverage(zone: str, plot_area: float) -> float:
+    """
+    NBC 2016 Table 14 (buildings ≤7.5m) — ground coverage keyed by plot area.
+    Institutional / Industrial use fixed zone defaults.
+    """
+    if zone in ("Industrial", "Institutional"):
+        return _GC_FALLBACK.get(zone, 0.50)
+    # NBC 2016 Table 14 (Residential / Commercial / Mixed Use)
+    if plot_area < 50:
+        return 0.75
+    if plot_area < 300:
+        return 0.66
+    if plot_area < 600:
+        return 0.60
+    return 0.50
+
+
 def _setbacks(plot_area: float, road_width: float) -> tuple[float, float, float]:
-    front = 1.5 if road_width < 7.5 else 3.0 if road_width < 18.0 else 4.5
-    if plot_area < 100:
-        return front, 1.0, 0.0
-    if plot_area < 250:
-        return front, 1.5, 1.0
-    if plot_area < 500:
-        return front, 3.0, 1.5
-    return front, 4.5, 3.0
+    """
+    BBMP Building Bye-laws 2003 Table A — setbacks keyed by plot area.
+    Front setback further floored by road-width minimum (NBC / BDA Bye-laws).
+    """
+    if plot_area <= 50:
+        front, rear, side = 0.0, 0.0, 0.0
+    elif plot_area <= 100:
+        front, rear, side = 1.5, 1.5, 0.0
+    elif plot_area <= 200:
+        front, rear, side = 1.5, 1.5, 1.5
+    elif plot_area <= 500:
+        front, rear, side = 2.0, 2.0, 2.0
+    elif plot_area <= 1000:
+        front, rear, side = 3.0, 2.0, 1.5
+    elif plot_area <= 2000:
+        front, rear, side = 4.5, 3.0, 3.0
+    else:
+        front, rear, side = 6.0, 4.5, 3.0
+    # Road-width floor for front (NBC 2016 / BDA Bye-laws)
+    road_front_min = 1.5 if road_width < 9 else 3.0 if road_width < 18 else 4.5
+    front = max(front, road_front_min)
+    return front, rear, side
 
 
 def _icao_max_height(dist_m: float) -> tuple[float | None, str, bool]:
@@ -254,9 +309,9 @@ class PlanningService:
             far_source = f"BDA TOD Notification 2020 — FAR 4.0 ({metro_name}, {metro_dist:.0f}m)"
         else:
             far = _lookup_far(zone, road_width)
-            far_source = f"NBC 2016 Table 15 ({zone}, road {road_width:.1f}m)"
+            far_source = f"BDA RMP-2015 ({zone}, road {road_width:.1f}m)"
 
-        gc = NBC_GROUND_COVERAGE.get(zone, 0.55)
+        gc = _ground_coverage(zone, request.plot_area_sqm)
         front, rear, side = _setbacks(request.plot_area_sqm, road_width)
         max_h = NBC_MAX_HEIGHT.get(zone, 45.0)
         height_factor = "NBC 2016 zone height limit"
@@ -303,17 +358,16 @@ class PlanningService:
             metro_distance_m=metro_dist,
             metro_lat=metro_lat,
             metro_lon=metro_lon,
+            # HEIGHT-CAP ONLY — nearest_dist_m is used internally for the ICAO surface/height cap;
+            # the airport DISTANCE reporting moved to infrastructure /connectivity (US-086).
             airport_restriction=AirportRestriction(
                 nearest_airport=nearest["name"],
                 iata_code=nearest["iata"],
-                distance_km=round(nearest_dist_m / 1000, 2),
                 max_height_m=round(icao_h, 1) if icao_h is not None else None,
                 restriction_surface=surface,
                 dgca_noc_required=noc_req,
-                lat=round(float(nearest["lat"]), 6),
-                lon=round(float(nearest["lon"]), 6),
             ),
             score=score,
             severity=severity,  # type: ignore[arg-type]
-            data_source="NBC 2016 + BDA CDP 2031 + BDA TOD 2020 + ICAO Annex 14 + AAI airports + OSM road width",
+            data_source="BDA RMP-2015 Vol-III + BBMP Bye-laws 2003 + NBC 2016 Table 14 + BDA TOD 2020 + ICAO Annex 14 + AAI airports + OSM road width",
         )

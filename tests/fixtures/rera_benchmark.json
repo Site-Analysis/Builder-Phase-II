@@ -1,0 +1,55 @@
+{
+  "story": "US-084",
+  "title": "RERA-Karnataka sanctioned-project FAR benchmark (ground-truth validation)",
+  "status": "PENDING_REAL_RERA_DATA",
+  "note": "Validates far_assembly against REAL sanctioned projects — the ground-truth check no internal test replaces. cases[] is EMPTY until real RERA filings are supplied. Every real case MUST carry source_url (the RERA filing) + sanctioned_far read from it. NO project values are invented; example_shape rows below carry null real-values and only document the shape.",
+  "schema": {
+    "project_id": "string — stable id",
+    "project_name": "string",
+    "source_url": "string — the RERA-Karnataka filing URL (REQUIRED for a real case)",
+    "zone": "string — RMP zone (Residential/Commercial/Industrial/...)",
+    "sub_zone": "string|null — e.g. Main / Mixed / Business / Central (needed to pick the FAR table)",
+    "ring": "I|II|III|null",
+    "road_width_m": "number — the abutting road width from the filing (treated as surveyed/authoritative)",
+    "plot_area_sqm": "number",
+    "building_height_m": "number|null — if known",
+    "amalgamated": "bool — true if the plot was amalgamated/reconstituted (Additional-FAR eligibility)",
+    "sanctioned_far": "number — GROUND TRUTH: the FAR the authority actually approved",
+    "explanation": "string|null — REQUIRED only when the sanctioned FAR does not match our computed line (premium/purchasable FAR used? corner plot? TDR? special zone? data error?)",
+    "notes": "string|null"
+  },
+  "match_rule": "sanctioned_far is what the authority approved on the plot -> compare it to the ACHIEVABLE line: achievable_with_entitlements when amalgamated (entitlement claimed), else achievable_base. Match within +/- 0.05. A mismatch WITHOUT an explanation is a RED flag (fails loud) — that is how a composition bug is caught. Do NOT tune tolerance to hide mismatches.",
+  "example_shape": [
+    {
+      "project_id": "EXAMPLE-SHAPE-1",
+      "project_name": "EXAMPLE — shape only, NOT a real project",
+      "source_url": "",
+      "zone": "Residential",
+      "sub_zone": "Main",
+      "ring": null,
+      "road_width_m": null,
+      "plot_area_sqm": null,
+      "building_height_m": null,
+      "amalgamated": false,
+      "sanctioned_far": null,
+      "explanation": null,
+      "notes": "EXAMPLE-SHAPE — all real-value fields null on purpose; fails the real-case guard. Replace with a real RERA filing (fill source_url + sanctioned_far read from it)."
+    },
+    {
+      "project_id": "EXAMPLE-SHAPE-2",
+      "project_name": "EXAMPLE — amalgamated case shape, NOT real",
+      "source_url": "",
+      "zone": "Commercial",
+      "sub_zone": "Business",
+      "ring": "I",
+      "road_width_m": null,
+      "plot_area_sqm": null,
+      "building_height_m": null,
+      "amalgamated": true,
+      "sanctioned_far": null,
+      "explanation": null,
+      "notes": "EXAMPLE-SHAPE — amalgamated=true means the validator would compare achievable_with_entitlements. Real values null."
+    }
+  ],
+  "cases": []
+}

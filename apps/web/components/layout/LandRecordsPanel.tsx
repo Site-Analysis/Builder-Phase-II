@@ -6,14 +6,16 @@
 import { useState, useEffect } from "react";
 import type { ModuleResult } from "@/lib/stores/analysis";
 import { useAnalysisStore } from "@/lib/stores/analysis";
-import { getLandRecordsAnalysis } from "@/lib/api/analysis";
-import { ExternalLink, Info } from "lucide-react";
+import { useParcelStore } from "@/lib/stores/parcel";
+import { getLandRecordsAnalysis, getParcel } from "@/lib/api/analysis";
+import { ExternalLink, Info, MapPin } from "lucide-react";
 
 interface LandPrefill {
   district?: string;
   taluk?: string;
   hobli?: string;
   village?: string;
+  villageCode?: string;      // KGIS villageCode for the forward parcel lookup
   surveyNumber?: string;
 }
 
@@ -54,6 +56,11 @@ export function LandRecordsPanel({ result, prefill }: LandRecordsPanelProps) {
   const [village,      setVillage]      = useState("");
   const [surveyNumber, setSurveyNumber] = useState("");
 
+  const setParcel = useParcelStore((s) => s.setParcel);
+  const [parcelStatus, setParcelStatus] =
+    useState<"idle" | "loading" | "located" | "unavailable" | "disabled" | "error">("idle");
+  const [parcelMsg, setParcelMsg] = useState("");
+
   // Authoritative KGIS rural context auto-fills empty fields (never clobbers edits).
   useEffect(() => {
     if (!prefill) return;
@@ -91,6 +98,59 @@ export function LandRecordsPanel({ result, prefill }: LandRecordsPanelProps) {
       setModuleError("land", err instanceof Error ? err.message : "Failed");
     }
   }
+
+  // Forward survey → parcel polygon (KGIS geomForSurveyNum). Sets the map overlay.
+  async function handleLocateParcel() {
+    if (!surveyNumber) return;
+    setParcelStatus("loading");
+    setParcelMsg("");
+    try {
+      const p = await getParcel({ surveyNo: surveyNumber, villageCode: prefill?.villageCode ?? null });
+      setParcel(p);
+      setParcelStatus(p.resolved && p.geometry ? "located" : "unavailable");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed";
+      if (msg.includes("Feature flag disabled")) setParcelStatus("disabled");
+      else { setParcelStatus("error"); setParcelMsg(msg); }
+    }
+  }
+
+  const parcelLocator = (
+    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #EDF0EA" }}>
+      <button
+        type="button"
+        onClick={handleLocateParcel}
+        disabled={!surveyNumber || parcelStatus === "loading"}
+        style={{
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "6px 12px", fontSize: 12, fontWeight: 700,
+          border: "1px solid #C2410C", borderRadius: 6,
+          cursor: !surveyNumber ? "not-allowed" : "pointer",
+          background: "transparent", color: "#C2410C",
+          opacity: !surveyNumber || parcelStatus === "loading" ? 0.55 : 1,
+          fontFamily: "inherit",
+        }}
+      >
+        <MapPin size={12} />
+        {parcelStatus === "loading" ? "Locating…" : "Locate parcel on map"}
+      </button>
+      {parcelStatus === "located" && (
+        <p style={{ fontSize: 11, color: "#5A8F6A", margin: "6px 0 0" }}>✓ Parcel boundary drawn on the map.</p>
+      )}
+      {parcelStatus === "unavailable" && (
+        <p style={{ fontSize: 11, color: "#B45309", margin: "6px 0 0", lineHeight: 1.4 }}>
+          Parcel boundary unavailable — KGIS village id pending. Use the portal links to verify.
+        </p>
+      )}
+      {parcelStatus === "disabled" && (
+        <p style={{ fontSize: 11, color: "#7B8F83", margin: "6px 0 0" }}>Map parcel preview is disabled (feature flag off).</p>
+      )}
+      {parcelStatus === "error" && (
+        <p style={{ fontSize: 11, color: "#EF4444", margin: "6px 0 0" }}>{parcelMsg}</p>
+      )}
+      <p style={{ fontSize: 10, color: "#9AA79E", margin: "6px 0 0" }}>Indicative only — not a legal survey.</p>
+    </div>
+  );
 
   // Form — shown when no result yet
   if (!result || result.loading || !payload) {
@@ -150,6 +210,7 @@ export function LandRecordsPanel({ result, prefill }: LandRecordsPanelProps) {
             <p style={{ fontSize: 11, color: "#EF4444", margin: 0 }}>{result.error}</p>
           )}
         </form>
+        {parcelLocator}
       </div>
     );
   }
@@ -196,6 +257,8 @@ export function LandRecordsPanel({ result, prefill }: LandRecordsPanelProps) {
           </a>
         ))}
       </div>
+
+      {parcelLocator}
 
       {/* Look up again */}
       <button

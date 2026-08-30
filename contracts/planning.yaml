@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: Planning Service
-  version: "1.0.0"
+  version: "1.5.0"
   description: >
     Site build-capacity analysis for Indian urban plots. Computes applicable FAR,
     ground coverage, setbacks, and height limits from NBC 2016 Table 15, BDA CDP 2031,
@@ -57,8 +57,208 @@ paths:
         "422":
           description: Validation error
 
+  /planning/far:
+    post:
+      operationId: assembleFar
+      summary: Permissible-vs-achievable FAR for a plot (US-084 final assembly)
+      description: >
+        Always TWO numbers, never one. permissible_far = what the RMP table allows + applicable
+        far_modifiers (Additional-FAR by ring, metro-150m override when BMRCL-confirmed).
+        achievable_far = what THIS plot realises after the road-width band constraint (reg 3.4.iii)
+        + setback/coverage/height envelope. Invariant achievable<=permissible (asserted; a breach
+        returns 422, never a laundered number). A band-edge road width returns achievable_matrix
+        (both candidates + option_value), never a single picked side. Confidence propagates: an
+        inferred road width or inferred zone can never yield an authoritative FAR. Gated by
+        `feature.planning.far-assembly`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FarAssemblyRequest"
+      responses:
+        "200":
+          description: Permissible-vs-achievable FAR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FarAssemblyResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error (or invariant breach — achievable > permissible)
+        "503":
+          description: RMP config unavailable
+
+  /planning/road-width:
+    post:
+      operationId: resolveRoadWidth
+      summary: Resolve a road width to a FAR band (or edge-straddling range) + confidence tier
+      description: >
+        Feeds US-084 FAR. No authoritative queryable road source exists (RMP reg 3.2 = surveyed
+        right-of-way), so this returns a BAND with a confidence tier, never a false-authoritative
+        point; when the width straddles a band edge it returns BOTH bands + survey_required + an
+        option value. Best-available input tier wins (surveyed→authoritative, MapTiler
+        measurement→inferred [default], probe-confirmed KGIS, lane estimate→inferred); none →
+        unresolved. Gated by `feature.planning.road-width-resolver`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoadWidthRequest"
+      responses:
+        "200":
+          description: Road-width band/range + confidence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoadWidthResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+
+  /planning/obligations:
+    post:
+      operationId: developmentObligations
+      summary: Mixed-use % + parking (ECS) + TIA obligations for a plot (US-083)
+      description: >
+        Computes what RMP-2015 gives, each figure cited: parking ECS from built-up area
+        (achievable_far × plot) via Table 23 (Ch.8, p.48); the zone's permitted non-residential
+        mixed-use % (reg 4.1.2/4.2.2/7.3); access adequacy by REUSING the road_width_resolver.
+        Obligations the RMP does NOT quantify — the TIA trigger threshold (absent from RMP-2015),
+        and uses/zones with no RMP rate — are returned as CHECKLIST items labelled `unverified`,
+        never a fabricated number. Gated by `feature.planning.mixed-use`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MixedUseParkingRequest"
+      responses:
+        "200":
+          description: Development obligations (computed + checklist)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevelopmentObligationsResult"
+        "403":
+          description: Feature flag disabled
+        "422":
+          description: Validation error
+        "503":
+          description: RMP config unavailable
+
 components:
   schemas:
+    UseType:
+      type: string
+      enum: [residential_multi_dwelling, retail, office, restaurant, hotel, hospital,
+             nursing_home, educational, industrial, other_public_semipublic,
+             commercial_mutation_corridor, integrated_township]
+
+    MixedUseParkingRequest:
+      description: RoadWidthRequest (road-width tiers, reused for access adequacy) + built-up context.
+      allOf:
+        - $ref: "#/components/schemas/RoadWidthRequest"
+        - type: object
+          properties:
+            use_type:
+              $ref: "#/components/schemas/UseType"
+            achievable_far:
+              type: number
+              format: float
+              nullable: true
+            built_up_area_sqm:
+              type: number
+              format: float
+              nullable: true
+            avg_dwelling_size_sqm:
+              type: number
+              format: float
+              nullable: true
+
+    ParkingECS:
+      type: object
+      required: [status, use, confidence, citation]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        use: { type: string }
+        ecs_total: { type: integer, nullable: true }
+        ecs_main: { type: number, format: float, nullable: true }
+        ecs_visitor: { type: number, format: float, nullable: true }
+        basis: { type: string, nullable: true }
+        confidence: { type: string, enum: ["authoritative", "derived", "unresolved"] }
+        citation: { type: string }
+        built_up_area_sqm: { type: number, format: float, nullable: true }
+        notes: { type: array, items: { type: string } }
+        next_action: { type: string, nullable: true }
+
+    MixedUseShare:
+      type: object
+      required: [status, non_residential_max_pct, confidence]
+      properties:
+        status: { type: string, enum: ["resolved"] }
+        zone: { type: string, nullable: true }
+        sub_zone: { type: string, nullable: true }
+        non_residential_max_pct: { type: number, format: float }
+        non_residential_max_sqm: { type: number, format: float, nullable: true }
+        residential_pct: { type: number, format: float, nullable: true }
+        split: { type: object, additionalProperties: { type: number, format: float }, nullable: true }
+        basis: { type: string, nullable: true }
+        confidence: { type: string, enum: ["authoritative"] }
+        citation: { type: string, nullable: true }
+
+    AccessAdequacy:
+      type: object
+      required: [status, confidence, min_required_m, min_citation]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        width_m: { type: number, format: float, nullable: true }
+        band: { $ref: "#/components/schemas/RoadWidthBand" }
+        confidence: { type: string, enum: ["authoritative", "inferred", "unresolved"] }
+        adequate: { type: boolean, nullable: true }
+        min_required_m: { type: number, format: float }
+        min_citation: { type: string }
+        floor_area_cap: { $ref: "#/components/schemas/RoadWidthFloorCap" }
+        reg_basis: { type: array, items: { type: string } }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+
+    ObligationChecklistItem:
+      type: object
+      required: [item, status, reason, citation_gap, next_action]
+      properties:
+        item: { type: string }
+        status: { type: string, enum: ["unverified"] }
+        reason: { type: string }
+        citation_gap: { type: string }
+        next_action: { type: string }
+
+    DevelopmentObligationsResult:
+      type: object
+      required: [status, access_adequacy, computed_count, checklist_count, data_source, disclaimer]
+      properties:
+        status: { type: string, enum: ["resolved"] }
+        built_up_area_sqm: { type: number, format: float, nullable: true }
+        parking:
+          oneOf:
+            - $ref: "#/components/schemas/ParkingECS"
+            - type: "null"
+        mixed_use:
+          oneOf:
+            - $ref: "#/components/schemas/MixedUseShare"
+            - type: "null"
+        access_adequacy: { $ref: "#/components/schemas/AccessAdequacy" }
+        checklist:
+          type: array
+          items: { $ref: "#/components/schemas/ObligationChecklistItem" }
+        computed_count: { type: integer }
+        checklist_count: { type: integer }
+        data_source: { type: string }
+        disclaimer: { type: string }
+
     ZoneClass:
       type: string
       enum: ["Residential", "Commercial", "Industrial", "Mixed Use", "Institutional"]
@@ -96,15 +296,14 @@ components:
 
     AirportRestriction:
       type: object
-      required: [nearest_airport, iata_code, distance_km, restriction_surface, dgca_noc_required]
+      # US-086: HEIGHT-CAP ONLY. distance_km / lat / lon removed — airport DISTANCE reporting moved
+      # to the infrastructure /connectivity endpoint (one connectivity owner).
+      required: [nearest_airport, iata_code, restriction_surface, dgca_noc_required]
       properties:
         nearest_airport:
           type: string
         iata_code:
           type: string
-        distance_km:
-          type: number
-          format: float
         max_height_m:
           type: number
           format: float
@@ -113,14 +312,6 @@ components:
           type: string
         dgca_noc_required:
           type: boolean
-        lat:
-          type: number
-          format: float
-          nullable: true
-        lon:
-          type: number
-          format: float
-          nullable: true
 
     PlanningResult:
       type: object
@@ -204,3 +395,211 @@ components:
           type: string
         data_disclaimer:
           type: string
+
+    RoadWidthBand:
+      type: object
+      required: [min]
+      properties:
+        min: { type: number, format: float }
+        max: { type: number, format: float, nullable: true, description: "null = open-ended top band" }
+
+    RoadWidthRequest:
+      type: object
+      description: >
+        Best-available road-width inputs; all optional. The best tier present wins:
+        surveyed_width_m (authoritative) > measured_width_m (MapTiler, inferred; default) >
+        kgis_width_m + kgis_probe_confirmed > lane_count (inferred, weakest).
+      properties:
+        zone:
+          type: string
+          default: "Residential"
+          description: >
+            Accepts the geo `zone_class` vocabulary (Residential/Commercial/Industrial/Mixed
+            Use/Institutional AND non-developable Water Body/Green Belt/Agricultural/…).
+            far_assembly maps it (zone_map); a non-developable zone returns a clean
+            `unresolved` "no FAR table applies" result, never a 422 (US-088 dry-run G2).
+        sub_zone: { type: string, nullable: true }
+        plot_area_sqm: { type: number, format: float, minimum: 1, nullable: true }
+        surveyed_width_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+        survey_date: { type: string, nullable: true }
+        measured_width_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+        imagery_date: { type: string, nullable: true }
+        kgis_width_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+        kgis_probe_confirmed: { type: boolean, default: false }
+        kgis_vintage: { type: string, nullable: true }
+        lane_count: { type: integer, minimum: 1, nullable: true }
+        service_road_widths_m: { type: array, items: { type: number, format: float }, nullable: true }
+        frontage_roads_m: { type: array, items: { type: number, format: float }, nullable: true }
+        saleable_value_per_sqm: { type: number, format: float, minimum: 0, nullable: true }
+        survey_cost: { type: number, format: float, minimum: 0, nullable: true }
+
+    RoadWidthOptionValue:
+      type: object
+      required: [note]
+      description: "Cost of not surveying at a band edge: FAR delta x plot area (optionally monetised). far_* null when FAR values are PENDING."
+      properties:
+        far_low: { type: number, format: float, nullable: true }
+        far_high: { type: number, format: float, nullable: true }
+        far_delta: { type: number, format: float, nullable: true }
+        extra_buildable_sqm: { type: number, format: float, nullable: true }
+        extra_value: { type: number, format: float, nullable: true }
+        survey_cost: { type: number, format: float, nullable: true }
+        note: { type: string }
+
+    RoadWidthFloorCap:
+      type: object
+      required: [residential_sqm, commercial_sqm, reg_basis]
+      properties:
+        residential_sqm: { type: number, format: float }
+        commercial_sqm: { type: number, format: float }
+        reg_basis: { type: string }
+
+    RoadWidthResult:
+      type: object
+      description: >
+        A road-width BAND (or edge-straddling RANGE) + confidence tier — never a
+        false-authoritative point. max_far_confidence propagates the ceiling downstream:
+        an inferred width can only yield a derived FAR.
+      required: [status, confidence, survey_required, max_far_confidence, reg_basis, notes]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        value_m: { type: number, format: float, nullable: true }
+        band:
+          oneOf:
+            - $ref: "#/components/schemas/RoadWidthBand"
+            - type: "null"
+        confidence: { type: string, enum: ["authoritative", "inferred", "unresolved"] }
+        data_source: { type: string, nullable: true }
+        data_vintage: { type: string, nullable: true }
+        error_band_m: { type: array, items: { type: number, format: float }, nullable: true }
+        reg_basis: { type: array, items: { type: string } }
+        survey_required: { type: boolean }
+        band_range:
+          type: array
+          nullable: true
+          items: { $ref: "#/components/schemas/RoadWidthBand" }
+        option_value:
+          oneOf:
+            - $ref: "#/components/schemas/RoadWidthOptionValue"
+            - type: "null"
+        floor_area_cap:
+          oneOf:
+            - $ref: "#/components/schemas/RoadWidthFloorCap"
+            - type: "null"
+        max_far_confidence: { type: string, enum: ["authoritative", "derived", "unresolved"] }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+        notes: { type: array, items: { type: string } }
+
+    FarAssemblyRequest:
+      allOf:
+        - $ref: "#/components/schemas/RoadWidthRequest"
+        - type: object
+          description: "US-084 inputs = road-width tiers + zone/ring/height context."
+          properties:
+            zone_confidence: { type: string, enum: ["authoritative", "inferred"], default: "inferred" }
+            ring: { type: string, enum: ["I", "II", "III"], nullable: true }
+            site_dim_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+            building_height_m: { type: number, format: float, exclusiveMinimum: 0, nullable: true }
+            additional_far_eligible: { type: boolean, default: false }
+            within_metro_150m: { type: boolean, default: false }
+            metro_bmrcl_confirmed: { type: boolean, default: false }
+
+    FarValue:
+      type: object
+      required: [confidence, rule_citation, disclaimer]
+      properties:
+        value: { type: number, format: float, nullable: true }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
+        data_source: { type: string, nullable: true }
+        data_vintage: { type: string, nullable: true }
+        rule_citation: { type: string }
+        notes: { type: array, items: { type: string } }
+        disclaimer: { type: string }
+        modifier_pending: { type: boolean, nullable: true }
+        road_width_m: { type: number, format: float, nullable: true }
+        error_band_m: { type: array, items: { type: number, format: float }, nullable: true }
+        next_action: { type: string, nullable: true }
+
+    GroundCoverageValue:
+      type: object
+      required: [value, rule_citation, disclaimer]
+      properties:
+        value: { type: number, format: float }
+        rule_citation: { type: string }
+        disclaimer: { type: string }
+
+    SetbackSet:
+      type: object
+      description: "front/rear/left/right are metres (number) or a '%'-of-dimension string (Table 8 >9 m band)."
+      required: [front, rear, left, right, rule_citation, disclaimer]
+      properties:
+        front: { oneOf: [{ type: number }, { type: string }] }
+        rear: { oneOf: [{ type: number }, { type: string }] }
+        left: { oneOf: [{ type: number }, { type: string }] }
+        right: { oneOf: [{ type: number }, { type: string }] }
+        rule_citation: { type: string }
+        disclaimer: { type: string }
+
+    EntitlementLabel:
+      type: object
+      description: >
+        A far_modifier + the condition it needs. status: applied (in the with-entitlements value);
+        conditional (labelled, NOT added — e.g. metro unconfirmed); pending (blank in source, NOT
+        added). additional_far is the uplift when additive (null for metro override / pending).
+      required: [name, status, condition]
+      properties:
+        name: { type: string }
+        additional_far: { type: number, format: float, nullable: true }
+        status: { type: string, enum: ["applied", "conditional", "pending"] }
+        condition: { type: string }
+        citation: { type: string, nullable: true }
+
+    FarBandOption:
+      type: object
+      required: [band, achievable_base, achievable_with_entitlements]
+      properties:
+        band: { $ref: "#/components/schemas/RoadWidthBand" }
+        achievable_base: { $ref: "#/components/schemas/FarValue" }
+        achievable_with_entitlements: { $ref: "#/components/schemas/FarValue" }
+
+    AchievableMatrix:
+      type: object
+      required: [rows]
+      properties:
+        rows: { type: array, items: { $ref: "#/components/schemas/FarBandOption" } }
+        option_value:
+          oneOf:
+            - $ref: "#/components/schemas/RoadWidthOptionValue"
+            - type: "null"
+
+    FarAssemblyResult:
+      type: object
+      description: >
+        Permissible-vs-achievable FAR (US-084). TWO-LINE achievable: achievable_base (build by
+        right) + achievable_with_entitlements (base + qualifying modifiers, each labelled in
+        entitlements[]). Invariant achievable_base <= achievable_with_entitlements <= permissible_far.
+        A band-edge road width yields achievable_matrix (both lines per band), never a picked side.
+      required: [status, invariant_ok, disclaimer]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        permissible_far:
+          oneOf: [{ $ref: "#/components/schemas/FarValue" }, { type: "null" }]
+        achievable_base:
+          oneOf: [{ $ref: "#/components/schemas/FarValue" }, { type: "null" }]
+        achievable_with_entitlements:
+          oneOf: [{ $ref: "#/components/schemas/FarValue" }, { type: "null" }]
+        achievable_matrix:
+          oneOf: [{ $ref: "#/components/schemas/AchievableMatrix" }, { type: "null" }]
+        entitlements: { type: array, items: { $ref: "#/components/schemas/EntitlementLabel" } }
+        ground_coverage:
+          oneOf: [{ $ref: "#/components/schemas/GroundCoverageValue" }, { type: "null" }]
+        setbacks:
+          oneOf: [{ $ref: "#/components/schemas/SetbackSet" }, { type: "null" }]
+        road_width:
+          oneOf: [{ $ref: "#/components/schemas/RoadWidthResult" }, { type: "null" }]
+        invariant_ok: { type: boolean }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+        notes: { type: array, items: { type: string } }
+        disclaimer: { type: string }

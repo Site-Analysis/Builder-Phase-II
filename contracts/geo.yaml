@@ -1,11 +1,13 @@
 openapi: "3.1.0"
 info:
   title: Geo Service
-  version: "1.0.0"
+  version: "1.10.0"
   description: >
     Land-use, soil, water-constraint, and amenity analysis for a point. Sources:
-    OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS administrative layers.
-    OSM-inferred zoning is indicative only — not official BDA/BBMP zoning. No synthetic data.
+    OpenStreetMap (Overpass), ISRO NRSC Bhuvan LULC, and KGIS layers. Zoning is
+    OSM-inferred (indicative) unless the KGIS BDA Revised Master Plan land-use layer
+    is configured, in which case `zone_class` is authoritative (`zone_authority`
+    distinguishes the two). No synthetic data.
 
 servers:
   - url: http://localhost:8005
@@ -32,7 +34,12 @@ paths:
     get:
       operationId: getZone
       summary: Land-use / zoning classification for a point
-      description: Gated by `feature.zoning.land-use` (KGIS context opt-in via `feature.geo.kgis-context`).
+      description: >
+        Gated by `feature.zoning.land-use` (KGIS context opt-in via
+        `feature.geo.kgis-context`). When the KGIS BDA RMP-2015 land-use layer is
+        configured (`KGIS_LANDUSE_URL`) and the point falls inside the BDA Local
+        Planning Area, `zone_class` is authoritative (`zone_authority="BDA-RMP-2015"`);
+        otherwise it is OSM-inferred (`zone_authority="OSM-inferred"`).
       parameters:
         - { name: lat, in: query, required: true, schema: { type: number, format: float } }
         - { name: lon, in: query, required: true, schema: { type: number, format: float } }
@@ -99,14 +106,308 @@ paths:
         "403": { description: Feature flag disabled }
         "422": { description: Validation error }
 
+  /geo/parcel:
+    get:
+      operationId: getParcel
+      summary: Survey-number → cadastral parcel polygon (Karnataka, KGIS)
+      description: >
+        Forward survey-number lookup. Returns the parcel boundary as a GeoJSON Polygon
+        (WGS84) for a Karnataka rural/revenue survey number. Resolution order: explicit
+        `kgis_village_id`, else resolved from `village_code` (or from `lat`/`lon` via KGIS
+        reverse geocode), then fetched via KGIS `geomForSurveyNum`; if that yields nothing
+        a direct KGIS Cadastral-layer query by village code + survey number is tried.
+        Gated by `feature.geo.parcel-geometry`. Indicative only — not a legal survey
+        (KGIS data may not be used for legal purposes). When nothing resolves the response
+        is returned with `resolved=false` and `geometry=null` (no fabrication). See FVD SAT-19.
+      parameters:
+        - { name: survey_no, in: query, required: true, schema: { type: string } }
+        - { name: village_code, in: query, required: false, schema: { type: string, nullable: true } }
+        - { name: kgis_village_id, in: query, required: false, schema: { type: string, nullable: true } }
+        - { name: lat, in: query, required: false, schema: { type: number, format: float, nullable: true } }
+        - { name: lon, in: query, required: false, schema: { type: number, format: float, nullable: true } }
+        - { name: crs, in: query, required: false, schema: { type: string, enum: ["DD", "UTM"], default: "DD" } }
+      responses:
+        "200":
+          description: Parcel geometry (or unresolved placeholder)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ParcelGeometry" }
+        "403": { description: Feature flag disabled }
+        "422": { description: Validation error }
+
+  /geo/authority:
+    get:
+      operationId: getAuthority
+      summary: Governing local authority + bye-laws / approval track for a point
+      description: >
+        Classifies the governing local authority and the applicable building bye-laws /
+        approval track from the KGIS admin context, encoding the GBA transition (BBMP
+        dissolved 15-May-2025 → Greater Bengaluru Authority). Gated by
+        `feature.geo.authority`. The authoritative Boundaries/LPA point-in-polygon check
+        is deferred (`live_verified=false`) until KGIS access lands; `authority="Unknown"`
+        (low confidence) when context is unavailable. Indicative only — verify before use.
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, format: float } }
+        - { name: lon, in: query, required: true, schema: { type: number, format: float } }
+      responses:
+        "200":
+          description: Authority classification
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthorityResult" }
+        "403": { description: Feature flag disabled }
+        "422": { description: Validation error }
+
+  /geo/overlays:
+    get:
+      operationId: getOverlays
+      summary: Unified deal-killer overlay engine (US-088)
+      description: >
+        Every deal-killer overlay (rajakaluve, airport-OLS, lakes/waterbodies, wetland, flood,
+        forest, HT-line, gas) for a point, with distance in EPSG:32643 (UTM 43N metres), the
+        STRICTEST applicable dated buffer regime (range exposed when regimes are in legal flux),
+        an R/A/G/unresolved status, reference_point (centre vs periphery), rule citation and
+        provenance. CARDINAL RULE — an overlay with no bundled authoritative clearing layer
+        returns `unresolved`, never clear: absence of data is NOT absence of hazard. `verdict`
+        exposes `hard_no_go` (any RED) and `blocks_clean_go` (any unresolved) for the US-092
+        GO/NO-GO engine. Gated by `feature.geo.overlays`. Karnataka-only — lat/lon order and
+        bounds are asserted (422 on a swapped/out-of-bounds point).
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, format: float } }
+        - { name: lon, in: query, required: true, schema: { type: number, format: float } }
+        - { name: building_height_m, in: query, required: false, schema: { type: number, format: float } }
+      responses:
+        "200":
+          description: Overlay evaluation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OverlayResult" }
+        "403": { description: Feature flag disabled }
+        "422": { description: Feature disabled point out of Karnataka bounds / swapped lat-lon }
+
+  /geo/ring:
+    get:
+      operationId: getRing
+      summary: RMP-2015 planning ring (US-082 Part 1)
+      description: >
+        Classify a point into the RMP-2015 planning ring (I/II/III = TDR Zones A/B/C) by
+        point-in-polygon against OSM-derived Core Ring Road + Outer Ring Road + a
+        municipal-boundary LPA proxy, in EPSG:32643. Confidence is ALWAYS `inferred` (OSM-derived,
+        never authoritative). A point beyond the LPA proxy, or one whose deciding polygon could not
+        be closed reliably at prep time, is `unresolved` — NEVER defaulted to Ring III, never
+        approximated with a circle. Feeds Additional-FAR by ring (reg 3.4.v). Gated by
+        `feature.geo.zone-resolver`. Karnataka-only (lat/lon order + bounds asserted → 422).
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, format: float } }
+        - { name: lon, in: query, required: true, schema: { type: number, format: float } }
+      responses:
+        "200":
+          description: Ring classification
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RingResult" }
+        "403": { description: Feature flag disabled }
+        "422": { description: Point out of Karnataka bounds / swapped lat-lon }
+
+  /geo/zone-resolve:
+    get:
+      operationId: getZoneResolution
+      summary: Tiered zone resolver (US-082 Part 2)
+      description: >
+        Resolve the RMP land-use zone from the best-available tier: RMP seam (authoritative) >
+        user-confirmed (authoritative-on-attestation, kept VISIBLY DISTINCT from an RMP read) >
+        OSM/Bhuvan (inferred HINT — known wrong on real parcels; carries an "unverified — confirm
+        before relying" note) > unresolved. `far_zone_confidence` is what planning must carry into
+        the FAR assembly so an inferred zone can never mint an authoritative FAR (the US-088 P0
+        contract). An absent sub_zone stays unresolved — never defaulted to Main. The OSM proposal
+        is read from analyze_zone unless a user/RMP tier is supplied or `include_osm_hint=false`.
+        Gated by `feature.geo.zone-resolver`.
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, format: float } }
+        - { name: lon, in: query, required: true, schema: { type: number, format: float } }
+        - { name: user_zone, in: query, required: false, schema: { type: string } }
+        - { name: user_sub_zone, in: query, required: false, schema: { type: string } }
+        - { name: user_attested, in: query, required: false, schema: { type: boolean, default: false } }
+        - { name: user_confirmed_date, in: query, required: false, schema: { type: string } }
+        - { name: include_osm_hint, in: query, required: false, schema: { type: boolean, default: true } }
+      responses:
+        "200":
+          description: Tiered zone resolution
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ZoneResolution" }
+        "403": { description: Feature flag disabled }
+
+  /geo/transport-access:
+    get:
+      operationId: getTransportAccess
+      summary: Nearest transport access points (metro/rail/highway/airport) with coordinates
+      description: >
+        Returns nearest transport features per category with lat/lon for map markers and
+        straight-line distances. Metro/rail/highway from OSM Overpass (osm-derived); airport
+        from bundled BLR ARP (authoritative). Gated by `feature.geo.transport-access`.
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, format: float } }
+        - { name: lon, in: query, required: true, schema: { type: number, format: float } }
+        - { name: radius_m, in: query, required: false, schema: { type: integer, default: 10000 } }
+      responses:
+        "200":
+          description: Transport access result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransportAccessResult" }
+        "403": { description: Feature flag disabled }
+        "422": { description: Validation error }
+
 components:
   schemas:
+    OverlayProvenance:
+      type: object
+      required: [source, confidence]
+      properties:
+        source: { type: string }
+        confidence: { type: string, enum: ["authoritative", "inferred", "unresolved"] }
+        vintage: { type: string, nullable: true }
+    OverlayItem:
+      type: object
+      required: [name, status, as_of, provenance]
+      properties:
+        name: { type: string }
+        status:
+          type: string
+          enum: ["R", "A", "G", "unresolved"]
+          description: >
+            R inside strictest buffer / obstacle; A contested-or-less-strict band or
+            height-limited OLS surface; G clear (ONLY when a bundled authoritative layer can
+            clear it); unresolved no bundled clearing layer — absence is NOT clear.
+        distance_m: { type: number, nullable: true, description: "EPSG:32643 metres" }
+        buffer_m: { type: number, nullable: true, description: "strictest in-force regime" }
+        buffer_range_m:
+          type: array
+          nullable: true
+          items: { type: number }
+          description: "[min, max] across regimes when they disagree"
+        reference_point: { type: string, nullable: true, enum: ["centre", "periphery"] }
+        rule_citation: { type: string, nullable: true }
+        effective_date: { type: string, nullable: true }
+        litigation_status: { type: string, nullable: true }
+        as_of: { type: string }
+        provenance: { $ref: "#/components/schemas/OverlayProvenance" }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+        crs: { type: string, default: "EPSG:32643" }
+        is_killer:
+          type: boolean
+          description: "US-092 C1: machine-readable RED deal-killer (status == R). Read-only/computed."
+    GateSignal:
+      type: object
+      description: >
+        US-092 C1 — a Tier-1 gate as a machine-readable boolean. `tripped=true` fires the gate;
+        `tripped=false` with `confidence=unresolved` means NOT confirmed clear either (verdict must
+        treat as CAUTION, never a pass).
+      required: [gate_name, tripped, basis, confidence]
+      properties:
+        gate_name: { type: string }
+        tripped: { type: boolean }
+        basis: { type: string }
+        citation: { type: string, nullable: true }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
+    OverlayVerdict:
+      type: object
+      required: [hard_no_go, blocks_clean_go, red_overlays, unresolved_overlays]
+      properties:
+        hard_no_go: { type: boolean, description: "any RED overlay" }
+        blocks_clean_go: { type: boolean, description: "any unresolved overlay — forces CAUTION" }
+        red_overlays: { type: array, items: { type: string } }
+        unresolved_overlays: { type: array, items: { type: string } }
+    OverlayResult:
+      type: object
+      required: [lat, lon, overlays, verdict, live_overlays, pending_overlays]
+      properties:
+        lat: { type: number, format: float }
+        lon: { type: number, format: float }
+        crs: { type: string, default: "EPSG:32643" }
+        overlays:
+          type: array
+          items: { $ref: "#/components/schemas/OverlayItem" }
+        verdict: { $ref: "#/components/schemas/OverlayVerdict" }
+        gates:
+          type: array
+          description: "US-092 C1: one machine-readable gate per overlay (tripped = RED)."
+          items: { $ref: "#/components/schemas/GateSignal" }
+        live_overlays: { type: array, items: { type: string } }
+        pending_overlays: { type: array, items: { type: string } }
+        noc_checklist:
+          type: array
+          description: >
+            US-087 — mandatory obligations with NO obtainable public geometry BY NATURE (gas,
+            HT-distribution). NOT scored R/A/G, NOT in `overlays`, do NOT affect `verdict`.
+          items: { $ref: "#/components/schemas/OverlayNocChecklistItem" }
+        data_disclaimer: { type: string }
+    OverlayNocChecklistItem:
+      type: object
+      required: [name, authority, requirement, rule_citation, reclass_reason]
+      properties:
+        name: { type: string }
+        authority: { type: string }
+        requirement: { type: string }
+        rule_citation: { type: string }
+        typical_validity: { type: string, nullable: true }
+        deep_link: { type: string, nullable: true }
+        reclass_reason:
+          type: string
+          description: WHY it is unobtainable — so this is never mistaken for weakening the rule
+        mandatory: { type: boolean, default: true }
+    RingResult:
+      type: object
+      required: [status, confidence, data_source, reg_basis]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        ring: { type: string, nullable: true, enum: ["I", "II", "III"] }
+        tdr_zone: { type: string, nullable: true, enum: ["A", "B", "C"] }
+        confidence: { type: string, enum: ["inferred"], description: "OSM-derived — never authoritative" }
+        data_source: { type: string }
+        data_vintage: { type: string, nullable: true }
+        reg_basis: { type: string }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+        notes: { type: array, items: { type: string } }
+    ZoneResolution:
+      type: object
+      required: [status, confidence]
+      properties:
+        status: { type: string, enum: ["resolved", "unresolved"] }
+        zone: { type: string, nullable: true }
+        sub_zone: { type: string, nullable: true }
+        confidence: { $ref: "#/components/schemas/SourceConfidence" }
+        source:
+          type: string
+          nullable: true
+          description: '"BDA-RMP-2015" | "user-confirmed" | "OSM/Bhuvan (inferred)" — kept distinct'
+        data_source: { type: string, nullable: true }
+        data_vintage: { type: string, nullable: true }
+        unverified: { type: boolean, description: "true for an OSM hint — confirm before relying" }
+        attested: { type: boolean, description: "true for a user-confirmed zone" }
+        proposed_zone: { type: string, nullable: true, description: "the OSM hint, retained" }
+        proposed_sub_zone: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        next_action: { type: string, nullable: true }
+        notes: { type: array, items: { type: string } }
+        far_zone_confidence:
+          type: string
+          enum: ["authoritative", "inferred"]
+          description: "what planning carries into FarAssemblyRequest.zone_confidence (anti-laundering)"
+        sub_zone_status: { type: string, enum: ["resolved", "unresolved"] }
+        sub_zone_reason: { type: string, nullable: true }
     Severity:
       type: string
       enum: ["low", "moderate", "high", "none"]
     SourceConfidence:
       type: string
-      enum: ["authoritative", "community"]
+      # Unified confidence ladder (matches Provenance.tier + planning FAR). OSM/Bhuvan-derived
+      # zoning is ALWAYS "inferred"; only a real RMP/KGIS land-use source may be "authoritative".
+      # The old {authoritative, community} vocabulary is removed (US-088 dry-run P0 fix).
+      enum: ["authoritative", "derived", "inferred", "unresolved"]
     ZoneClass:
       type: string
       enum: ["Residential", "Commercial", "Industrial", "Agricultural", "Green Belt", "Water Body", "Institutional", "Mixed Use", "Restricted", "Unknown"]
@@ -136,6 +437,7 @@ components:
         taluk: { type: string, nullable: true }
         hobli: { type: string, nullable: true }
         village: { type: string, nullable: true }
+        village_code: { type: string, nullable: true }
         survey_number: { type: string, nullable: true }
 
     ZoneResult:
@@ -155,6 +457,12 @@ components:
         na_order_required: { type: boolean }
         forest_clearance_required: { type: boolean }
         source_confidence: { $ref: "#/components/schemas/SourceConfidence" }
+        zone_authority:
+          type: string
+          nullable: true
+          description: >
+            Provenance of `zone_class`: "BDA-RMP-2015" (authoritative BDA Revised
+            Master Plan land-use) or "OSM-inferred" (preliminary, from OSM tags).
         kgis:
           oneOf:
             - $ref: "#/components/schemas/KgisContext"
@@ -238,4 +546,126 @@ components:
         total_count: { type: integer }
         score: { type: number, format: float }
         severity: { $ref: "#/components/schemas/Severity" }
+        data_source: { type: string }
+
+    GeoJsonPolygon:
+      type: object
+      required: [type, coordinates]
+      properties:
+        type: { type: string, enum: ["Polygon"] }
+        coordinates:
+          type: array
+          description: Array of linear rings; each ring is an array of [lng, lat] pairs (WGS84).
+          items:
+            type: array
+            items: { type: array, items: { type: number, format: float }, minItems: 2 }
+
+    ParcelGeometry:
+      type: object
+      required: [survey_number, resolved, crs, data_source]
+      properties:
+        survey_number: { type: string }
+        village_code: { type: string, nullable: true }
+        kgis_village_id: { type: string, nullable: true }
+        ulpin: { type: string, nullable: true }
+        lat: { type: number, format: float, nullable: true }
+        lon: { type: number, format: float, nullable: true }
+        resolved: { type: boolean, description: "true only when a real KGIS polygon was returned" }
+        geometry:
+          oneOf:
+            - $ref: "#/components/schemas/GeoJsonPolygon"
+            - type: "null"
+        crs: { type: string }
+        provenance:
+          description: >
+            ADDITIVE (optional, nullable). Accuracy-ladder tier/mode for the answer.
+            authoritative/kgis-live when a real KGIS polygon resolved; unresolved/unresolved
+            on a KGIS miss (there is no vector-parcel fallback — honest degradation, never a
+            synthesized boundary). Existing fields are unchanged.
+          oneOf:
+            - $ref: "#/components/schemas/Provenance"
+            - type: "null"
+        data_source: { type: string }
+        data_disclaimer: { type: string }
+
+    Provenance:
+      type: object
+      description: >
+        Accuracy-ladder provenance (US-080/US-093 fallback wire-in). `tier` is OUR ladder,
+        never an upstream label: KGIS-live answers are authoritative; the bundled open-data
+        fallback is always inferred; unresolved withholds the value (never a guess).
+      required: [tier, mode, data_source]
+      properties:
+        tier: { type: string, enum: ["authoritative", "inferred", "unresolved"] }
+        mode: { type: string, enum: ["kgis-live", "inferred-fallback", "unresolved"] }
+        data_source: { type: string }
+        data_vintage: { type: string, nullable: true, description: "source snapshot date; null for a live service" }
+        reason: { type: string, nullable: true, description: "populated when unresolved" }
+        next_action: { type: string, nullable: true, description: "populated when unresolved / needs verification" }
+
+    AuthorityResult:
+      type: object
+      required: [authority, jurisdiction_type, confidence, live_verified, data_source]
+      properties:
+        authority: { type: string }
+        jurisdiction_type: { type: string, enum: ["Urban", "Rural", "Unknown"] }
+        planning_authority: { type: string, nullable: true }
+        approval_track: { type: string, nullable: true }
+        bye_law_reference: { type: string, nullable: true }
+        portal: { type: string, nullable: true }
+        confidence: { type: string, enum: ["authoritative", "derived", "inferred", "unresolved"] }
+        data_source: { type: string }
+        data_disclaimer: { type: string }
+        live_verified:
+          type: boolean
+          description: >
+            true only once the KGIS Boundaries/LPA point-in-polygon check confirms the
+            authority; false while classification is from admin context only.
+        kgis:
+          oneOf:
+            - $ref: "#/components/schemas/KgisContext"
+            - type: "null"
+        notes: { type: string, nullable: true }
+        provenance:
+          description: >
+            ADDITIVE (optional, nullable). authoritative/kgis-live when classified from KGIS
+            context; inferred/inferred-fallback when KGIS is unavailable and the bundled GBA
+            wards (2025) or LGD villages (LGD-2024) layer contained the point;
+            unresolved/unresolved when neither answered. Existing fields are unchanged.
+          oneOf:
+            - $ref: "#/components/schemas/Provenance"
+            - type: "null"
+        data_source: { type: string }
+        data_disclaimer: { type: string }
+
+    TransportFeature:
+      type: object
+      required: [name, subtype, lat, lon, distance_m, confidence]
+      properties:
+        name: { type: string }
+        subtype: { type: string, enum: ["metro_station", "rail_station", "highway_junction", "highway_access", "airport"] }
+        lat: { type: number, format: float }
+        lon: { type: number, format: float }
+        distance_m: { type: number, format: float }
+        confidence: { type: string, enum: ["osm-derived", "authoritative"] }
+
+    TransportCategory:
+      type: object
+      properties:
+        nearest:
+          oneOf:
+            - $ref: "#/components/schemas/TransportFeature"
+            - type: "null"
+        features: { type: array, items: { $ref: "#/components/schemas/TransportFeature" } }
+        status: { type: string, enum: ["resolved", "none_found"] }
+
+    TransportAccessResult:
+      type: object
+      required: [metro, rail, highway, airport, radius_m, data_source]
+      properties:
+        metro: { $ref: "#/components/schemas/TransportCategory" }
+        rail: { $ref: "#/components/schemas/TransportCategory" }
+        highway: { $ref: "#/components/schemas/TransportCategory" }
+        airport: { $ref: "#/components/schemas/TransportCategory" }
+        radius_m: { type: integer }
         data_source: { type: string }

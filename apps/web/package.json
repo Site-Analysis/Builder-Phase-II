@@ -9,12 +9,16 @@
     "start": "next start"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "next-auth": "^5.0.0-beta.25",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@react-three/postprocessing": "^3.0.4",
     "@supabase/supabase-js": "^2.108.1",
+    "@vercel/otel": "^1.14.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "esri-leaflet": "^3.0.19",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",

@@ -23,3 +23,12 @@ TBD — define when contract is written.
 - [ ] Add `Dockerfile`
 - [ ] Add service block to root `docker-compose.yml`
 - [ ] Add smoke test to `tests/geo_smoke.py`
+
+## Fallback data (download-on-setup)
+Non-KGIS inferred-tier layers live in `app/data/` (provenance in `app/data/FALLBACK_SOURCES.md`).
+The large `lgd_villages.geojson` (65 MB) is **gitignored** — fetch + validate it at setup:
+
+    python scripts/fetch_fallback_data.py
+
+It asserts 30,416 features + EPSG:4326 + the lat/lon KA-bounds canary (wrong/corrupt download
+fails loud). `wards_bengaluru_gba.geojson` (2.9 MB, ODbL) is committable and stays tracked.

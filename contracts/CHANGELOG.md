@@ -1,5 +1,390 @@
 # Contract Changelog
 
+## 2.32.0 — 2026-08-29
+
+### Added — infrastructure.yaml: `GET /infrastructure/power-grid` — KPTCL/BESCOM proximity
+- **`GET /infrastructure/power-grid?lat=&lon=&radius_m=`** — OSM Overpass power-line and substation proximity. Returns nearest KPTCL transmission line (≥66kV), BESCOM distribution line (11-33kV), and nearest substation with voltage + operator + distance. Emits three connection-feasibility flags: `bescom_lt_within_200m`, `bescom_ht_within_2km`, `kptcl_ht_within_5km`. Gated by `feature.infrastructure.power-grid`.
+- New schemas: `PowerLine`, `PowerSubstation`, `PowerGridResult`
+- `infrastructure.yaml` version bumped `1.3.0` → `1.4.0`
+
+## 2.31.0 — 2026-08-29
+
+### Added — geo.yaml: `/geo/transport-access` — nearest transport access points with coordinates
+- **`GET /geo/transport-access?lat=&lon=&radius_m=`** — returns nearest metro stations, rail stations, highway access points, and airport with lat/lon coordinates and straight-line distances. Gated by `feature.geo.transport-access`.
+- New schemas: `TransportFeature`, `TransportCategory`, `TransportAccessResult`
+- Airport: hardcoded BLR (Kempegowda International) — authoritative confidence, no OSM dependency
+- Metro/Rail: OSM Overpass, `osm-derived` confidence
+- Highway: OSM motorway/trunk nodes + junction nodes, `osm-derived` confidence
+
+## 2.30.0 — 2026-08-27
+
+### Changed — cadastral.yaml: hierarchy endpoints return `{code, name}` objects
+- **`GET /districts`**, **`/taluks`**, **`/hoblis`**, **`/villages`** — response changed from `array<string>` (numeric codes) to `array<{code: string, name: string}>` (sourced from `village_roster`; falls back to parquet-dir codes when roster has no entry)
+- Frontend: `CadastralToolbar` dropdowns now show district/taluk/hobli/village names; numeric code still passed to `/data`
+
+## 2.29.0 — 2026-08-27
+
+### Added — cadastral.yaml: hierarchy listing + new overlay endpoints (cadastral explorer feature)
+- **`GET /districts`** — list all district codes present in cadastral_lake_v2 (for dropdown cascade)
+- **`GET /taluks?dist=`** — list taluk codes for a district
+- **`GET /hoblis?dist=&taluk=`** — list hobli codes for a district+taluk
+- **`GET /villages?dist=&taluk=&hobli=`** — list village codes for a district+taluk+hobli
+- **`GET /hydrorivers?bbox=`** — HydroRIVERS river network (split from `/drainage` which is now OSM-only)
+- **`GET /bbmp-swd?bbox=`** — BBMP storm water drain lines (primary/secondary/tertiary)
+- **`GET /cgd-zones`** — PNGRB City Gas Distribution zone boundaries (GeoJSON)
+- `/drainage` now returns OSM waterways only; HydroRIVERS moved to `/hydrorivers`
+- Feature flag: `feature.cadastral.explorer` added to `packages/flags/src/flags.py`
+
+## 2.28.0 — 2026-08-27
+
+### Added — cadastral.yaml (NEW, v1.0.0), Karnataka e-Chawadi land records + infrastructure overlays
+- **NEW SERVICE `services/cadastral/` (port 8011)** — wraps Karnataka Bhoomi e-Chawadi scraped data
+  (1.7 GB parquet lake + 639 MB SQLite) as a FastAPI service. Preferred over KGIS digitization
+  where coverage exists (96% of 32k Karnataka villages).
+- **`GET /search?q=`** — survey number prefix search across 8.9M indexed Karnataka parcels. Returns
+  up to 25 `SurveySearchResult` matches with village context (dist/taluk/hobli/vlg for RCCMS lookup).
+- **`GET /rccms?dist=&taluk=&hobli=&vlg=`** — RCCMS court cases per village: ack_no, case_id,
+  applicant_name, survey_no, case_status. Encumbrance risk signal for builders.
+- **`GET /mutations?dist=&taluk=&hobli=&vlg=`** — Mutation (land transfer) records per village:
+  tran_no, mr_number, transaction_type, survey_numbers, status, acquisition_type.
+- **`GET /village-info`** / **`GET /village-by-lgd`** — village metadata + LGD code resolution.
+  `village-by-lgd` bridges KGIS parcel LGD_VillageCode → e-Chawadi hierarchy for cross-linking.
+- **`GET /data?dist=&taluk=&hobli=&vlg=`** — parcel polygon GeoJSON (WGS84). Source parquets have
+  X/Y swapped (EPSG:32643 scraper bug) — fixed at read time via affine transform. Always scope
+  by all four hierarchy params; unscoped loads full 1.7 GB lake.
+- **`GET /lgd-villages`** — Karnataka village boundary GeoJSON (LGD source, 418 MB parquet). Each
+  feature carries `covered=true` when e-Chawadi parcel data exists. Frontend uses this to pick
+  primary layer (e-Chawadi where covered, KGIS fallback where not).
+- **`GET /road-width?bbox=`** — BBMP + OSM road widths with RMP FAR tier annotation. FAR mapping:
+  <9m→1.5, 9–12m→1.75, 12–18m→2.25, 18–24m→2.75, 24–30m→3.25, ≥30m→3.75. This is the
+  RMP-primary FAR criterion; makes road-width FAR the controlling signal over zone-based FAR.
+- **`GET /encroachment?bbox=`** — Rajakaluve (storm-water channel) encroachment parcels from BBMP /
+  Revenue Dept (rajakaluve.org, 936 Bengaluru Urban villages). Carries bbmp_notified + revenue_flagged
+  booleans + proximity to drain/lake. Triggers automatic red flag in builders verdict.
+- **Infrastructure overlays** (all gated by `feature.cadastral.overlays`):
+  - `GET /bwssb-sewerage?tier=&bbox=` — BWSSB sewerage network by pipe diameter (data.opencity.in)
+  - `GET /osm-powerlines?bbox=` — OSM power lines classified EHV/HV/MV by voltage
+  - `GET /gas-pipelines?bbox=` + `GET /gas-nodes?bbox=` — OSM gas network + infrastructure nodes
+  - `GET /drainage?bbox=` — OSM waterways + HydroRIVERS (Strahler ≥3)
+  - `GET /wris-lakes?bbox=` — WRIS water bodies (Govt of India)
+  - `GET /bescom-boundaries` — BESCOM electricity zones (division/section/subdivision)
+- **Feature flags added:** `feature.cadastral.land-records` (core) + `feature.cadastral.overlays`
+  (infrastructure layers). All endpoints return HTTP 403 when the relevant flag is not set.
+
+## 2.27.0 — 2026-07-29
+
+### Added — report.yaml (NEW, v1.0.0), US-092 GO / CAUTION / NO-GO verdict + shareable report
+- **`POST /report/go-no-go`** (`ReportResponse`) — the final story: a one-screen HONEST-TRIAGE verdict
+  aggregating all live signal outputs. **Two-tier, not a weighted average** (replaces the client-side
+  `computeSiteScore` mean + the html2canvas export stub, GH#54):
+  - **Tier-1 gates (booleans, C1):** any `is_killer` overlay / `kharab-non-saleable` / `restricted-
+    tenure` tripped → **hard NO-GO**, regardless of everything else; each red flag cited + severity-
+    sorted (critical first).
+  - **Tier-2 (gate-clear only):** GO requires no tripped gate AND no unresolved decision input AND
+    favourable resolved signals; otherwise **CAUTION** with a ranked `confirm_to_upgrade` list (each
+    with its `next_action`). An unresolved decision input (C2) can NEVER yield GO — it forces CAUTION,
+    never a silent pass.
+  - **Verdict confidence (C4 weakest):** the verdict carries its own confidence = weakest decision
+    input; an inferred zone yields an inferred verdict, stated prominently in `confidence_note`.
+  - Every `ReportRow` carries value + citation + confidence + `data_vintage` + buffer `as_of` + the
+    mandatory "subject to authority sanction" note.
+  - Delivery seams: PDF via WeasyPrint (HTML fallback when not installed — never a fake PDF); a
+    read-only report SNAPSHOT + signed share link via Supabase (`pending-supabase` when creds absent —
+    never a fake link). Gated by the new flag `feature.report.go-no-go` (default-off).
+
+## 2.26.0 — 2026-07-29
+
+### Changed — infrastructure.yaml (v1.2.0 → v1.3.0), US-092 C2 unresolved never scores as a pass
+- **`connectivity_signal` + `infra_readiness` restructured to expose known-vs-unknown** so an
+  unresolved decision-relevant input can never be averaged into a middling "partial-good" number.
+  Both gain `status` (`resolved|partial|unresolved`), `resolved_score` (over KNOWN inputs ONLY; null
+  when too few are known), `unresolved_count`, `unknowns[]` (`SignalUnknown{name, next_action}`), and
+  `confidence` on the C4 ladder (`unresolved` when the signal is).
+- **`ConnectivityResult.connectivity_score` is now nullable** — SUPPRESSED (null) when the signal is
+  unresolved (only the always-bundled airport is known). An all-unresolved connectivity read returns
+  `status=unresolved` + the `unknowns` list, never a passing/middling score.
+- **`infra_readiness`**: water presence UNKNOWN (no authoritative BWSSB layer) is pivotal → forces
+  `status=unresolved`; the score is the mean over KNOWN inputs only, null when fewer than two are
+  known. Additive — existing fields (`overall`, `telecom_score`, …) unchanged for back-compat.
+
+## 2.25.0 — 2026-07-29
+
+### Changed — geo.yaml (v1.9.0 → v1.10.0) + land-records.yaml (v1.1.0 → v1.2.0), US-092 C1 gate booleans
+- **Every Tier-1 gate now exposes a machine-readable boolean** so the verdict engine determines
+  NO-GO from booleans alone, never from string-matching prose.
+- **geo `OverlayItem.is_killer`** (computed) — `true` iff `status == R`; **geo `OverlayResult.gates`**
+  — one `GateSignal` per overlay. A forest/buffer/wetland RED sets `is_killer=true` and its gate
+  `tripped=true`.
+- **land-records `OwnershipSnapshot.gates`** — the `kharab-non-saleable` gate (`tripped` iff Kharab-B)
+  and the `restricted-tenure` gate (`tripped` iff Gomala/restricted confirmed), previously only in
+  prose/notes.
+- **`GateSignal`** = `{gate_name, tripped: bool, basis, citation, confidence}` (confidence on the
+  US-092 C4 ladder). An unresolved gate is `tripped=false` WITH `confidence=unresolved` — the verdict
+  reads that as CAUTION, never a silent pass (C2). Purely additive; no existing field changed.
+
+## 2.24.0 — 2026-07-28
+
+### Added — planning.yaml (v1.4.0 → v1.5.0), US-083 mixed-use % + parking (ECS) + TIA
+- **`POST /planning/obligations`** (`DevelopmentObligationsResult`) — development obligations for a
+  plot, computed from built-up area (achievable_far × plot):
+  - **Parking ECS** from **RMP-2015 Table 23 (Ch.8, p.48)** — non-residential uses key by floor area
+    (retail/office 50 sqm, restaurant 75, hotel 80, hospital 100, educational 150, …) at
+    AUTHORITATIVE confidence; residential multi-dwelling is per-DU (row 13: 1 ECS/DU 50–150 sqm +
+    10% visitor), with the ~1 ECS/100 sqm figure marked DERIVED (proxy of the per-DU rule).
+  - **Mixed-use %** — zone-permitted non-residential share where the RMP states one
+    (Residential-Main 20% reg 4.1.2 p.27; Residential-Mixed 30% reg 4.2.2 p.28; Integrated Township
+    40/60 reg 7.3 p.47); other zones → checklist, never a fabricated %.
+  - **Access adequacy** — REUSES the `road_width_resolver` (not recomputed); flags the access road
+    below the RMP minimum for the use.
+  - **Checklist** — obligations RMP-2015 does NOT quantify are surfaced as `unverified` items with no
+    number: the **TIA trigger threshold** (absent from RMP-2015 Vol-III entirely — flagged as a
+    likely obligation for large/commercial builds), and any use/zone with no RMP rate.
+  - Config gains provenance-tracked `parking_norms` (Table 23) + `mixed_use_shares` blocks
+    (authoritative, pixel-verified p.47/48). Gated by the new `feature.planning.mixed-use`
+    (default-off).
+
+## 2.23.0 — 2026-07-28
+
+### Changed — future-infra.yaml (v1.0.0 → v1.1.0), US-090 pipeline audit + metro wire + price upside
+- **Pipeline status audit.** `PipelineStatus` enum gains **`Tendered`** and **`Cancelled`**;
+  `PipelineItem` gains `status_as_of` (when the status was last verified) and
+  `contributes_to_upside` (true only for Operational / Under-Construction). A Cancelled/Tendered
+  project is shown for transparency but is EXCLUDED from the growth score and price upside — the
+  curated data was corrected: the **BDA Peripheral Ring Road (PRR) is now `Cancelled`** (tender
+  cancelled Jul-2024), split from the distinct NHAI **STRR Phase-1** (`Operational`); Metro Phase-3
+  corrected to the Aug-2024 Cabinet-approved 44.65 km / 31-station scope (`Approved`, not upcoming);
+  **K-RIDE** suburban rail added (`Under Construction`, target Dec-2026).
+- **`GET /future-infra/metro-nearest`** (`MetroNearest`) — nearest curated metro-corridor node,
+  straight-line EPSG:32643, **INFERRED** (approximate curated alignment, NOT live BMRCL GTFS).
+  Fills the US-086 metro seam; `/infrastructure/connectivity` now consumes it as `metro_fetched`, so
+  `connectivity_signal.metro_status` resolves from curated data instead of `unresolved`.
+- **`POST /future-infra/price-upside`** (`PriceUpsideResult` / `PriceUpside`) — indicative price
+  upside as a **RANGE** {low, high, method, confidence, as_of}; the schema has **no scalar price
+  field** and enforces low ≤ high. Kaveri guidance value × hedonic distance-decay (MPRA 124686) off
+  the nearest Operational/Under-Construction node; only those statuses contribute (Cancelled = 0).
+  Absent guidance value → `unresolved` (NOT zero). Confidence `inferred`; carries an
+  "indicative, not a valuation — consult a registered valuer" disclaimer. Gated by the existing
+  `feature.context.growth-pipeline`.
+
+## 2.22.0 — 2026-07-24
+
+### Added — land-records.yaml (v1.0.0 → v1.1.0), US-091 ownership snapshot
+- **`POST /land-records/ownership`** (`OwnershipSnapshot`) — a SCREENING signal only. There is no
+  bulk/public ownership API (Bhoomi RTC, e-Aasthi/e-Swathu, Kaveri EC are CAPTCHA/OTP-gated;
+  DigiLocker is per-citizen consent), so NO owner is fetched or inferred. Derives Kharab (KGIS
+  Cadastral L5; **Kharab-B = government land, NON-SALEABLE**) and Gomala/restricted (Dishaank) flags
+  ONLY when the parcel resolved — otherwise `unresolved` (absence of an RTC read is NEVER 'clear
+  title'); an un-supplied Dishaank class becomes a CHECKLIST item, never a silent pass. Emits
+  deep-links (Bhoomi Service2 / e-Aasthi / e-Swathu / Kaveri EC / Dishaank, each with the exact
+  inputs to type) and replaces the old fixed score of 50 with an `ownership_feasibility` signal
+  {kharab_flag, restricted_flag, title_verification="manual-required", confidence, next_action} for
+  the US-092 GO/NO-GO engine. Every output carries the hand-off note (advocate + EC search required).
+  Gated by the new flag `feature.land.ownership` (default-off).
+
+## 2.21.0 — 2026-07-24
+
+### Changed — infrastructure.yaml (v1.1.0 → v1.2.0) + planning.yaml (v1.3.0 → v1.4.0), US-086 connectivity consolidation
+- **`POST /infrastructure/connectivity`** (`ConnectivityResult`) — infrastructure is now the single
+  connectivity owner. Airport distance is STRAIGHT-LINE in EPSG:32643 from the bundled AAI ARP;
+  metro/rail/highway resolve only from real sources and return `unresolved` when the source is not
+  fetchable (never a fabricated distance); every distance is labelled straight-line vs network.
+  Access-road width comes from the planning `road_width_resolver` (reused, not reimplemented).
+  Emits `connectivity_signal` + access flags (narrow-approach, no-metro-within-5km, highway-adjacent)
+  for the US-092 GO/NO-GO engine. Gated by the existing `feature.infrastructure.connectivity`.
+- **planning `AirportRestriction` — height-cap only** — `distance_km`, `lat`, `lon` REMOVED (and
+  dropped from `required`). Planning keeps the ICAO/OLS surface + max-height for the envelope; the
+  airport DISTANCE reporting moved to `/infrastructure/connectivity`. Breaking for consumers reading
+  `distance_km` from planning — read it from connectivity instead.
+
+## 2.20.0 — 2026-07-23
+
+### Added — infrastructure.yaml (v1.0.0 → v1.1.0) + geo.yaml (v1.8.0 → v1.9.0), US-087 utilities + overlay reclassification
+- **`POST /infrastructure/utilities`** (`UtilitiesResult`) — water/telecom AVAILABILITY as an
+  inferred OSM proximity proxy (never a connection claim); BWSSB water/sewer trunk-main presence at
+  AUTHORITATIVE confidence ONLY (official BWSSB/KGIS mains layer), otherwise `unknown` + "verify
+  with BWSSB" (OSM cannot assert a main exists); a structured NOC checklist (BWSSB, BESCOM/CEA-2010
+  ROW, KSPCB CTE 15 yr / CTO, Fire per RMP reg 3.12 for ≥24 m, AAI NOCAS, PNGRB gas, telecom RoW),
+  each with authority + rule citation + typical validity + deep link; and an `infra_readiness`
+  signal (water known/unknown, telecom score, noc_pending, overall) for the US-092 GO/NO-GO engine.
+  Gated by the new flag `feature.infrastructure.utilities` (default-off).
+- **Overlay RECLASSIFICATION** (`OverlayResult.noc_checklist` + `OverlayNocChecklistItem`) —
+  overlays are now split into SCORED (data exists or could exist; absence → `unresolved` → BLOCKS a
+  clean GO — rajakaluve, lakes, wetland, ramsar, forest, ESZ, airport-OLS, flood) vs NOC CHECKLIST
+  (no obtainable public geometry BY NATURE — **gas** [no public alignment dataset] and
+  **HT-distribution feeders** [BESCOM geometry non-public]). Checklist items are surfaced with their
+  rule citation + a `reclass_reason` (WHY unobtainable), are NOT scored R/A/G, and do NOT affect the
+  verdict. `verdict.blocks_clean_go` now reflects ONLY scored overlays, so a clean parcel with the
+  flood layer present can return `blocks_clean_go=false`. A SEAM is kept: if HT-transmission geometry
+  is ever bundled (VEDAS/OSM), it flips back to a scored overlay. Additive — no field removed.
+
+## 2.19.0 — 2026-07-23
+
+### Added — flood.yaml (v1.7.0 → v1.8.0), US-089 terrain + NDEM flood overlay
+- **`POST /flood/terrain`** (`TerrainResult`) — slope % / HAND / cut-fill from a Copernicus GLO-30
+  DEM window over the parcel polygon (reprojected to EPSG:32643 — metric CRS, never degree-spaced),
+  plus a MANUAL geotech bearing-capacity tier. NODATA is masked; a window >20% nodata returns
+  `unresolved`, never a phantom 0.0. Cut and fill are reported SEPARATELY. Bearing capacity is
+  authoritative only when a geotechnical value is supplied — never inferred from soil type
+  (SoilGrids). FABDEM (non-commercial) is not used. Gated by the new flag `feature.flood.terrain`
+  (default-off).
+- **`ElevationAnalysis.slope_degrees` bug fix** — was a hardcoded `0.0` that read as "flat" (a
+  silent false-negative); now `nullable` (+ `slope_note`) — null at a single point, with slope
+  deferred to `/flood/terrain`. Removed from the `required` list.
+- **NDEM flood overlay LIVE** (geo `/geo/overlays`, no contract change) — `scripts/prep_overlay_layers.py`
+  now slices the NDEM 1998-2022 inundation layer to `flood_inundation_ka.geojson`. A parcel
+  intersecting an observed polygon is RED; ABSENCE is AMBER (not GREEN) — "no observed inundation
+  in the 1998-2022 record" is weaker than "clear". A missing layer file stays `unresolved`
+  (cardinal rule). This clears flood from `blocks_clean_go` when the layer is present; HT-line + gas
+  remain unresolved, so `blocks_clean_go` stays true.
+
+## 2.18.0 — 2026-07-23
+
+### Added — geo.yaml (v1.7.0 → v1.8.0), US-082 ring classification + tiered zone resolver
+- **`GET /geo/ring`** (`RingResult`) — RMP-2015 planning ring I/II/III (= TDR Zones A/B/C) by
+  point-in-polygon against OSM-derived Core/Outer Ring Road + a municipal-boundary LPA proxy
+  (EPSG:32643). Confidence is ALWAYS `inferred` (OSM-derived, never authoritative). A point beyond
+  the LPA proxy, or one whose deciding polygon could not be closed reliably at prep time, is
+  `unresolved` — NEVER defaulted to Ring III and never approximated with a circle. Feeds
+  Additional-FAR by ring (reg 3.4.v). Karnataka-only (lat/lon swap + bounds → 422).
+- **`GET /geo/zone-resolve`** (`ZoneResolution`) — tiered zone resolver: RMP seam (authoritative) >
+  user-confirmed (authoritative-on-attestation, tagged `source="user-confirmed"`, kept VISIBLY
+  DISTINCT from an RMP read) > OSM/Bhuvan (inferred HINT with an "unverified — confirm before
+  relying" note) > unresolved. `far_zone_confidence` propagates the ceiling into the FAR assembly
+  so an inferred zone can never mint an authoritative FAR (the US-088 P0 contract). An absent
+  sub_zone stays `unresolved` — never defaulted to Main.
+- Both gated by the new flag **`feature.geo.zone-resolver`** (default-off). Ring geometry is
+  produced dev-time by `scripts/prep_ring_polygons.py` (OSM Overpass); the runtime is GeoJSON-only
+  and returns `unresolved` when the polygons are not bundled. Additive — no field removed.
+
+## 2.17.0 — 2026-07-22
+
+### Changed — geo.yaml (v1.6.0 → v1.7.0) + planning.yaml (v1.2.0 → v1.3.0), US-088 dry-run P0 fix
+- **geo `SourceConfidence` enum unified** `["authoritative", "community"]` →
+  `["authoritative", "derived", "inferred", "unresolved"]` — the ONE ladder used across overlays
+  + parcel provenance + planning FAR. An OSM/Bhuvan-derived zone is now `inferred` (never
+  `authoritative`); a `ZoneResult` with `source_confidence="authoritative"` and a non-RMP
+  `zone_authority` now FAILS validation (only `BDA-RMP-2015` may mint authoritative). Fixes the
+  P0 where a wrong OSM zone shipped wearing a trusted "authoritative" label.
+- **planning `FarAssemblyRequest.zone`** relaxed from the `ZoneClass` enum to `string`: it now
+  accepts the geo `zone_class` vocabulary. `far_assembly` maps it (`zone_map.map_geo_zone`); a
+  non-developable zone (Water Body / Green Belt / Agricultural / Restricted / Unknown) returns a
+  clean `unresolved` "no FAR table applies — not developable under RMP" result instead of a **422
+  crash**, and is never coerced to a nearest developable zone.
+- **planning FAR: missing `sub_zone` no longer silently defaults to the first table.** A zone with
+  multiple RMP sub-zones (Residential Main/Mixed, Commercial Central/Business/Mutation, Industrial
+  General/Hi-Tech) now returns `unresolved` with a next_action naming the choices — a silent Main
+  default was a confidently-wrong FAR (plot-size vs road-width keying). FAR output also carries an
+  explicit note when it rests on an inferred zone (confidence propagation already caps such a FAR
+  at ≤ derived; the note makes the dependency visible). Additive; no field removed.
+
+## 2.16.0 — 2026-07-22
+
+### Added — geo.yaml (v1.5.0 → v1.6.0, unified deal-killer overlay engine, US-088)
+- New `GET /geo/overlays` → `OverlayResult`. Consolidates the rajakaluve/waterbody/flood/forest/
+  airport-OLS/HT-line overlay logic previously scattered across geo/flood/infrastructure/planning
+  into ONE dated-config registry (other services keep their endpoints; this is the single
+  deal-killer view the future US-092 GO/NO-GO engine reads).
+- **CARDINAL RULE encoded in the contract**: an overlay with no bundled AUTHORITATIVE clearing
+  layer returns `status: unresolved`, NEVER `G`/clear — absence of data is not absence of hazard.
+  Only `rajakaluve/drains` and `airport-OLS` (bundled geometry/coords) can return `G`. `lakes`,
+  `wetland`, `flood`, `forest`, `HT-line`, `gas` are PENDING → `unresolved` (loud) until their
+  layers are bundled; a trustworthy PRESENCE probe may still fire `R`, but silence never clears.
+- **Buffers are dated config, not constants**: each overlay carries the STRICTEST in-force regime
+  (`buffer_m`) plus `buffer_range_m` when regimes disagree, `reference_point` (centre vs
+  periphery — regimes differ), `rule_citation`, `effective_date`, `litigation_status`. A
+  proposed/stayed regime (e.g. rajakaluve 2025 draft 30 m) is surfaced in the range but never
+  governs.
+- All distances in **EPSG:32643** (UTM 43N metres, hand-rolled TM projection — never degrees);
+  Karnataka lat/lon order + bounds asserted (422 on swap/out-of-bounds). `verdict.hard_no_go`
+  (any RED) and `verdict.blocks_clean_go` (any unresolved) exposed as booleans.
+- New schemas `OverlayProvenance`, `OverlayItem`, `OverlayVerdict`, `OverlayResult`. Gated by
+  new flag `feature.geo.overlays`. Additive; no existing geo field changed.
+
+## 2.15.0 — 2026-07-21
+
+### Added — planning.yaml (v1.1.0 → v1.2.0, permissible-vs-achievable FAR, US-084)
+- New `POST /planning/far` → `FarAssemblyResult`. The moat: `permissible_far` (RMP table via
+  lookup_far + far_modifiers) plus a **TWO-LINE achievable**: `achievable_base` (table FAR after
+  the reg-3.4.iii road-band constraint + envelope — build by right) and
+  `achievable_with_entitlements` (base + QUALIFYING modifiers, each labelled in `entitlements[]`
+  with its condition). reg 3.4.v Additional-FAR is a rule-based entitlement (fixed uplift, no
+  discretion clause) → included when the plot qualifies, so achievable is not understated; metro
+  reg 3.16.ix is a conditional entitlement (added only when BMRCL-confirmed).
+- **Invariant `achievable_base <= achievable_with_entitlements <= permissible_far`** asserted on
+  every line (incl. matrix rows); a breach returns 422, never a laundered number.
+- A band-edge road width returns `achievable_matrix` — each row carries BOTH lines + `option_value`,
+  never a single picked side. Confidence PROPAGATES: an inferred road width or inferred zone never
+  yields an authoritative FAR (both lines typically `derived`, carrying the road-width error_band);
+  a metro-applied or PENDING line is capped at derived/conditional. A PENDING modifier (Additional-FAR
+  Ring II >4000 sqm, blank in source) is surfaced + EXCLUDED from the value — never assumed 0. Every
+  value carries rule_citation + a "subject to authority sanction" disclaimer.
+- New schemas `FarAssemblyRequest` (extends `RoadWidthRequest`), `FarValue`, `EntitlementLabel`,
+  `GroundCoverageValue`, `SetbackSet`, `FarBandOption`, `AchievableMatrix`, `FarAssemblyResult`.
+  Gated by new flag `feature.planning.far-assembly`. Additive; no existing planning field changed.
+
+## 2.14.0 — 2026-07-21
+
+### Added — planning.yaml (v1.0.0 → v1.1.0, road-width resolver, US-084)
+- New `POST /planning/road-width` → `RoadWidthResult`. Feeds US-084 FAR. There is NO
+  authoritative queryable road source (RMP reg 3.2 = surveyed right-of-way), so the resolver
+  returns a `band` (or `band_range` when the width sits within ~1 m of a band edge) with a
+  `confidence` tier — never a false-authoritative point. When it straddles an edge it sets
+  `survey_required=true` + an `option_value` (FAR delta × plot area vs survey cost).
+- Best-available input tier wins (`RoadWidthRequest`): surveyed→authoritative,
+  MapTiler measurement→inferred (default), probe-confirmed KGIS (Phase-0-gated), lane
+  estimate→inferred; none → `status:"unresolved"` (never a default number).
+- reg-3.2 rules applied: service-road aggregation (3.2.ii), corner/multi-frontage two-wider
+  (3.1/3.16.ix), narrower-drops-FAR / wider-no-bonus (3.4.iii/iv), <3.5 m access floor-area
+  cap (3.8.i). `max_far_confidence` propagates: an inferred width can only yield a derived FAR.
+- Gated by new flag `feature.planning.road-width-resolver` (403 when disabled). Additive; no
+  existing planning field changed.
+
+## 2.13.0 — 2026-07-21
+
+### Changed — geo.yaml (v1.4.0 → v1.5.0, fallback wire-in, US-080/US-093)
+- **Additive only — no breaking change.** New optional/nullable `provenance` object on
+  `ParcelGeometry` and `AuthorityResult`, plus a new `Provenance` schema
+  (`tier` authoritative|inferred|unresolved, `mode` kgis-live|inferred-fallback|unresolved,
+  `data_source`, `data_vintage`, `reason`, `next_action`). No existing field is removed,
+  renamed, or retyped; existing consumers keep working unchanged.
+- `/geo/authority`: resolution order is now KGIS-live first; **only** when KGIS returns no
+  context does it fall to the inferred tier — the committed GBA wards layer (2025, urban)
+  then the fetch-on-setup LGD villages layer (LGD-2024, rural), both `tier=inferred`. When
+  neither answers → `Unknown` + `provenance.tier=unresolved` (never a guess). A KGIS-live
+  answer is identical to before **plus** `provenance` = authoritative/kgis-live.
+- `/geo/parcel`: KGIS-live remains the only source of a parcel polygon. On a KGIS miss the
+  response is unchanged (`resolved=false`, `geometry=null`) **plus** `provenance` =
+  unresolved/unresolved with a `next_action` (draw boundary + Bhoomi RTC cross-check +
+  Dishaank) — honest degradation, no synthesized/inferred boundary.
+- Performance: the 30,416-feature villages layer is queried through a load-once uniform
+  grid spatial index (candidate bucket ≪ full layer); no linear PIP over all villages.
+- Still gated by the existing `feature.geo.authority` / `feature.geo.parcel-geometry` flags.
+
+## 2.12.0 — 2026-07-02
+
+### Added — geo.yaml (v1.3.0 → v1.4.0, authority auto-detect, US-093)
+- New `GET /geo/authority?lat&lon` → `AuthorityResult` (governing authority, jurisdiction
+  type, planning authority, approval track, bye-law reference, portal, confidence).
+- Gated by new flag `feature.geo.authority` (403 when disabled).
+- GBA-aware: encodes the BBMP → Greater Bengaluru Authority transition (15-May-2025).
+  Best-effort from KGIS `getlocationdetails` context + a static ruleset; the authoritative
+  Boundaries/LPA point-in-polygon check is deferred (`live_verified=false`) until KGIS
+  access lands. `authority="Unknown"` (low confidence) when context is unavailable — no
+  fabrication.
+
+## 2.11.0 — 2026-07-02
+
+### Changed — geo.yaml (v1.2.0 → v1.3.0, SAT-19 parcel resolver, US-080)
+- `/geo/parcel` now resolves the KGIS village id from `village_code` (or from new
+  optional `lat`/`lon` via KGIS reverse geocode) and falls back to a direct KGIS
+  Cadastral-layer query by village code + survey number when `geomForSurveyNum` returns
+  nothing. Previously the resolver was a stub that always returned `resolved=false`.
+- Added optional `lat`, `lon` query params and echoed `lat`, `lon` response fields on
+  `ParcelGeometry`. No breaking changes; still gated by `feature.geo.parcel-geometry`;
+  honest `resolved=false` + `geometry=null` when KGIS is unreachable (no fabrication).
+- Data source: public token-free KGIS Cadastral MapServer (layer 5) +
+  `getlocationdetails` + `geomForSurveyNum`. Live field-match pending Phase-0 KGIS access.
+
 ## 2.1.0 — 2026-06-20
 
 ### Added — planning.yaml (new service, SAT-10 build-capacity)
@@ -98,6 +483,38 @@
 - Response schema unchanged (`WindAnalysis` and nested models).
 - `metadata.data_source` names Open-Meteo ERA5. Raises on no upstream data (no
   fabricated values).
+## 2.9.0 — 2026-06-23
+
+### Added — geo.yaml (SAT-19 Builders View: survey-number parcel geometry)
+- **Version**: geo 1.0.0 → 1.1.0
+- New `GET /geo/parcel?survey_no&village_code&kgis_village_id&crs` → `ParcelGeometry`
+  (GeoJSON Polygon, WGS84) for a Karnataka rural survey number via KGIS
+  `geomForSurveyNum` (forward survey→polygon — the Builders View core).
+- Gated by new flag `feature.geo.parcel-geometry` (`FeatureFlag.GEO_PARCEL_GEOMETRY`,
+  403 when disabled).
+- Schemas: `ParcelGeometry`, `GeoJsonPolygon`; `KgisContext.village_code` added
+  (reverse lookup now surfaces `villageCode`).
+- **Spike-backed scaffold (FVD SAT-19):** `KGISVillageId` ≠ reverse-lookup `villageCode`
+  (numeric master id, pending KSRSAC). `resolve_kgis_village_id()` is seamed; until the
+  mapping lands the endpoint returns `resolved=false` + `geometry=null` (no fabrication).
+- Indicative only — KGIS data not for legal use; non-commercial until KGIS license.
+## 2.10.0 — 2026-06-24
+
+### Added — geo.yaml (SAT-20 Builders View: authoritative BDA RMP-2015 land-use)
+- **Version**: geo 1.1.0 → 1.2.0
+- `GET /geo/zone` now returns authoritative `zone_class` from the **KGIS BDA Revised
+  Master Plan 2015** land-use layer when configured + the point is inside the BDA Local
+  Planning Area; otherwise it stays OSM-inferred.
+- New `ZoneResult.zone_authority` field: `"BDA-RMP-2015"` (authoritative) vs
+  `"OSM-inferred"` (preliminary) — provenance is first-class.
+- Source: KGIS ArcGIS REST `CITYGIS/BDA_Plans` MapServer (point `query`, intersects).
+  RMP zone codes (R/C/I/PSP/OS/AG/…) map to `ZoneClass`. Authoritative zone feeds the
+  existing `/planning/analyze` FAR/setback engine via `zone_class` (no planning change).
+- **Spike-backed scaffold (FVD SAT-20):** the published KGIS layer id + zone field name
+  are confirmed at license go-live; `fetch_landuse_zone()` is seamed + env-configurable
+  (`KGIS_LANDUSE_URL`, `KGIS_LANDUSE_ZONE_FIELD`). Until set it returns None → OSM
+  fallback (no fabricated authoritative labels). Gated by existing `feature.zoning.land-use`.
+- Indicative until KGIS license signed; non-commercial.
 
 ## 1.5.1 — 2026-06-09
 
