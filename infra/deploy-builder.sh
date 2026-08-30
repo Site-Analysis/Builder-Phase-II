@@ -10,8 +10,8 @@
 
 set -euo pipefail
 
-REPO_URL="https://github.com/Site-Analysis/SAT.git"
-REPO_BRANCH="main"
+REPO_URL="https://github.com/Site-Analysis/Builder-Phase-II.git"
+REPO_BRANCH="Builder"
 DEPLOY_DIR="/opt/qnit/builder"
 S3_BUCKET="qnit-builder-data"
 REGION="ap-south-1"
@@ -65,10 +65,7 @@ if [ ! -f "$DEPLOY_DIR/.env" ]; then
   echo "    Set: KC_ADMIN_PASSWORD, NEXTAUTH_SECRET, NEXT_PUBLIC_SUPABASE_URL,"
   echo "         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, and FLAGS (all 20 flags)."
   echo "    Example FLAGS value is in infra/DEPLOY.md."
-  echo "    Run: nano $DEPLOY_DIR/.env"
-  echo ""
-  echo "    Press ENTER after editing .env to continue, or Ctrl-C to abort."
-  read -r
+  echo "    Run: nano $DEPLOY_DIR/.env then re-run step 6 manually."
 fi
 
 echo "=== [6/7] Build and start backend services ==="
