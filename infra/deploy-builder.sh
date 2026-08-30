@@ -10,25 +10,32 @@
 
 set -euo pipefail
 
-REPO_URL="https://github.com/Site-Analysis/SAT.git"
-REPO_BRANCH="main"
+REPO_URL="https://github.com/Site-Analysis/Builder-Phase-II.git"
+REPO_BRANCH="Builder"
 DEPLOY_DIR="/opt/qnit/builder"
 S3_BUCKET="qnit-builder-data"
 REGION="ap-south-1"
 
 echo "=== [1/7] System packages ==="
 apt-get update -qq
-apt-get install -y \
-  docker.io \
-  docker-compose-plugin \
-  git \
-  awscli \
-  curl \
-  gnupg \
-  nodejs \
-  npm
+apt-get install -y curl gnupg git awscli nodejs npm rsync
 
-systemctl enable docker
+# Docker official repo (docker-compose-plugin not in Ubuntu default apt)
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+  > /etc/apt/sources.list.d/docker.list
+
+# Caddy official repo
+curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy.gpg
+echo "deb [signed-by=/usr/share/keyrings/caddy.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
+  > /etc/apt/sources.list.d/caddy.list
+
+apt-get update -qq
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin caddy
+
+systemctl enable docker caddy
 systemctl start docker
 
 echo "=== [2/7] Clone repository ==="
@@ -41,21 +48,14 @@ fi
 cd "$DEPLOY_DIR"
 
 echo "=== [3/7] Pull data from S3 ==="
-# Cadastral parcel data — large (may take 30-60 min on first run)
-mkdir -p /data/cadastral /data/imd /secrets
+mkdir -p /data/cadastral
 aws s3 sync "s3://${S3_BUCKET}/cadastral/" /data/cadastral/ --region "$REGION"
-aws s3 sync "s3://${S3_BUCKET}/imd-data/"  /data/imd/       --region "$REGION"
-aws s3 cp  "s3://${S3_BUCKET}/secrets/gee-sa.json" /secrets/gee-sa.json --region "$REGION"
 
 echo "=== [4/7] Symlink data paths for Docker Compose volumes ==="
-# Base docker-compose.yml mounts ./services/cadastral-data and ./gee-sa.json.
-# Symlinks redirect these to the S3-pulled paths so the base file works unchanged.
+# Base docker-compose.yml mounts ./services/cadastral-data — redirect to S3-pulled path.
 ln -sfn /data/cadastral "$DEPLOY_DIR/services/cadastral-data"
-ln -sf   /secrets/gee-sa.json "$DEPLOY_DIR/gee-sa.json"
-# Temperature IMD data
-mkdir -p "$DEPLOY_DIR/services/temperature/data"
-# Sync into the service data dir (smaller, just mount-style symlink risks overlaps)
-rsync -a --delete /data/imd/ "$DEPLOY_DIR/services/temperature/data/"
+# Stub gee-sa.json so compose volume mount doesn't fail (GEE not used in this deploy)
+touch "$DEPLOY_DIR/gee-sa.json"
 
 echo "=== [5/7] Configure .env ==="
 if [ ! -f "$DEPLOY_DIR/.env" ]; then
@@ -65,10 +65,7 @@ if [ ! -f "$DEPLOY_DIR/.env" ]; then
   echo "    Set: KC_ADMIN_PASSWORD, NEXTAUTH_SECRET, NEXT_PUBLIC_SUPABASE_URL,"
   echo "         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, and FLAGS (all 20 flags)."
   echo "    Example FLAGS value is in infra/DEPLOY.md."
-  echo "    Run: nano $DEPLOY_DIR/.env"
-  echo ""
-  echo "    Press ENTER after editing .env to continue, or Ctrl-C to abort."
-  read -r
+  echo "    Run: nano $DEPLOY_DIR/.env then re-run step 6 manually."
 fi
 
 echo "=== [6/7] Build and start backend services ==="

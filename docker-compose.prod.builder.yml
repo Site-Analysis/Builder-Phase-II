@@ -18,8 +18,8 @@ services:
   keycloak:
     command: start --import-realm
     environment:
-      KC_HOSTNAME: auth.builder.qnit.site
-      KC_PROXY: edge
+      KC_HOSTNAME: "https://auth.builder.qnit.site"
+      KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
     ports: !reset []
@@ -40,7 +40,6 @@ services:
     depends_on:
       - keycloak
       - temperature
-      - sunpath
       - flood
       - wind
       - rainfall
