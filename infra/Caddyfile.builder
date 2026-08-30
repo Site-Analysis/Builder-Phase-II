@@ -46,7 +46,7 @@ api.builder.qnit.site {
 	handle /report/* {
 		reverse_proxy report:8010
 	}
-	handle /cadastral/* {
+	handle_path /cadastral/* {
 		reverse_proxy cadastral:8011
 	}
 	handle /status/temperature {
