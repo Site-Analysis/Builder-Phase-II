@@ -8,9 +8,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import verify_token
 from app.routers.future_infra import future_infra_router
 from app.settings import FutureInfraSettings
 
@@ -62,7 +63,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(future_infra_router)
+app.include_router(future_infra_router, dependencies=[Depends(verify_token)])
 
 
 @app.get("/health")

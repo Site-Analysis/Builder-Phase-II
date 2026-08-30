@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import { DraftingCompass, HardHat, ArrowRight } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth";
 import { useProfileStore, type ViewProfile } from "@/lib/stores/profile";
-import { supabase } from "@/lib/supabase/client";
 
 // Architect = green (climate suite) · Builders = amber (zoning + title) — the
 // audience colour-coding established on the landing page.
@@ -49,7 +48,6 @@ export default function SelectProfilePage() {
     setBusy(true);
     setProfile(p);
     // Best-effort cross-device mirror — don't block navigation on it.
-    supabase.auth.updateUser({ data: { view_profile: p } }).catch(() => {});
     router.replace("/dashboard");
   }
 

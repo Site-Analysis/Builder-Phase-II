@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Qnit. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
-// Project persistence via Supabase sat_projects table (GH#53 resolved).
-// RLS enforces user_id = auth.uid() — no server-side auth check needed here.
+// Project persistence via /api/projects Next.js API routes.
+// Those routes use the Supabase service-role key + Keycloak session validation.
+// RLS is bypassed at DB level; user isolation enforced by server-side session check.
 
-import { supabase } from "@/lib/supabase/client";
 import type { Project, ProjectStats } from "../stores/project";
 
 interface SatProjectRow {
@@ -36,52 +36,30 @@ function rowToProject(row: SatProjectRow): Project {
   };
 }
 
-function polygonAreaSqm(ring: [number, number][]): number {
-  if (ring.length < 4) return 0;
-  const lat0 = (ring.reduce((s, p) => s + p[1], 0) / ring.length) * Math.PI / 180;
-  const kx = 111_320 * Math.cos(lat0);
-  const ky = 110_540;
-  const xy = ring.map(([lng, lat]) => [lng * kx, lat * ky]);
-  let a = 0;
-  for (let i = 0; i < xy.length - 1; i++) {
-    a += xy[i][0] * xy[i + 1][1] - xy[i + 1][0] * xy[i][1];
+async function apiCall<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json", ...init?.headers },
+    credentials: "include",
+    ...init,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? `${res.status} ${res.statusText}`);
   }
-  return Math.abs(a / 2);
+  return res.json();
 }
 
 export async function getProjects(): Promise<{ projects: Project[]; stats: ProjectStats }> {
-  const { data, error } = await supabase
-    .from("sat_projects")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) throw new Error(error.message);
-
-  const projects = ((data ?? []) as SatProjectRow[]).map(rowToProject);
-
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
-
-  const stats: ProjectStats = {
-    total: projects.length,
-    fully_analysed: projects.filter((p) => p.status === "complete").length,
-    needs_review: projects.filter((p) => p.status === "needs-review").length,
-    this_month: projects.filter((p) => new Date(p.created_at) >= monthStart).length,
-  };
-
-  return { projects, stats };
+  const { projects: rows, stats } = await apiCall<{
+    projects: SatProjectRow[];
+    stats: ProjectStats;
+  }>("/api/projects");
+  return { projects: rows.map(rowToProject), stats };
 }
 
 export async function getProject(id: string): Promise<Project> {
-  const { data, error } = await supabase
-    .from("sat_projects")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (error) throw new Error(`Project not found: ${id}`);
-  return rowToProject(data as SatProjectRow);
+  const row = await apiCall<SatProjectRow>(`/api/projects/${id}`);
+  return rowToProject(row);
 }
 
 export async function createProject(
@@ -90,39 +68,9 @@ export async function createProject(
     modules_run?: Project["modules_run"];
   }
 ): Promise<Project> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  let coordinates = "";
-  let area_sqm: number | undefined;
-
-  if (data.boundary.type === "Point" && Array.isArray(data.boundary.coordinates)) {
-    const [lng, lat] = data.boundary.coordinates as number[];
-    coordinates = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-  } else if (data.boundary.type === "Polygon" && Array.isArray(data.boundary.coordinates)) {
-    const ring = data.boundary.coordinates[0] as [number, number][];
-    const pts = ring.slice(0, -1);
-    const clng = pts.reduce((s, p) => s + p[0], 0) / pts.length;
-    const clat = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-    coordinates = `${clat.toFixed(5)}, ${clng.toFixed(5)}`;
-    area_sqm = polygonAreaSqm(ring);
-  }
-
-  const { data: row, error } = await supabase
-    .from("sat_projects")
-    .insert({
-      user_id: user.id,
-      name: data.name,
-      location: data.location,
-      status: "needs-review",
-      boundary: data.boundary,
-      coordinates,
-      area_sqm: area_sqm ?? null,
-      modules_run: data.modules_run ?? ["sunpath", "flood", "temperature", "wind", "rainfall"],
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-  return rowToProject(row as SatProjectRow);
+  const row = await apiCall<SatProjectRow>("/api/projects", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return rowToProject(row);
 }

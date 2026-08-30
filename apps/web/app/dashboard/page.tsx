@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { MapPin, Layers, BadgeCheck, Clock, CalendarDays } from "lucide-react";
 import { TopNav } from "@/components/layout/TopNav";
 import { useAuthStore } from "@/lib/stores/auth";
-import { supabase } from "@/lib/supabase/client";
+import { signOut } from "next-auth/react";
 import { useProjectStore } from "@/lib/stores/project";
 import { getProjects } from "@/lib/api/projects";
 import type { Project } from "@/lib/stores/project";
@@ -1036,7 +1036,7 @@ export default function DashboardPage() {
         userName={user.user_metadata?.full_name || user.email}
         userEmail={user.email}
         onSettingsClick={() => router.push("/settings")}
-        onSignOut={async () => { await supabase.auth.signOut(); clearAuth(); router.replace("/login"); }}
+        onSignOut={async () => { clearAuth(); await signOut({ callbackUrl: "/login" }); }}
         onNewAnalysisClick={() => router.push("/project/new")}
       />
 

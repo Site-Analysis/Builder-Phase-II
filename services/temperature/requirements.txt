@@ -13,3 +13,10 @@ xarray==2024.6.0
 netCDF4==1.7.2
 pytest==9.0.3
 pytest-asyncio==1.4.0
+
+# OpenTelemetry (zero-code instrumentation)
+opentelemetry-distro>=0.50b0
+opentelemetry-exporter-otlp-proto-grpc>=1.29.0
+
+# Auth — Keycloak JWT validation
+python-jose[cryptography]>=3.3.0

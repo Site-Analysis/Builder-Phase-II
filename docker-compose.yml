@@ -1,9 +1,54 @@
-version: "3.9"
+﻿version: "3.9"
 
-# Local dev orchestration — runs all backend services concurrently.
+# Local dev orchestration â€” runs all backend services concurrently.
 # Frontend (apps/web) runs separately via: npm run dev --workspace apps/web
+#
+# OTEL: otel-collector + jaeger run alongside services.
+# Jaeger UI: http://localhost:16686
+# Collector gRPC: localhost:4317 (services â†’ collector)
+# Collector HTTP: localhost:4318 (Vercel frontend â†’ collector; expose publicly on AWS)
 
 services:
+  # â”€â”€ Identity / Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.2
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    restart: unless-stopped
+
+  # â”€â”€ Observability â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    command: ["--config=/etc/otel/collector-config.yaml"]
+    volumes:
+      - ./infra/otel/collector-config.yaml:/etc/otel/collector-config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+    restart: unless-stopped
+
+  # â”€â”€ Backend services â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
   temperature:
     build:
       context: ./services/temperature
@@ -14,10 +59,16 @@ services:
     environment:
       - FLAGS=${FLAGS:-}
       - IMD_DATA_DIR=/app/data
-      - CORS_ORIGINS=http://localhost:5173
+      - CORS_ORIGINS=http://localhost:3000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=temperature
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -35,9 +86,15 @@ services:
     environment:
       - FLAGS=${FLAGS:-}
       - GEE_SA_KEY_PATH=/app/gee-sa.json
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=sunpath
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -55,9 +112,15 @@ services:
     environment:
       - FLAGS=${FLAGS:-}
       - GEE_SA_KEY_PATH=/app/gee-sa.json
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=flood
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 30s
@@ -75,9 +138,15 @@ services:
     environment:
       - FLAGS=${FLAGS:-}
       - GEE_SA_KEY_PATH=/app/gee-sa.json
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=wind
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
       interval: 30s
@@ -93,10 +162,16 @@ services:
       - ./services/rainfall:/app
     environment:
       - FLAGS=${FLAGS:-}
-      - CORS_ORIGINS=http://localhost:5173
+      - CORS_ORIGINS=http://localhost:3000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=rainfall
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
       interval: 30s
@@ -112,10 +187,16 @@ services:
       - ./services/planning:/app
     environment:
       - FLAGS=${FLAGS:-}
-      - CORS_ORIGINS=http://localhost:5173
+      - CORS_ORIGINS=http://localhost:3000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=planning
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
       interval: 30s
@@ -131,10 +212,18 @@ services:
       - ./services/infrastructure:/app
     environment:
       - FLAGS=${FLAGS:-}
-      - CORS_ORIGINS=http://localhost:5173
+      - CORS_ORIGINS=http://localhost:3000
+      - PLANNING_API_URL=http://planning:8006
+      - GROWTH_API_URL=http://future-infra:8008
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=infrastructure
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
       interval: 30s
@@ -150,10 +239,16 @@ services:
       - ./services/future-infra:/app
     environment:
       - FLAGS=${FLAGS:-}
-      - CORS_ORIGINS=http://localhost:5173
+      - CORS_ORIGINS=http://localhost:3000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=future-infra
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8008 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8008 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8008/health"]
       interval: 30s
@@ -169,10 +264,16 @@ services:
       - ./services/land-records:/app
     environment:
       - FLAGS=${FLAGS:-}
-      - CORS_ORIGINS=http://localhost:5173
+      - CORS_ORIGINS=http://localhost:3000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=land-records
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8009 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8009 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8009/health"]
       interval: 30s
@@ -188,19 +289,69 @@ services:
       - ./services/geo:/app
     environment:
       - FLAGS=${FLAGS:-}
-      - CORS_ORIGINS=http://localhost:5173
+      - CORS_ORIGINS=http://localhost:3000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - OTEL_SERVICE_NAME=geo
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_PYTHON_LOG_CORRELATION=true
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+    command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
       interval: 30s
       timeout: 5s
       retries: 3
 
+  report:
+    build:
+      context: ./services/report
+    ports:
+      - "127.0.0.1:8010:8010"
+    volumes:
+      - ./services/report:/app
+    environment:
+      - FLAGS=${FLAGS:-}
+      - CORS_ORIGINS=http://localhost:3000
+    env_file:
+      - .env
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8010 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  cadastral:
+    build:
+      context: ./services/cadastral
+    ports:
+      - "127.0.0.1:8011:8011"
+    volumes:
+      - ./services/cadastral:/app
+      - ./services/cadastral-data:/app/cadastral-data:ro
+    environment:
+      - FLAGS=${FLAGS:-}
+      - CORS_ORIGINS=http://localhost:3000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sat
+      - CADASTRAL_REPO_ROOT=/app/cadastral-data
+      - CADASTRAL_DATA_DIR=/app/cadastral-data/data
+      - CADASTRAL_DB_PATH=/app/cadastral-data/db/karnataka_lands_full.db
+    env_file:
+      - .env
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8011 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # Self-hosted Overpass mirror (Southern Zone PBF). OSM-backed services
   # (geo, infrastructure, planning, flood, sunpath) route OVERPASS_URL here in prod
-  # to avoid public-mirror rate limits — see infra/DEPLOY.md. First run uses
+  # to avoid public-mirror rate limits â€” see infra/DEPLOY.md. First run uses
   # OVERPASS_MODE=init (downloads + imports the PBF; ~20 min); the prod overlay
   # switches it to OVERPASS_MODE=run (re-init would wipe the DB).
   overpass:

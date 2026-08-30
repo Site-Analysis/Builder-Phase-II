@@ -3,8 +3,8 @@
   "tasks": [
     {
       "label": "Run Fullstack",
-      "detail": "All services (8 analysis + cadastral) + frontend",
-      "dependsOn": ["Backend", "Frontend", "svc: cadastral"],
+      "detail": "All services (8 analysis + cadastral + report) + frontend",
+      "dependsOn": ["Backend", "Frontend", "svc: cadastral", "svc: report"],
       "dependsOrder": "parallel",
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": []
@@ -34,7 +34,7 @@
     },
     {
       "label": "Backend",
-      "detail": "All 8 analysis services (8000-8007)",
+      "detail": "All 10 analysis services (8000-8009)",
       "dependsOn": [
         "svc: temperature",
         "svc: sunpath",
@@ -43,7 +43,9 @@
         "svc: rainfall",
         "svc: geo",
         "svc: planning",
-        "svc: infrastructure"
+        "svc: infrastructure",
+        "svc: future-infra",
+        "svc: land-records"
       ],
       "dependsOrder": "parallel",
       "problemMatcher": []
@@ -57,7 +59,11 @@
       "args": ["app.main:app", "--port", "8000"],
       "options": {
         "cwd": "${workspaceFolder}/services/temperature",
-        "env": { "FLAGS": "feature.temperature.thermal-profile" }
+        "env": {
+          "FLAGS": "feature.temperature.thermal-profile",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
       },
       "isBackground": true,
       "problemMatcher": [],
@@ -71,7 +77,11 @@
       "args": ["app.main:app", "--port", "8001"],
       "options": {
         "cwd": "${workspaceFolder}/services/sunpath",
-        "env": { "FLAGS": "feature.sunpath.diagram,feature.sunpath.solar-day" }
+        "env": {
+          "FLAGS": "feature.sunpath.diagram,feature.sunpath.solar-day",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
       },
       "isBackground": true,
       "problemMatcher": [],
@@ -85,7 +95,11 @@
       "args": ["app.main:app", "--port", "8002"],
       "options": {
         "cwd": "${workspaceFolder}/services/flood",
-        "env": { "FLAGS": "feature.flood.risk-analysis" }
+        "env": {
+          "FLAGS": "feature.flood.risk-analysis",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
       },
       "isBackground": true,
       "problemMatcher": [],
@@ -99,7 +113,11 @@
       "args": ["app.main:app", "--port", "8003"],
       "options": {
         "cwd": "${workspaceFolder}/services/wind",
-        "env": { "FLAGS": "feature.wind.analysis" }
+        "env": {
+          "FLAGS": "feature.wind.analysis",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
       },
       "isBackground": true,
       "problemMatcher": [],
@@ -113,7 +131,11 @@
       "args": ["app.main:app", "--port", "8004"],
       "options": {
         "cwd": "${workspaceFolder}/services/rainfall",
-        "env": { "FLAGS": "feature.rainfall.summary,feature.rainfall.archive" }
+        "env": {
+          "FLAGS": "feature.rainfall.summary,feature.rainfall.archive",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
       },
       "isBackground": true,
       "problemMatcher": [],
@@ -129,7 +151,9 @@
         "cwd": "${workspaceFolder}/services/geo",
         "env": {
           "FLAGS": "feature.zoning.land-use,feature.environment.soil,feature.environment.water-constraints,feature.geo.amenities,feature.geo.kgis-context,feature.geo.parcel-geometry,feature.geo.zone-resolver,feature.geo.transport-access,feature.geo.authority",
-          "OVERPASS_URL": "https://overpass.openstreetmap.fr/api/interpreter"
+          "OVERPASS_URL": "https://overpass.openstreetmap.fr/api/interpreter",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
         }
       },
       "isBackground": true,
@@ -145,8 +169,10 @@
       "options": {
         "cwd": "${workspaceFolder}/services/planning",
         "env": {
-          "FLAGS": "feature.planning.site-capacity",
-          "OVERPASS_URL": "https://overpass.openstreetmap.fr/api/interpreter"
+          "FLAGS": "feature.planning.site-capacity,feature.planning.road-width-resolver,feature.planning.far-assembly,feature.planning.mixed-use",
+          "OVERPASS_URL": "https://overpass.openstreetmap.fr/api/interpreter",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
         }
       },
       "isBackground": true,
@@ -161,7 +187,47 @@
       "args": ["app.main:app", "--port", "8007"],
       "options": {
         "cwd": "${workspaceFolder}/services/infrastructure",
-        "env": { "FLAGS": "feature.infrastructure.connectivity,feature.infrastructure.utilities,feature.infrastructure.power-grid" }
+        "env": {
+          "FLAGS": "feature.infrastructure.connectivity,feature.infrastructure.utilities,feature.infrastructure.power-grid",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: future-infra",
+      "detail": ":8008 growth pipeline + future infrastructure context",
+      "type": "process",
+      "command": "${workspaceFolder}/services/future-infra/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8008"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/future-infra",
+        "env": {
+          "FLAGS": "feature.context.growth-pipeline",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: land-records",
+      "detail": ":8009 land ownership + records",
+      "type": "process",
+      "command": "${workspaceFolder}/services/land-records/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8009"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/land-records",
+        "env": {
+          "FLAGS": "feature.land.records,feature.land.ownership",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
       },
       "isBackground": true,
       "problemMatcher": [],
@@ -177,11 +243,29 @@
       "options": {
         "cwd": "${workspaceFolder}/services/cadastral",
         "env": {
-          "CADASTRAL_REPO_ROOT": "C:\\Users\\tanny\\chirag's cadestral\\prime-karnataka-cadastral-viewer",
-          "CADASTRAL_DATA_DIR": "C:\\Users\\tanny\\chirag's cadestral\\prime-karnataka-cadastral-viewer\\data\\cadastral_lake_v2",
-          "CADASTRAL_DB_PATH": "C:\\Users\\tanny\\chirag's cadestral\\prime-karnataka-cadastral-viewer\\db\\karnataka_lands_full.db",
+          "CADASTRAL_REPO_ROOT": "${workspaceFolder}/services/cadastral/cadastral-data",
+          "CADASTRAL_DATA_DIR": "${workspaceFolder}/services/cadastral/cadastral-data/data/cadastral_lake_v2",
+          "CADASTRAL_DB_PATH": "${workspaceFolder}/services/cadastral/cadastral-data/db/karnataka_lands_full.db",
           "WRIS_LAKES_PATH": "C:\\Users\\tanny\\Downloads\\wris_lakes (1).parquet",
-          "FLAGS": "feature.cadastral.land-records,feature.cadastral.overlays"
+          "FLAGS": "feature.cadastral.land-records,feature.cadastral.overlays",
+          "KEYCLOAK_URL": "http://localhost:8180",
+          "KEYCLOAK_REALM": "sat"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "servers", "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "svc: report",
+      "detail": ":8010 GO/NO-GO verdict aggregator (no auth)",
+      "type": "process",
+      "command": "${workspaceFolder}/services/report/.venv/Scripts/uvicorn.exe",
+      "args": ["app.main:app", "--port", "8010"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/report",
+        "env": {
+          "FLAGS": "feature.report.go-no-go"
         }
       },
       "isBackground": true,

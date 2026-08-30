@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { CircleMarker, Tooltip } from "react-leaflet";
+import { getSession } from "next-auth/react";
 
 const GEO_BASE = process.env.NEXT_PUBLIC_GEO_API_URL ?? "http://localhost:8005";
 
@@ -75,7 +76,10 @@ export function AmenitiesOverlay({ enabled, center, radiusM = 2500 }: Props) {
     setPoints([]);
     setFetchErr(null);
 
+    getSession().then((session) => {
+    const authHeader: Record<string, string> = session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {};
     fetch(`${GEO_BASE}/geo/amenities?lat=${center[0]}&lon=${center[1]}&radius_m=${radiusM}`, {
+      headers: authHeader,
       signal: ctrl.signal,
     })
       .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
@@ -103,6 +107,7 @@ export function AmenitiesOverlay({ enabled, center, radiusM = 2500 }: Props) {
         setFetchErr(e.message === "403" ? "Flag off — start geo with feature.geo.amenities" : `Error: ${e.message}`);
         setLoading(false);
       });
+    });
 
     return () => {
       ctrl.abort();

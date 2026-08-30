@@ -10,12 +10,12 @@ import {
 } from "lucide-react";
 import { TopNav } from "@/components/layout/TopNav";
 import { useAuthStore } from "@/lib/stores/auth";
-import { supabase } from "@/lib/supabase/client";
+import { signOut } from "next-auth/react";
 
 type SidebarSection = "profile" | "studio" | "notifications" | "security" | "defaults" | "export";
 
-function getInitials(user: { email?: string; user_metadata?: { full_name?: string } }) {
-  const name = user.user_metadata?.full_name;
+function getInitials(user: { email?: string | null; name?: string | null }) {
+  const name = user.name;
   if (name) {
     const parts = name.trim().split(/\s+/);
     return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
@@ -150,42 +150,33 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!user) { router.replace("/login"); return; }
-    if (user.user_metadata) {
-      const fullName = user.user_metadata.full_name || "";
-      const parts = fullName.trim().split(/\s+/);
+    if (user.name) {
+      const parts = user.name.trim().split(/\s+/);
       setFirstName(parts[0] || "");
       setLastName(parts.slice(1).join(" ") || "");
-      setStudio(user.user_metadata.studio_name || "");
-      setRole(user.user_metadata.role || "Architect");
     }
   }, [user, router]);
 
   async function handleSave() {
     setSaving(true);
-    const fullName = [firstName, lastName].filter(Boolean).join(" ");
-    await supabase.auth.updateUser({
-      data: { full_name: fullName, studio_name: studio, role },
-    });
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
 
   function handleDiscard() {
-    if (user?.user_metadata) {
-      const fullName = user.user_metadata.full_name || "";
-      const parts = fullName.trim().split(/\s+/);
+    if (user?.name) {
+      const parts = user.name.trim().split(/\s+/);
       setFirstName(parts[0] || "");
       setLastName(parts.slice(1).join(" ") || "");
-      setStudio(user.user_metadata.studio_name || "");
-      setRole(user.user_metadata.role || "Architect");
     }
+    setStudio("");
+    setRole("Architect");
   }
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
     clearAuth();
-    router.replace("/login");
+    await signOut({ callbackUrl: "/login" });
   }
 
   if (!user) return null;

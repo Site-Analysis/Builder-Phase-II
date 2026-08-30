@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Qnit. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
+import { getSession } from "next-auth/react";
+
 // Frontend ↔ analysis service wiring.
 // Endpoints + response shapes verified against the real FastAPI routers and
 // Pydantic models in services/<svc>/app/ (not the contracts, which can drift).
@@ -145,10 +147,14 @@ export async function fetchAuthority(lat: number, lon: number): Promise<Authorit
 async function svcFetch<T>(base: string, path: string, init?: RequestInit, timeoutMs = 30_000): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const session = await getSession();
+  const authHeader: Record<string, string> = session?.accessToken
+    ? { Authorization: `Bearer ${session.accessToken}` }
+    : {};
   try {
     const res = await fetch(`${base}${path}`, {
-      headers: { "Content-Type": "application/json", ...init?.headers },
       ...init,
+      headers: { "Content-Type": "application/json", ...authHeader, ...(init?.headers as Record<string, string> | undefined) },
       signal: ctrl.signal,
     });
     if (!res.ok) {

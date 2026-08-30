@@ -3,6 +3,7 @@
 
 "use client";
 
+import { useState } from "react";
 import { useConfigStore } from "@/lib/stores/config";
 
 const GLASS: React.CSSProperties = {
@@ -47,14 +48,24 @@ const dateInput: React.CSSProperties = {
 export function AnalysisConfigCard() {
   const { bufferM, startDate, endDate, setConfig } = useConfigStore();
   const bufferKm = bufferM / 1000;
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div style={GLASS}>
-      <div style={{ padding: "8px 12px", borderBottom: "1px solid rgba(207,214,196,0.5)" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#3A3F3B" }}>Analysis config</div>
-      </div>
+      <button
+        onClick={() => setCollapsed((v) => !v)}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          width: "100%", padding: "8px 12px",
+          background: "none", border: "none", cursor: "pointer",
+          borderBottom: collapsed ? "none" : "1px solid rgba(207,214,196,0.5)",
+        }}
+      >
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#3A3F3B" }}>Analysis config</span>
+        <span style={{ fontSize: 10, color: "#7B8F83", transition: "transform 0.15s", display: "inline-block", transform: collapsed ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+      </button>
 
-      <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+      {!collapsed && <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
 
         {/* Buffer radius */}
         <div>
@@ -98,7 +109,7 @@ export function AnalysisConfigCard() {
           <span style={hintStyle}>rainfall · temperature year</span>
         </div>
 
-      </div>
+      </div>}
     </div>
   );
 }

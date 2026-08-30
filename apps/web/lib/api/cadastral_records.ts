@@ -10,6 +10,8 @@
 // Conflict resolution: when both KGIS and e-Chawadi have data for a parcel, e-Chawadi is
 // preferred (official Bhoomi source). Link via survey number + LGD village code.
 
+import { getSession } from "next-auth/react";
+
 const BASE = process.env.NEXT_PUBLIC_CADASTRAL_API_URL ?? "http://localhost:8011";
 
 const TIMEOUT_MS = 20_000;
@@ -17,8 +19,13 @@ const TIMEOUT_MS = 20_000;
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const session = await getSession();
+  const authHeader: Record<string, string> = session?.accessToken
+    ? { Authorization: `Bearer ${session.accessToken}` }
+    : {};
   try {
     const res = await fetch(`${BASE}${path}`, {
+      headers: { ...authHeader },
       signal: signal ?? ctrl.signal,
     });
     if (!res.ok) {

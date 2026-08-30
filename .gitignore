@@ -1,3 +1,5 @@
+services/cadastral/cadastral-data/
+
 # Node
 node_modules/
 dist/
@@ -41,6 +43,10 @@ stn/
 
 # Graphify knowledge-graph output (local tool artifact)
 graphify-out/
+
+# Dev-only tunnel tooling — never committed
+infra/Caddyfile.local
+docker-compose.override.yml
 
 # Spike / build-plan working docs (binary .docx working notes — not repo source-of-record).
 # Keep docs/feature-validation/ and all other docs tracked; only this path is ignored.

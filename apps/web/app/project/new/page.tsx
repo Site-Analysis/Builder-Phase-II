@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { Sun, Waves, Thermometer, Wind, CloudRain, Scale, FileText } from "lucide-react";
 import { TopNav } from "@/components/layout/TopNav";
 import { useAuthStore } from "@/lib/stores/auth";
-import { supabase } from "@/lib/supabase/client";
+import { signOut } from "next-auth/react";
 import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
 import { useConfigStore } from "@/lib/stores/config";
@@ -299,7 +299,7 @@ export default function NewAnalysisPage() {
         showCurrentLocation={!pinDropped}
         onCurrentLocationClick={handleCurrentLocation}
         onSettingsClick={() => router.push("/settings")}
-        onSignOut={async () => { await supabase.auth.signOut(); clearAuth(); router.replace("/login"); }}
+        onSignOut={async () => { clearAuth(); await signOut({ callbackUrl: "/login" }); }}
         viewProfile={profile ?? undefined}
         onSwitchProfile={() => router.push("/select-profile")}
       />

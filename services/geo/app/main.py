@@ -8,9 +8,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import verify_token
 from app.routers.geo import geo_router
 from app.settings import GeoSettings
 
@@ -63,7 +64,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(geo_router)
+app.include_router(geo_router, dependencies=[Depends(verify_token)])
 
 
 @app.get("/health")

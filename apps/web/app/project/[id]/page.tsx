@@ -25,7 +25,7 @@ import { SunOverlay } from "@/components/map/SunOverlay";
 import { RainfallOverlay } from "@/components/map/RainfallOverlay";
 import { MapCompass } from "@/components/map/MapCompass";
 import { useAuthStore } from "@/lib/stores/auth";
-import { supabase } from "@/lib/supabase/client";
+import { signOut } from "next-auth/react";
 import { useProjectStore } from "@/lib/stores/project";
 import { useAnalysisStore } from "@/lib/stores/analysis";
 import { useConfigStore } from "@/lib/stores/config";
@@ -246,6 +246,7 @@ export default function ProjectPage() {
   const [view3D,       setView3D]       = useState(false);
   const [showAmenities, setShowAmenities] = useState(false);
   const [showClimate,  setShowClimate]  = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [showSiteCircle, setShowSiteCircle] = useState(true);
   const [analysisCoords, setAnalysisCoords] = useState<AnalysisCoords | null>(null);
   // SLICE 1 — the JOIN. Clicking a KGIS parcel selects it; the dock's Analyze button then runs the
@@ -570,7 +571,7 @@ export default function ProjectPage() {
         userName={user.user_metadata?.full_name || user.email}
         userEmail={user.email}
         onSettingsClick={() => router.push("/settings")}
-        onSignOut={async () => { await supabase.auth.signOut(); clearAuth(); router.replace("/login"); }}
+        onSignOut={async () => { clearAuth(); await signOut({ callbackUrl: "/login" }); }}
         onExportClick={() => router.push(`/project/${id}/export`)}
       />
 
@@ -775,10 +776,10 @@ export default function ProjectPage() {
         {detailModule === null && (
           <>
             {/* Map */}
-            <div className="relative flex-1">
+            <div className="relative flex-1" onClick={() => setPanelCollapsed(true)}>
 
               {/* 2D / 3D view toggle — top-right corner of map area */}
-              <div style={{
+              <div onClick={(e) => e.stopPropagation()} style={{
                 position: "absolute", top: 14, right: 14, zIndex: 500,
                 display: "flex", gap: 0, borderRadius: 9,
                 border: "1px solid rgba(207,214,196,0.8)",
@@ -808,10 +809,12 @@ export default function ProjectPage() {
               </div>
 
               {/* Compass — under the 2D/3D toggle; rotates with the live map bearing */}
-              <MapCompass
-                bearing={view3D ? bearing : 0}
-                onResetNorth={() => view3D && setNorthNonce((n) => n + 1)}
-              />
+              <div onClick={(e) => e.stopPropagation()}>
+                <MapCompass
+                  bearing={view3D ? bearing : 0}
+                  onResetNorth={() => view3D && setNorthNonce((n) => n + 1)}
+                />
+              </div>
 
               {/* 3D scene (MapLibre + Three.js) — only after project coords loaded */}
               {view3D && project && (
@@ -831,7 +834,7 @@ export default function ProjectPage() {
 
               {/* ── 3D control panel (bottom-centre) ── */}
               {view3D && (
-                <div style={{
+                <div onClick={(e) => e.stopPropagation()} style={{
                   position: "absolute", bottom: 14, left: "50%",
                   transform: "translateX(-50%)", zIndex: 500,
                   display: "flex", flexDirection: "column", gap: 6,
@@ -1029,6 +1032,7 @@ export default function ProjectPage() {
                     <MapSearch topOffset={104} />
                   </MapContainer>
                   {/* HTML badge + legend overlay — not inside Leaflet */}
+                  <div onClick={(e) => e.stopPropagation()}>
                   {expanded.flood && modules.flood && !modules.flood.loading && !modules.flood.error && (
                     <FloodZoneOverlay result={modules.flood} />
                   )}
@@ -1062,12 +1066,34 @@ export default function ProjectPage() {
                       )}
                     </>
                   )}
+                  </div>
                 </>
+              )}
+
+              {/* Expand-panel pill — visible only when panel is collapsed */}
+              {panelCollapsed && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setPanelCollapsed(false); }}
+                  title="Show analysis panel"
+                  style={{
+                    position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)",
+                    zIndex: 500, display: "flex", alignItems: "center", gap: 6,
+                    padding: "8px 12px", borderRadius: 10, cursor: "pointer",
+                    border: "1px solid rgba(207,214,196,0.8)",
+                    background: "rgba(253,252,251,0.92)",
+                    backdropFilter: "blur(10px)",
+                    boxShadow: "0 2px 10px rgba(58,63,59,0.12)",
+                    fontSize: 11, fontWeight: 700, fontFamily: "inherit", color: "#306223",
+                    writingMode: "vertical-rl", letterSpacing: "0.5px",
+                  }}
+                >
+                  Analysis ▲
+                </button>
               )}
             </div>
 
             {/* Right panel */}
-            <RightPanel
+            {!panelCollapsed && <RightPanel
               state={panelState}
               overallScore={siteScore?.overall_score}
               overallSeverity={siteScore?.overall_severity}
@@ -1112,7 +1138,7 @@ export default function ProjectPage() {
                   />
                 );
               })}
-            </RightPanel>
+            </RightPanel>}
           </>
         )}
       </div>

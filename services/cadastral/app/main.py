@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import verify_token
 from app.routers.land_records import router as land_router
 from app.routers.parcels import router as parcel_router
 from app.routers.overlays import router as overlay_router
@@ -31,9 +32,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(land_router)
-app.include_router(parcel_router)
-app.include_router(overlay_router)
+app.include_router(land_router, dependencies=[Depends(verify_token)])
+app.include_router(parcel_router, dependencies=[Depends(verify_token)])
+app.include_router(overlay_router, dependencies=[Depends(verify_token)])
 
 
 @app.get("/health")

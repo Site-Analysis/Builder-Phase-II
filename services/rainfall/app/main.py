@@ -8,9 +8,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from app.auth import verify_token
 from app.routers.rainfall import rainfall_router
 from app.settings import RainfallSettings
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -62,7 +63,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(rainfall_router)
+app.include_router(rainfall_router, dependencies=[Depends(verify_token)])
 
 
 @app.get("/")
