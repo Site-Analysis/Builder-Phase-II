@@ -215,105 +215,27 @@ def _list_dir_codes(path: str, prefix: str) -> list[str]:
     return sorted(codes, key=int)
 
 
-def _lgd_from_village_code(vc: str) -> int | None:
-    try:
-        return int(vc.rsplit("_", 1)[0])
-    except (ValueError, IndexError):
-        return None
-
-
-def _name_via_lgd(conn: sqlite3.Connection, vc: str | None, field: str) -> str | None:
-    """Look up a name field from village_roster via village_code's embedded lgd_code."""
-    if not vc:
-        return None
-    lgd = _lgd_from_village_code(vc)
-    if lgd is None:
-        return None
-    row = conn.execute(f"SELECT {field} FROM village_roster WHERE lgd_code=? LIMIT 1", (lgd,)).fetchone()
-    return row[0] if row and row[0] else None
-
-
-def _disambiguate(items: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Append (code) to name when two items share the same name."""
-    from collections import Counter
-    counts = Counter(x["name"] for x in items)
-    return [
-        {"code": x["code"], "name": f"{x['name']} ({x['code']})" if counts[x["name"]] > 1 else x["name"]}
-        for x in items
-    ]
-
-
 def list_districts() -> list[dict[str, str]]:
     codes = _list_dir_codes(DATA_DIR, "dist_")
-    if not codes:
-        return []
-    conn = _connect()
-    result = []
-    for c in codes:
-        vc = conn.execute(
-            "SELECT MIN(village_code) FROM villages_master WHERE district_code=?", (c,)
-        ).fetchone()[0]
-        name = _name_via_lgd(conn, vc, "district_name") or c
-        result.append({"code": c, "name": name})
-    conn.close()
-    return _disambiguate(result)
+    return [{"code": c, "name": c} for c in codes]
 
 
 def list_taluks(dist: str) -> list[dict[str, str]]:
     path = os.path.join(DATA_DIR, f"dist_{dist}")
     codes = _list_dir_codes(path, "taluk_")
-    if not codes:
-        return []
-    conn = _connect()
-    result = []
-    for c in codes:
-        vc = conn.execute(
-            "SELECT MIN(village_code) FROM villages_master WHERE district_code=? AND taluk_code=?",
-            (dist, c),
-        ).fetchone()[0]
-        name = _name_via_lgd(conn, vc, "taluk_name") or c
-        result.append({"code": c, "name": name})
-    conn.close()
-    return _disambiguate(result)
+    return [{"code": c, "name": c} for c in codes]
 
 
 def list_hoblis(dist: str, taluk: str) -> list[dict[str, str]]:
     path = os.path.join(DATA_DIR, f"dist_{dist}", f"taluk_{taluk}")
     codes = _list_dir_codes(path, "hobli_")
-    if not codes:
-        return []
-    conn = _connect()
-    result = []
-    for c in codes:
-        vc = conn.execute(
-            "SELECT MIN(village_code) FROM villages_master "
-            "WHERE district_code=? AND taluk_code=? AND hobli_code=?",
-            (dist, taluk, c),
-        ).fetchone()[0]
-        name = _name_via_lgd(conn, vc, "hobli_name") or c
-        result.append({"code": c, "name": name})
-    conn.close()
-    return _disambiguate(result)
+    return [{"code": c, "name": c} for c in codes]
 
 
 def list_villages(dist: str, taluk: str, hobli: str) -> list[dict[str, str]]:
     path = os.path.join(DATA_DIR, f"dist_{dist}", f"taluk_{taluk}", f"hobli_{hobli}")
     codes = _list_dir_codes(path, "vlg_")
-    if not codes:
-        return []
-    conn = _connect()
-    result = []
-    for c in codes:
-        row = conn.execute(
-            "SELECT village_code, village_name FROM villages_master "
-            "WHERE district_code=? AND taluk_code=? AND hobli_code=? "
-            "AND SUBSTR(village_code, INSTR(village_code,'_')+1)=?",
-            (dist, taluk, hobli, c),
-        ).fetchone()
-        name = (row[1] or c) if row else c
-        result.append({"code": c, "name": name})
-    conn.close()
-    return _disambiguate(result)
+    return [{"code": c, "name": c} for c in codes]
 
 
 def get_village_by_lgd(lgd_code: str) -> dict[str, Any]:
