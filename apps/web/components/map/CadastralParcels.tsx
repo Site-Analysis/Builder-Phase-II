@@ -103,7 +103,7 @@ export function CadastralParcels({ enabled, filter, onStatus, siteBoundary, offs
         }
         lyr.bindPopup(popupHtml(p));
         // Click selects the parcel by its TRUE geometry (never the nudged position — Rule 5).
-        lyr.on("click", () => onSelectRef.current?.(p));
+        lyr.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelectRef.current?.(p); });
       },
     }).addTo(map);
     layerRef.current = layer;

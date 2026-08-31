@@ -20,6 +20,7 @@ import { createProject } from "@/lib/api/projects";
 import type { ModuleId } from "@/lib/stores/analysis";
 import { useProfileStore } from "@/lib/stores/profile";
 import type { CadastralParcel } from "@/lib/api/cadastral";
+import { parcelAreaSqm } from "@/lib/api/cadastral";
 import { useUIStore } from "@/lib/stores/ui";
 
 const MapContainer = dynamic(
@@ -180,9 +181,10 @@ export default function NewAnalysisPage() {
   const [address,     setAddress]     = useState("");
   const [projectName, setProjectName] = useState("");
   const [center,      setCenter]      = useState<[number, number]>([12.9716, 77.5946]);
-  const [pinDropped,  setPinDropped]  = useState(false);
-  const [pinFromDraw, setPinFromDraw] = useState(false);
-  const [creating,    setCreating]    = useState(false);
+  const [pinDropped,    setPinDropped]    = useState(false);
+  const [pinFromDraw,   setPinFromDraw]   = useState(false);
+  const [selectedParcel, setSelectedParcel] = useState<CadastralParcel | null>(null);
+  const [creating,      setCreating]      = useState(false);
   const [error,       setError]       = useState("");
   const profile = useProfileStore((s) => s.profile);
   const visibleModules = ANALYSIS_MODULES.filter(
@@ -204,6 +206,7 @@ export default function NewAnalysisPage() {
     setCenter([lat, lng]);
     setPinDropped(true);
     setPinFromDraw(false);
+    setSelectedParcel(null);
     setAddress(coords);
     setProjectName(suggestName(coords, profile === "builder"));
     setError("");
@@ -214,6 +217,7 @@ export default function NewAnalysisPage() {
     setCenter([lat, lng]);
     setPinDropped(true);
     setPinFromDraw(true);
+    setSelectedParcel(null);
     setAddress(coords);
     setProjectName(suggestName(coords, profile === "builder"));
     setError("");
@@ -230,6 +234,7 @@ export default function NewAnalysisPage() {
   function handleReset() {
     setPinDropped(false);
     setPinFromDraw(false);
+    setSelectedParcel(null);
     setAddress("");
     setProjectName("");
     setError("");
@@ -244,6 +249,7 @@ export default function NewAnalysisPage() {
     setCenter([lat, lon]);
     setPinDropped(true);
     setPinFromDraw(false);
+    setSelectedParcel(p);
     const label = p.surveyNumber ? `Survey ${p.surveyNumber}` : "Parcel";
     setAddress(label);
     setProjectName(suggestName(label, profile === "builder"));
@@ -314,19 +320,52 @@ export default function NewAnalysisPage() {
                 shape="circle"
                 coordinates={{ center, radius: bufferM }}
               />
-              <SitePlanningCard
-                lat={center[0]}
-                lon={center[1]}
-                plotAreaSqm={siteMeasurements?.area ?? null}
-                plotDims={boundingBoxDims(drawnBoundary?.positions)}
-              />
+              {!selectedParcel && (
+                <SitePlanningCard
+                  lat={center[0]}
+                  lon={center[1]}
+                  plotAreaSqm={siteMeasurements?.area ?? null}
+                  plotDims={boundingBoxDims(drawnBoundary?.positions)}
+                />
+              )}
             </>
           )}
           <DrawTools onShapeCommitted={handleShapeCommitted} />
           <MapSearch topOffset={104} />
         </MapContainer>
 
-        {pinDropped && <SiteContextDock lat={center[0]} lon={center[1]} />}
+        {pinDropped && !selectedParcel && <SiteContextDock lat={center[0]} lon={center[1]} />}
+
+        {selectedParcel && (
+          <div style={{
+            position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+            zIndex: 1500, background: "rgba(253,252,251,0.97)", backdropFilter: "blur(16px)",
+            borderRadius: 14, border: "1px solid rgba(207,214,196,0.6)",
+            boxShadow: "0 8px 32px rgba(58,63,59,0.18)", padding: "16px 22px", minWidth: 280, maxWidth: 380,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", color: "#306223", textTransform: "uppercase" }}>
+                Parcel Details
+              </span>
+              <button
+                onClick={() => { setSelectedParcel(null); setPinDropped(false); }}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#7B8F83", lineHeight: 1, padding: 0 }}
+              >×</button>
+            </div>
+            {[
+              ["Survey No.", selectedParcel.surveyNumber || "—"],
+              ["Category",  selectedParcel.category    || "—"],
+              ["Village",   selectedParcel.villageName || selectedParcel.lgdVillage || selectedParcel.villageCode || "—"],
+              ["ULPIN",     selectedParcel.ulpin        || "—"],
+              ["Area",      `${Math.round(parcelAreaSqm(selectedParcel.geometry)).toLocaleString()} sq m`],
+            ].map(([label, value]) => (
+              <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <span style={{ fontSize: 11, color: "#7B8F83", fontWeight: 600 }}>{label}</span>
+                <span style={{ fontSize: 12, color: "#3A3F3B", fontWeight: 500, maxWidth: 220, textAlign: "right", wordBreak: "break-all" }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Config cards — draggable, stacked flex column, appear once a pin is placed */}
         {pinDropped && <DraggableConfigCards projectName={projectName} onSiteNameChange={setProjectName} lat={center[0]} lng={center[1]} onStart={handleStart} creating={creating} error={error} />}
