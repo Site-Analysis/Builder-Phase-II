@@ -4,6 +4,28 @@
 import NextAuth from "next-auth"
 import Keycloak from "next-auth/providers/keycloak"
 
+async function refreshKeycloakToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null> {
+  const url = `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/token`
+  const params = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: process.env.KEYCLOAK_CLIENT_ID!,
+    refresh_token: refreshToken,
+  })
+  if (process.env.KEYCLOAK_CLIENT_SECRET) params.set("client_secret", process.env.KEYCLOAK_CLIENT_SECRET)
+  try {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: params })
+    if (!res.ok) return null
+    const data = await res.json()
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token ?? refreshToken,
+      expiresAt: Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600),
+    }
+  } catch {
+    return null
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   logger: {
@@ -19,7 +41,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, account }) {
-      if (account) token.accessToken = account.access_token
+      if (account) {
+        token.accessToken = account.access_token
+        token.refreshToken = account.refresh_token
+        token.expiresAt = account.expires_at ?? Math.floor(Date.now() / 1000) + 3600
+      }
+      // Refresh 60s before expiry
+      if (typeof token.expiresAt === "number" && Date.now() / 1000 > token.expiresAt - 60) {
+        if (token.refreshToken) {
+          const refreshed = await refreshKeycloakToken(token.refreshToken as string)
+          if (refreshed) {
+            token.accessToken = refreshed.accessToken
+            token.refreshToken = refreshed.refreshToken
+            token.expiresAt = refreshed.expiresAt
+          }
+        }
+      }
       return token
     },
     async session({ session, token }) {
