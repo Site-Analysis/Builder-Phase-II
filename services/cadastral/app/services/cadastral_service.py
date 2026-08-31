@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import glob
 import json
+import logging
 import os
 import sqlite3
+import threading
 from typing import Any
 
 import geopandas as gpd
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = os.environ.get("CADASTRAL_DATA_DIR", "data/cadastral_lake_v2")
 RCCMS_DB = os.environ.get("CADASTRAL_DB_PATH", "db/karnataka_lands_full.db")
@@ -126,21 +130,25 @@ def search_survey(q: str, limit: int = 25) -> list[dict[str, Any]]:
     if len(q_norm) < 2:
         return []
     conn = _connect()
-    rows = conn.execute(
-        """SELECT DISTINCT s.survey_no,
-                  COALESCE(NULLIF(s.village_name,''), NULLIF(vm.village_name,''), '') AS vname,
-                  s.dist, s.taluk, s.hobli, s.vlg
-           FROM survey_index s
-           LEFT JOIN villages_master vm
-             ON vm.village_code = s.village_code || '_' || s.vlg
-           WHERE s.survey_no_norm LIKE ?
-           ORDER BY CAST(s.survey_no_norm AS INTEGER),
-                    CASE WHEN COALESCE(NULLIF(s.village_name,''), NULLIF(vm.village_name,'')) IS NULL
-                         THEN 1 ELSE 0 END,
-                    vname
-           LIMIT ?""",
-        (q_norm + "%", limit),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            """SELECT DISTINCT s.survey_no,
+                      COALESCE(NULLIF(s.village_name,''), NULLIF(vm.village_name,''), '') AS vname,
+                      s.dist, s.taluk, s.hobli, s.vlg
+               FROM survey_index s
+               LEFT JOIN villages_master vm
+                 ON vm.village_code = s.village_code || '_' || s.vlg
+               WHERE s.survey_no_norm LIKE ?
+               ORDER BY CAST(s.survey_no_norm AS INTEGER),
+                        CASE WHEN COALESCE(NULLIF(s.village_name,''), NULLIF(vm.village_name,'')) IS NULL
+                             THEN 1 ELSE 0 END,
+                        vname
+               LIMIT ?""",
+            (q_norm + "%", limit),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        conn.close()
+        return []
     conn.close()
     return [
         {"survey_no": r[0], "village_name": r[1], "dist": r[2], "taluk": r[3], "hobli": r[4], "vlg": r[5]}
@@ -238,6 +246,74 @@ def _load_names() -> None:
         _NAMES.setdefault((dist, taluk, hobli, vlg), vname)
 
 _load_names()
+
+
+def _build_survey_index() -> None:
+    """Build survey_index from parquets in background. Skips if already populated."""
+    conn = sqlite3.connect(RCCMS_DB)
+    try:
+        existing = conn.execute("SELECT COUNT(*) FROM survey_index").fetchone()[0]
+        if existing > 0:
+            conn.close()
+            return
+    except sqlite3.OperationalError:
+        pass
+
+    logger.info("survey_index missing or empty — building from parquets (background)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS survey_index "
+        "(survey_no TEXT, survey_no_norm TEXT, village_name TEXT, "
+        "village_code TEXT, dist TEXT, taluk TEXT, hobli TEXT, vlg TEXT)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_survey_no_norm ON survey_index(survey_no_norm)"
+    )
+    conn.commit()
+
+    pattern = os.path.join(DATA_DIR, "dist_*", "taluk_*", "hobli_*", "vlg_*.parquet")
+    paths = sorted(glob.glob(pattern))
+    logger.info("survey_index: indexing %d parquets", len(paths))
+    done = 0
+    for path in paths:
+        parts = path.replace("\\", "/").split("/")
+        try:
+            di = next(i for i, p in enumerate(parts) if p.startswith("dist_"))
+            dist = parts[di].replace("dist_", "")
+            taluk = parts[di + 1].replace("taluk_", "")
+            hobli = parts[di + 2].replace("hobli_", "")
+            vlg = os.path.splitext(parts[di + 3])[0].replace("vlg_", "")
+        except (StopIteration, IndexError):
+            continue
+        try:
+            df = pd.read_parquet(path, columns=["survey_no", "village_name", "village_code"])
+        except Exception:
+            continue
+        if df.empty or "survey_no" not in df.columns:
+            continue
+        rows = []
+        for _, row in df.iterrows():
+            sno = str(row.get("survey_no") or "").strip()
+            if not sno:
+                continue
+            rows.append((
+                sno,
+                sno.split("/")[0].strip(),
+                str(row.get("village_name") or ""),
+                str(row.get("village_code") or ""),
+                dist, taluk, hobli, vlg,
+            ))
+        if rows:
+            conn.executemany("INSERT INTO survey_index VALUES (?,?,?,?,?,?,?,?)", rows)
+        done += 1
+        if done % 500 == 0:
+            conn.commit()
+            logger.info("survey_index: %d/%d parquets done", done, len(paths))
+    conn.commit()
+    conn.close()
+    logger.info("survey_index build complete")
+
+
+threading.Thread(target=_build_survey_index, daemon=True).start()
 
 
 def list_districts() -> list[dict[str, str]]:
