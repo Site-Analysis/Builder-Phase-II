@@ -154,10 +154,9 @@ export function MapContainer({
     if (!fc?.features?.length) return;
     setToolbarGeoJSON(fc);
     const baseNo = r.survey_no.split("/")[0];
-    const feature = fc.features.find((f) => {
-      const sno = String((f.properties as Record<string, string>)?.survey_no ?? "");
-      return sno === r.survey_no || sno.split("/")[0] === baseNo;
-    });
+    const feature =
+      fc.features.find((f) => String((f.properties as Record<string, string>)?.survey_no ?? "") === r.survey_no) ??
+      fc.features.find((f) => String((f.properties as Record<string, string>)?.survey_no ?? "").split("/")[0] === baseNo);
     if (!feature) return;
     const g = feature.geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
     let geom: GeoJSON.Polygon;

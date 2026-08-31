@@ -36,8 +36,13 @@ type ParcelProps = {
   vlg: string;
 };
 
-function styleFor(props: ParcelProps, selectedKey: string): L.PathOptions {
-  const key = `${props.survey_no}|${props.village_code}`;
+function echawadiKey(props: ParcelProps, geom: GeoJSON.Geometry | null | undefined): string {
+  const c = (geom as GeoJSON.Polygon)?.coordinates?.[0]?.[0];
+  return c ? `${props.survey_no}@${c[0].toFixed(6)},${c[1].toFixed(6)}` : props.survey_no;
+}
+
+function styleFor(props: ParcelProps, geom: GeoJSON.Geometry | null | undefined, selectedKey: string): L.PathOptions {
+  const key = echawadiKey(props, geom);
   if (selectedKey && key === selectedKey) {
     return { color: "#047857", weight: 3, fillColor: "#10B981", fillOpacity: 0.45, dashArray: undefined };
   }
@@ -89,7 +94,7 @@ function renderParcelLayer(
   const layer = L.geoJSON(fc, {
     style: (feature) => {
       const p = (feature?.properties ?? {}) as ParcelProps;
-      return styleFor(p, selectedKey);
+      return styleFor(p, feature?.geometry, selectedKey);
     },
     onEachFeature: (feature, lyr) => {
       const p = (feature.properties ?? {}) as ParcelProps;
@@ -184,7 +189,7 @@ export function EchawadiParcels({ enabled, siteBoundary, onSelect, selectedKey =
     if (!layerRef.current) return;
     layerRef.current.setStyle((feature) => {
       const p = (feature?.properties ?? {}) as ParcelProps;
-      return styleFor(p, selectedKey);
+      return styleFor(p, feature?.geometry, selectedKey);
     });
   }, [selectedKey]);
 

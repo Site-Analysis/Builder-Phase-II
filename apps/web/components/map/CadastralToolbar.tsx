@@ -167,8 +167,7 @@ export function CadastralToolbar({ onLoad, onSurveySelect, selectedVillageName, 
           }}>
             {(() => {
               const q = surveyQ.toLowerCase();
-              const showPin = !!(selectedSurveyNo && selectedVillageName &&
-                selectedSurveyNo.toLowerCase().includes(q));
+              const showPin = !!(selectedSurveyNo && selectedVillageName);
               const pinnedAlreadyInResults = surveyResults.some(
                 (r) => r.survey_no === selectedSurveyNo && r.village_name === selectedVillageName,
               );
