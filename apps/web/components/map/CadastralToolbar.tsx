@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   fetchDistricts, fetchTaluks, fetchHoblis, fetchVillages,
   fetchParcelData, searchBySurveyNo,
@@ -33,6 +34,7 @@ const INPUT_STYLE: React.CSSProperties = {
 };
 
 export function CadastralToolbar({ onLoad, onSurveySelect, selectedVillageName, selectedSurveyNo }: Props) {
+  const { status: sessionStatus } = useSession();
   const [districts, setDistricts] = useState<HierarchyItem[]>([]);
   const [taluks, setTaluks]       = useState<HierarchyItem[]>([]);
   const [hoblis, setHoblis]       = useState<HierarchyItem[]>([]);
@@ -52,8 +54,9 @@ export function CadastralToolbar({ onLoad, onSurveySelect, selectedVillageName, 
   const surveyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (sessionStatus !== "authenticated") return;
     fetchDistricts().then(setDistricts);
-  }, []);
+  }, [sessionStatus]);
 
   function handleDistChange(v: string) {
     setDist(v); setTaluk(""); setHobli(""); setVlg("");
