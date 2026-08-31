@@ -14,6 +14,7 @@ SQLite: CADASTRAL_DB_PATH  (villages_master, rccms_cases, mutations, survey_inde
 from __future__ import annotations
 
 import glob
+import json
 import os
 import sqlite3
 from typing import Any
@@ -203,7 +204,6 @@ def get_village_info(dist: str, taluk: str, hobli: str, vlg: str) -> dict[str, A
 
 
 def _list_dir_codes(path: str, prefix: str) -> list[str]:
-    """Numeric code strings from subdirs/files matching prefix, sorted int order."""
     if not os.path.isdir(path):
         return []
     codes = []
@@ -215,27 +215,56 @@ def _list_dir_codes(path: str, prefix: str) -> list[str]:
     return sorted(codes, key=int)
 
 
+# Parsed from echawadi_village_list.json once at import time.
+# Keys: dist / (dist,taluk) / (dist,taluk,hobli) / (dist,taluk,hobli,vlg) → name string.
+_NAMES: dict[tuple, str] = {}
+
+def _load_names() -> None:
+    json_path = os.path.join(os.path.dirname(DATA_DIR), "echawadi_village_list.json")
+    if not os.path.isfile(json_path):
+        return
+    with open(json_path, encoding="utf-8") as f:
+        data = json.load(f)
+    for row in data.get("Vlglist", []):
+        parts = row.get("vlgcode", "").split(",")
+        names = row.get("vlgname", "").split("|")
+        if len(parts) < 4 or len(names) < 4:
+            continue
+        vlg, hobli, taluk, dist = parts[0], parts[1], parts[2], parts[3]
+        vname, hname, tname, dname = names[0], names[1], names[2], names[3]
+        _NAMES.setdefault((dist,), dname)
+        _NAMES.setdefault((dist, taluk), tname)
+        _NAMES.setdefault((dist, taluk, hobli), hname)
+        _NAMES.setdefault((dist, taluk, hobli, vlg), vname)
+
+_load_names()
+
+
 def list_districts() -> list[dict[str, str]]:
     codes = _list_dir_codes(DATA_DIR, "dist_")
-    return [{"code": c, "name": c} for c in codes]
+    result = [{"code": c, "name": _NAMES.get((c,), c)} for c in codes]
+    return sorted(result, key=lambda x: x["name"])
 
 
 def list_taluks(dist: str) -> list[dict[str, str]]:
     path = os.path.join(DATA_DIR, f"dist_{dist}")
     codes = _list_dir_codes(path, "taluk_")
-    return [{"code": c, "name": c} for c in codes]
+    result = [{"code": c, "name": _NAMES.get((dist, c), c)} for c in codes]
+    return sorted(result, key=lambda x: x["name"])
 
 
 def list_hoblis(dist: str, taluk: str) -> list[dict[str, str]]:
     path = os.path.join(DATA_DIR, f"dist_{dist}", f"taluk_{taluk}")
     codes = _list_dir_codes(path, "hobli_")
-    return [{"code": c, "name": c} for c in codes]
+    result = [{"code": c, "name": _NAMES.get((dist, taluk, c), c)} for c in codes]
+    return sorted(result, key=lambda x: x["name"])
 
 
 def list_villages(dist: str, taluk: str, hobli: str) -> list[dict[str, str]]:
     path = os.path.join(DATA_DIR, f"dist_{dist}", f"taluk_{taluk}", f"hobli_{hobli}")
     codes = _list_dir_codes(path, "vlg_")
-    return [{"code": c, "name": c} for c in codes]
+    result = [{"code": c, "name": _NAMES.get((dist, taluk, hobli, c), c)} for c in codes]
+    return sorted(result, key=lambda x: x["name"])
 
 
 def get_village_by_lgd(lgd_code: str) -> dict[str, Any]:
