@@ -7,6 +7,15 @@ import { useMap } from "react-leaflet";
 import L from "leaflet";
 import { getSession } from "next-auth/react";
 
+async function getToken(): Promise<string | null> {
+  for (let i = 0; i < 8; i++) {
+    const session = await getSession();
+    if (session?.accessToken) return session.accessToken as string;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
+}
+
 const BASE = process.env.NEXT_PUBLIC_CADASTRAL_API_URL ?? "https://api.builder.qnit.site/cadastral";
 
 interface Props {
@@ -26,9 +35,9 @@ export function LgdVillagesOverlay({ enabled }: Props) {
     const b = map.getBounds();
     const bbox = `${b.getWest().toFixed(6)},${b.getSouth().toFixed(6)},${b.getEast().toFixed(6)},${b.getNorth().toFixed(6)}`;
 
-    getSession().then((session) => {
-      const authHeader: Record<string, string> = session?.accessToken
-        ? { Authorization: `Bearer ${session.accessToken}` }
+    getToken().then((token) => {
+      const authHeader: Record<string, string> = token
+        ? { Authorization: `Bearer ${token}` }
         : {};
       fetch(`${BASE}/lgd-villages?bbox=${bbox}`, { headers: authHeader, signal: ctrl.signal })
         .then((r) => r.json())

@@ -16,12 +16,21 @@ const BASE = process.env.NEXT_PUBLIC_CADASTRAL_API_URL ?? "https://api.builder.q
 
 const TIMEOUT_MS = 20_000;
 
+async function getToken(): Promise<string | null> {
+  for (let i = 0; i < 8; i++) {
+    const session = await getSession();
+    if (session?.accessToken) return session.accessToken as string;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
+}
+
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  const session = await getSession();
-  const authHeader: Record<string, string> = session?.accessToken
-    ? { Authorization: `Bearer ${session.accessToken}` }
+  const token = await getToken();
+  const authHeader: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
     : {};
   try {
     const res = await fetch(`${BASE}${path}`, {
