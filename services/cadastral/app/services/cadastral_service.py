@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = os.environ.get("CADASTRAL_DATA_DIR", "data/cadastral_lake_v2")
 RCCMS_DB = os.environ.get("CADASTRAL_DB_PATH", "db/karnataka_lands_full.db")
+# Separate writable DB for the survey index (RCCMS_DB may be read-only).
+_INDEX_DB = os.environ.get("SURVEY_INDEX_DB", "/app/survey_index.db")
 
 # Swap X↔Y: new_x=y, new_y=x — compensates for the scraper building Polygon(Northing, Easting)
 # instead of Polygon(Easting, Northing) in EPSG:32643.
@@ -129,20 +131,15 @@ def search_survey(q: str, limit: int = 25) -> list[dict[str, Any]]:
     q_norm = q.split("/")[0].strip()
     if len(q_norm) < 2:
         return []
-    conn = _connect()
+    conn = sqlite3.connect(_INDEX_DB)
     try:
         rows = conn.execute(
-            """SELECT DISTINCT s.survey_no,
-                      COALESCE(NULLIF(s.village_name,''), NULLIF(vm.village_name,''), '') AS vname,
-                      s.dist, s.taluk, s.hobli, s.vlg
-               FROM survey_index s
-               LEFT JOIN villages_master vm
-                 ON vm.village_code = s.village_code || '_' || s.vlg
-               WHERE s.survey_no_norm LIKE ?
-               ORDER BY CAST(s.survey_no_norm AS INTEGER),
-                        CASE WHEN COALESCE(NULLIF(s.village_name,''), NULLIF(vm.village_name,'')) IS NULL
-                             THEN 1 ELSE 0 END,
-                        vname
+            """SELECT DISTINCT survey_no,
+                      COALESCE(NULLIF(village_name,''), '') AS vname,
+                      dist, taluk, hobli, vlg
+               FROM survey_index
+               WHERE survey_no_norm LIKE ?
+               ORDER BY CAST(survey_no_norm AS INTEGER), vname
                LIMIT ?""",
             (q_norm + "%", limit),
         ).fetchall()
@@ -249,8 +246,8 @@ _load_names()
 
 
 def _build_survey_index() -> None:
-    """Build survey_index from parquets in background. Skips if already populated."""
-    conn = sqlite3.connect(RCCMS_DB)
+    """Build survey_index in a separate writable DB. Skips if already populated."""
+    conn = sqlite3.connect(_INDEX_DB)
     try:
         existing = conn.execute("SELECT COUNT(*) FROM survey_index").fetchone()[0]
         if existing > 0:
