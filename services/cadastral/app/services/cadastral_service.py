@@ -233,6 +233,16 @@ def _name_via_lgd(conn: sqlite3.Connection, vc: str | None, field: str) -> str |
     return row[0] if row and row[0] else None
 
 
+def _disambiguate(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Append (code) to name when two items share the same name."""
+    from collections import Counter
+    counts = Counter(x["name"] for x in items)
+    return [
+        {"code": x["code"], "name": f"{x['name']} ({x['code']})" if counts[x["name"]] > 1 else x["name"]}
+        for x in items
+    ]
+
+
 def list_districts() -> list[dict[str, str]]:
     codes = _list_dir_codes(DATA_DIR, "dist_")
     if not codes:
@@ -246,7 +256,7 @@ def list_districts() -> list[dict[str, str]]:
         name = _name_via_lgd(conn, vc, "district_name") or c
         result.append({"code": c, "name": name})
     conn.close()
-    return result
+    return _disambiguate(result)
 
 
 def list_taluks(dist: str) -> list[dict[str, str]]:
@@ -264,7 +274,7 @@ def list_taluks(dist: str) -> list[dict[str, str]]:
         name = _name_via_lgd(conn, vc, "taluk_name") or c
         result.append({"code": c, "name": name})
     conn.close()
-    return result
+    return _disambiguate(result)
 
 
 def list_hoblis(dist: str, taluk: str) -> list[dict[str, str]]:
@@ -283,7 +293,7 @@ def list_hoblis(dist: str, taluk: str) -> list[dict[str, str]]:
         name = _name_via_lgd(conn, vc, "hobli_name") or c
         result.append({"code": c, "name": name})
     conn.close()
-    return result
+    return _disambiguate(result)
 
 
 def list_villages(dist: str, taluk: str, hobli: str) -> list[dict[str, str]]:
@@ -303,7 +313,7 @@ def list_villages(dist: str, taluk: str, hobli: str) -> list[dict[str, str]]:
         name = (row[1] or c) if row else c
         result.append({"code": c, "name": name})
     conn.close()
-    return result
+    return _disambiguate(result)
 
 
 def get_village_by_lgd(lgd_code: str) -> dict[str, Any]:
