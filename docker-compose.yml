@@ -338,7 +338,7 @@ services:
       - KEYCLOAK_URL=http://keycloak:8080
       - KEYCLOAK_REALM=sat
       - CADASTRAL_REPO_ROOT=/app/cadastral-data
-      - CADASTRAL_DATA_DIR=/app/cadastral-data/data
+      - CADASTRAL_DATA_DIR=/app/cadastral-data/data/cadastral_lake_v2
       - CADASTRAL_DB_PATH=/app/cadastral-data/db/karnataka_lands_full.db
     env_file:
       - .env

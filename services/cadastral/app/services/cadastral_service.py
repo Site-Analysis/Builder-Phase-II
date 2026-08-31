@@ -216,6 +216,7 @@ def list_districts() -> list[dict[str, str]]:
     rows = conn.execute(
         "SELECT district_code, MIN(village_code) AS vc FROM villages_master GROUP BY district_code"
     ).fetchall()
+    seen_names: set[str] = set()
     result: list[dict[str, str]] = []
     for district_code, vc in rows:
         lgd = _lgd_from_village_code(vc) if vc else None
@@ -224,7 +225,9 @@ def list_districts() -> list[dict[str, str]]:
             r = conn.execute("SELECT district_name FROM village_roster WHERE lgd_code=? LIMIT 1", (lgd,)).fetchone()
             if r and r[0]:
                 name = r[0]
-        result.append({"code": str(district_code), "name": name})
+        if name not in seen_names:
+            seen_names.add(name)
+            result.append({"code": str(district_code), "name": name})
     conn.close()
     return sorted(result, key=lambda x: x["name"])
 
