@@ -128,7 +128,7 @@ export function MapContainer({
   const mtKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
   const [basemap, setBasemap] = useState<"street" | "satellite">("street");
   // KGIS cadastral overlay ships dark — enabled per-deployment via env flag (US-081).
-  const cadastralEnabled = process.env.NEXT_PUBLIC_ENABLE_CADASTRAL === "1";
+  const cadastralEnabled = process.env.NEXT_PUBLIC_ENABLE_CADASTRAL_EXPLORER === "1";
   const [cadastral, setCadastral] = useState(false);
   // KGIS L5 parcel FEATURES for the drawn area (survey no + attributes) — separate flag, default-off.
   const parcelsEnabled = process.env.NEXT_PUBLIC_ENABLE_PARCELS === "1";
