@@ -202,91 +202,85 @@ def get_village_info(dist: str, taluk: str, hobli: str, vlg: str) -> dict[str, A
     }
 
 
-def _lgd_from_village_code(vc: str) -> int | None:
-    """Extract lgd_code int from village_code string '{lgd}_{vlg_local}'."""
-    try:
-        return int(vc.rsplit("_", 1)[0])
-    except (ValueError, IndexError):
-        return None
+def _list_dir_codes(path: str, prefix: str) -> list[str]:
+    """Numeric code strings from subdirs/files matching prefix, sorted int order."""
+    if not os.path.isdir(path):
+        return []
+    codes = []
+    for n in os.listdir(path):
+        if n.startswith(prefix):
+            stem = os.path.splitext(n[len(prefix):])[0]
+            if stem.isdigit():
+                codes.append(stem)
+    return sorted(codes, key=int)
 
 
 def list_districts() -> list[dict[str, str]]:
-    """Districts with names. Uses villages_master→village_roster join; falls back to code-only."""
+    codes = _list_dir_codes(DATA_DIR, "dist_")
+    if not codes:
+        return []
     conn = _connect()
-    rows = conn.execute(
-        "SELECT district_code, MIN(village_code) AS vc FROM villages_master GROUP BY district_code"
-    ).fetchall()
-    seen_names: set[str] = set()
-    result: list[dict[str, str]] = []
-    for district_code, vc in rows:
-        lgd = _lgd_from_village_code(vc) if vc else None
-        name = str(district_code)
-        if lgd is not None:
-            r = conn.execute("SELECT district_name FROM village_roster WHERE lgd_code=? LIMIT 1", (lgd,)).fetchone()
-            if r and r[0]:
-                name = r[0]
-        if name not in seen_names:
-            seen_names.add(name)
-            result.append({"code": str(district_code), "name": name})
+    result = []
+    for c in codes:
+        row = conn.execute(
+            "SELECT district_name FROM village_roster WHERE dist_e=? LIMIT 1", (int(c),)
+        ).fetchone()
+        result.append({"code": c, "name": row[0] if row and row[0] else c})
     conn.close()
-    return sorted(result, key=lambda x: x["name"])
+    return result
 
 
 def list_taluks(dist: str) -> list[dict[str, str]]:
+    path = os.path.join(DATA_DIR, f"dist_{dist}")
+    codes = _list_dir_codes(path, "taluk_")
+    if not codes:
+        return []
     conn = _connect()
-    rows = conn.execute(
-        "SELECT taluk_code, MIN(village_code) AS vc FROM villages_master WHERE district_code=? GROUP BY taluk_code",
-        (dist,),
-    ).fetchall()
-    result: list[dict[str, str]] = []
-    for taluk_code, vc in rows:
-        lgd = _lgd_from_village_code(vc) if vc else None
-        name = str(taluk_code)
-        if lgd is not None:
-            r = conn.execute("SELECT taluk_name FROM village_roster WHERE lgd_code=? LIMIT 1", (lgd,)).fetchone()
-            if r and r[0]:
-                name = r[0]
-        result.append({"code": str(taluk_code), "name": name})
+    result = []
+    for c in codes:
+        row = conn.execute(
+            "SELECT taluk_name FROM village_roster WHERE dist_e=? AND taluk_e=? LIMIT 1",
+            (int(dist), int(c)),
+        ).fetchone()
+        result.append({"code": c, "name": row[0] if row and row[0] else c})
     conn.close()
-    return sorted(result, key=lambda x: x["name"])
+    return result
 
 
 def list_hoblis(dist: str, taluk: str) -> list[dict[str, str]]:
+    path = os.path.join(DATA_DIR, f"dist_{dist}", f"taluk_{taluk}")
+    codes = _list_dir_codes(path, "hobli_")
+    if not codes:
+        return []
     conn = _connect()
-    rows = conn.execute(
-        "SELECT hobli_code, MIN(village_code) AS vc FROM villages_master "
-        "WHERE district_code=? AND taluk_code=? GROUP BY hobli_code",
-        (dist, taluk),
-    ).fetchall()
-    result: list[dict[str, str]] = []
-    for hobli_code, vc in rows:
-        lgd = _lgd_from_village_code(vc) if vc else None
-        name = str(hobli_code)
-        if lgd is not None:
-            r = conn.execute("SELECT hobli_name FROM village_roster WHERE lgd_code=? LIMIT 1", (lgd,)).fetchone()
-            if r and r[0]:
-                name = r[0]
-        result.append({"code": str(hobli_code), "name": name})
+    result = []
+    for c in codes:
+        row = conn.execute(
+            "SELECT hobli_name FROM village_roster "
+            "WHERE dist_e=? AND taluk_e=? AND hobli_e=? LIMIT 1",
+            (int(dist), int(taluk), int(c)),
+        ).fetchone()
+        result.append({"code": c, "name": row[0] if row and row[0] else c})
     conn.close()
-    return sorted(result, key=lambda x: x["name"])
+    return result
 
 
 def list_villages(dist: str, taluk: str, hobli: str) -> list[dict[str, str]]:
+    path = os.path.join(DATA_DIR, f"dist_{dist}", f"taluk_{taluk}", f"hobli_{hobli}")
+    codes = _list_dir_codes(path, "vlg_")
+    if not codes:
+        return []
     conn = _connect()
-    rows = conn.execute(
-        "SELECT village_code, village_name FROM villages_master "
-        "WHERE district_code=? AND taluk_code=? AND hobli_code=?",
-        (dist, taluk, hobli),
-    ).fetchall()
+    result = []
+    for c in codes:
+        row = conn.execute(
+            "SELECT village_name FROM village_roster "
+            "WHERE dist_e=? AND taluk_e=? AND hobli_e=? AND vlg_local=? LIMIT 1",
+            (int(dist), int(taluk), int(hobli), int(c)),
+        ).fetchone()
+        result.append({"code": c, "name": row[0] if row and row[0] else c})
     conn.close()
-    result: list[dict[str, str]] = []
-    for vc, vname in rows:
-        vlg_local = vc.rsplit("_", 1)[-1] if vc else None
-        if vlg_local is None:
-            continue
-        name = vname or vlg_local
-        result.append({"code": vlg_local, "name": name})
-    return sorted(result, key=lambda x: x["name"])
+    return result
 
 
 def get_village_by_lgd(lgd_code: str) -> dict[str, Any]:
