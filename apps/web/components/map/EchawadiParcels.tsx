@@ -110,7 +110,8 @@ function renderParcelLayer(
         }
       }
 
-      lyr.on("click", () => {
+      lyr.on("click", (e) => {
+        L.DomEvent.stopPropagation(e);
         if (!onSelect) return;
         const geom = feature.geometry as GeoJSON.Polygon;
         onSelect({

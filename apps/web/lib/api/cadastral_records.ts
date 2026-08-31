@@ -12,7 +12,7 @@
 
 import { getSession } from "next-auth/react";
 
-const BASE = process.env.NEXT_PUBLIC_CADASTRAL_API_URL ?? "http://localhost:8011";
+const BASE = process.env.NEXT_PUBLIC_CADASTRAL_API_URL ?? "https://api.builder.qnit.site/cadastral";
 
 const TIMEOUT_MS = 20_000;
 
