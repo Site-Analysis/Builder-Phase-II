@@ -17,6 +17,7 @@ services:
 
   keycloak:
     command: start --import-realm
+    restart: unless-stopped
     environment:
       KC_HOSTNAME: "https://auth.builder.qnit.site"
       KC_PROXY_HEADERS: xforwarded
@@ -55,6 +56,7 @@ services:
   # All: remove host port bindings, drop --reload, set prod CORS + Keycloak URL.
 
   temperature:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8000
     environment:
@@ -62,6 +64,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   sunpath:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8001
     environment:
@@ -69,6 +72,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   flood:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8002
     environment:
@@ -76,6 +80,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   wind:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8003
     environment:
@@ -83,6 +88,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   rainfall:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8004
     environment:
@@ -90,6 +96,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   geo:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8005
     environment:
@@ -97,6 +104,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   planning:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8006
     environment:
@@ -104,6 +112,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   infrastructure:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8007
     environment:
@@ -111,6 +120,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   future-infra:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8008
     environment:
@@ -118,6 +128,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   land-records:
+    restart: unless-stopped
     ports: !reset []
     command: opentelemetry-instrument uvicorn app.main:app --host 0.0.0.0 --port 8009
     environment:
@@ -125,12 +136,14 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
 
   report:
+    restart: unless-stopped
     ports: !reset []
     command: uvicorn app.main:app --host 0.0.0.0 --port 8010
     environment:
       CORS_ORIGINS: https://builder.qnit.site
 
   cadastral:
+    restart: unless-stopped
     ports: !reset []
     command: uvicorn app.main:app --host 0.0.0.0 --port 8011
     environment:
@@ -140,6 +153,7 @@ services:
   # ── Overpass ─────────────────────────────────────────────────────────────────
 
   overpass:
+    restart: unless-stopped
     ports: !reset []
     environment:
       OVERPASS_MODE: run
@@ -147,9 +161,11 @@ services:
   # ── Observability — keep ports off host in prod ──────────────────────────────
 
   otel-collector:
+    restart: unless-stopped
     ports: !reset []
 
   jaeger:
+    restart: unless-stopped
     ports: !reset []
 
 volumes:
