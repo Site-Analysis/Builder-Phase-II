@@ -149,6 +149,7 @@ services:
     environment:
       CORS_ORIGINS: https://builder.qnit.site
       KEYCLOAK_URL: http://keycloak:8080
+      FLAGS: feature.cadastral.overlays
 
   # ── Overpass ─────────────────────────────────────────────────────────────────
 
